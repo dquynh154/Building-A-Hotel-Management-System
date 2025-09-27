@@ -9,57 +9,48 @@ datasource db {
 }
 
 // ---------- ENUMS ----------
-enum RoomStatus {
+enum TRANGTHAI_PHONG {
   AVAILABLE
   OCCUPIED
   MAINTENANCE
+  CHUA_DON
 }
 
-enum ResStatus {
-  PENDING
-  CONFIRMED
+enum TRANGTHAI_HOPDONG {
+  PENDING // chưa đặt cọc
+  CONFIRMED // đã cọc
   CHECKED_IN
   CHECKED_OUT
   CANCELLED
   NO_SHOW
 }
 
-enum InvoiceStatus {
+enum TRANGTHAI_HOADON {
   DRAFT
   ISSUED
   PAID
   VOID
 }
 
-enum PayMethod {
+enum PHUONGTHUC_TT {
   CASH
-  BANK_TRANSFER
+  BANK_QR
   CARD
-  ONLINE
+  GATEWAY
 }
 
-enum PayState {
+enum TRANGTHAI_TT {
   INITIATED
   SUCCEEDED
   FAILED
   REFUNDED
 }
 
-enum HkState {
+enum TRANGTHAI_DONPHONG {
   PENDING
   IN_PROGRESS
   DONE
   CANCELLED
-}
-
-enum ItemType {
-  ROOM_CHARGE
-  SERVICE
-  SURCHARGE
-  DISCOUNT
-  DEPOSIT
-  TAX
-  OTHER
 }
 
 enum ChatRole {
@@ -70,366 +61,448 @@ enum ChatRole {
 
 enum UserRole {
   ADMIN
-  MANAGER
   RECEPTIONIST
   GUEST
 }
 
-enum PriceUnit {
-  DAILY
-  HOURLY
-}
-
-enum UsageUnit {
-  NIGHT   // 1 dòng = 1 đêm
-  HOUR    // 1 dòng = nhiều giờ (quantity = số giờ tính tiền)
-}
-
-enum PolicyKey {
-  CHECKIN_TIME
-  CHECKOUT_TIME
-  DEPOSIT_PERCENT
-  EARLY_CHECKIN_FEE
-  LATE_CHECKOUT_FEE
-}
-
-// ---- ĐÁNH GIÁ / RATING ----
-enum ReviewTarget {
-  HOTEL
-  ROOM_TYPE
-  SERVICE
-}
-
-enum ReviewStatus {
-  PENDING
+enum DG_TrangThai {
   PUBLISHED
-  REJECTED
   ARCHIVED
 }
 
-enum MediaType {
+enum MEDIA_Loai {
   IMAGE
   VIDEO
 }
 
-// ---- KHUYẾN MÃI (gọn) ----
-enum PromoType {
+enum KM_KieuApDung {
   PERCENT
   AMOUNT
 }
+
+enum CTSD_TrangThai {
+  ACTIVE
+  CANCELLED
+  INVOICED
+}
+
+enum CTDV_TrangThai {
+  ACTIVE
+  CANCELLED
+  INVOICED
+}
+
 // ---------- DANH MỤC PHÒNG ----------
-model Floor {
-  id        Int     @id @default(autoincrement()) @map("ID_TANG")
-  name      String  @map("TEN_TANG")
-  rooms     Room[]
+model TANG {
+  TANG_MA  Int    @id @default(autoincrement())
+  TANG_TEN String
 
-  @@map("TANG")
+  PHONG PHONG[]
 }
 
-model RoomType {
-  id           Int      @id @default(autoincrement()) @map("ID_LP")
-  name         String   @map("TEN_LP")
-  maxPeople    Int      @map("SONGUOI_LP")
-  ratingAvg    Decimal? @db.Decimal(3,2) @default(0) @map("DG_SAO_TB")
-  ratingCount  Int      @default(0)      @map("DG_SO_LUONG")
+model LOAI_PHONG {
+  LP_MA      Int    @id @default(autoincrement())
+  LP_TEN     String
+  LP_SONGUOI Int
 
-  rooms        Room[]
-  amenities    RoomTypeAmenity[]
-  prices       RoomTypePrice[] 
-  policies     RoomTypePolicy[]
-  reviews      Review[]  @relation("RoomTypeReviews")
-
-  @@map("LOAI_PHONG")
+  PHONG            PHONG[]
+  TRANGBI_TIENNGHI TRANGBI_TIENNGHI[]
+  DON_GIA          DON_GIA[]
 }
 
-model RoomTypePrice {
-  id         Int       @id @default(autoincrement()) @map("ID_DG")
-  roomTypeId Int       @map("ID_LP")
-  unit       PriceUnit @map("DG_DONVI")
-  price      Decimal   @db.Decimal(12,2)  @map("DG_DONGIA")
-  validFrom  DateTime  @map("DG_NGAYAPDUNG_TU")
-  validTo    DateTime? @map("DG_NGAYAPDUNG_DEN")
+model HINH_THUC_THUE {
+  HT_MA   Int     @id @default(autoincrement())
+  HT_TEN  String  @unique
+  HT_MOTA String?
 
-  roomType RoomType @relation(fields: [roomTypeId], references: [id])
-
-  @@index([roomTypeId, unit, validFrom])
-  @@unique([roomTypeId, unit, validFrom])   // mỗi mốc giá bắt đầu chỉ 1 dòng
-  @@map("DON_GIA")
+  DON_GIA            DON_GIA[]
+  HOP_DONG_DAT_PHONG HOP_DONG_DAT_PHONG[] // nếu muốn gắn HT vào HĐ, bật thêm cột ở HOP_DONG
 }
 
-model Amenity {
-  id    Int    @id @default(autoincrement()) @map("ID_TIENNGHI")
-  name  String @map("TEN_TIENNGHI")
-  roomTypeLinks RoomTypeAmenity[]
+model THOI_DIEM {
+  TD_MA        Int     @id @default(autoincrement())
+  TD_TEN       String
+  TD_TRANGTHAI Boolean @default(true)
 
-  @@map("TIEN_NGHI")
+  THOI_DIEM_BASE    THOI_DIEM_BASE?
+  THOI_DIEM_SPECIAL THOI_DIEM_SPECIAL?
+  DON_GIA           DON_GIA[]
+}
+
+// subtype BASE (không cột ngày) giá cơ bản
+model THOI_DIEM_BASE {
+  TD_MA         Int     @id
+  TD_MOTA_CHUNG String?
+
+  THOI_DIEM THOI_DIEM @relation(fields: [TD_MA], references: [TD_MA], onDelete: Cascade)
+}
+
+// subtype SPECIAL (có khoảng ngày)
+model THOI_DIEM_SPECIAL {
+  TD_MA             Int      @id
+  TD_NGAY_BAT_DAU   DateTime
+  TD_NGAY_KET_THUC  DateTime
+  TD_MOTA_CHIENDICH String?
+
+  THOI_DIEM THOI_DIEM @relation(fields: [TD_MA], references: [TD_MA], onDelete: Cascade)
+
+  @@index([TD_NGAY_BAT_DAU, TD_NGAY_KET_THUC])
+}
+
+// NEW: Đơn giá = Loại phòng × Hình thức × Thời điểm (PK tổng hợp)
+model DON_GIA {
+  LP_MA Int
+  HT_MA Int
+  TD_MA Int
+
+  DG_DONGIA Decimal @db.Decimal(14, 2)
+
+  LOAI_PHONG     LOAI_PHONG     @relation(fields: [LP_MA], references: [LP_MA])
+  HINH_THUC_THUE HINH_THUC_THUE @relation(fields: [HT_MA], references: [HT_MA])
+  THOI_DIEM      THOI_DIEM      @relation(fields: [TD_MA], references: [TD_MA])
+
+  @@id([LP_MA, HT_MA, TD_MA])
+}
+
+model TIEN_NGHI {
+  TN_MA  Int    @id @default(autoincrement())
+  TN_TEN String
+
+  TRANGBI_TIENNGHI TRANGBI_TIENNGHI[]
 }
 
 // Bảng trung gian: LOAI_PHONG <-> TIEN_NGHI
-model RoomTypeAmenity {
-  roomTypeId  Int     @map("ID_LP")
-  amenityId   Int     @map("ID_TIENNGHI")
-  installedAt DateTime? @default(now()) @map("NGAY_TB")
-  quantity    Int?    @default(1) @map("SOLUONG_TB")
+model TRANGBI_TIENNGHI {
+  LP_MA      Int
+  TN_MA      Int
+  TN_NGAY_TB DateTime? @default(now())
+  TN_SOLUONG Int?      @default(1)
 
-  roomType RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
-  amenity  Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+  LOAI_PHONG LOAI_PHONG @relation(fields: [LP_MA], references: [LP_MA], onDelete: Cascade)
+  TIEN_NGHI  TIEN_NGHI  @relation(fields: [TN_MA], references: [TN_MA], onDelete: Cascade)
 
-  @@id([roomTypeId, amenityId])
-  @@map("TRANGBI_TIENNGHI")
+  @@id([LP_MA, TN_MA])
 }
 
-model Room {
-  id        Int        @id @default(autoincrement()) @map("ID_PHONG")
-  roomTypeId Int       @map("ID_LP")
-  floorId   Int        @map("ID_TANG")
-  name      String     @map("TEN_PHONG")
-  status    RoomStatus @default(AVAILABLE) @map("TRANGTHAI_PHONG")
+model PHONG {
+  PHONG_MA        Int             @id @default(autoincrement())
+  LP_MA           Int
+  TANG_MA         Int
+  PHONG_TEN       String          @unique
+  PHONG_TRANGTHAI TRANGTHAI_PHONG @default(AVAILABLE)
 
-  usages     ReservationUsage[] 
-  hkLogs    HkLog[]
+  CHI_TIET_SU_DUNG  CHI_TIET_SU_DUNG[]
+  LICH_SU_DON_PHONG LICH_SU_DON_PHONG[]
+  CHI_TIET_DICH_VU  CHI_TIET_DICH_VU[]
 
-  roomType  RoomType @relation(fields: [roomTypeId], references: [id])
-  floor     Floor    @relation(fields: [floorId], references: [id])
-
-  @@map("PHONG")
+  LOAI_PHONG LOAI_PHONG @relation(fields: [LP_MA], references: [LP_MA])
+  TANG       TANG       @relation(fields: [TANG_MA], references: [TANG_MA])
 }
 
-// Lịch sử dọn phòng (nếu bạn muốn giữ đúng tên bảng)
-model HkLog {
-  id       Int      @id @default(autoincrement()) @map("ID")
-  roomId   Int      @map("ID_PHONG")
-  state    HkState  @map("TRANG_THAI")
-  at       DateTime @default(now()) @map("NGAY_GIO")
-  note     String?  @map("GHI_CHU")
+model LICH_SU_DON_PHONG {
+  LSDP_MA        Int                @id @default(autoincrement())
+  PHONG_MA       Int
+  LSDP_TRANGTHAI TRANGTHAI_DONPHONG
+  LSDP_NGAYGIO   DateTime           @default(now())
+  LSDP_GHICHU    String?
 
-  room Room @relation(fields: [roomId], references: [id])
-
-  @@map("LICH_SU_DON_PHONG")
+  PHONG PHONG @relation(fields: [PHONG_MA], references: [PHONG_MA])
 }
 
-// Chính sách toàn khách sạn
-model HotelPolicy {
-  id                Int       @id @default(autoincrement()) @map("ID_CS")
+// ---------- NHÂN VIÊN Và KHÁCH HÀNG ----------
 
-  // Prisma không có kiểu TIME thuần -> dùng DateTime với native type Time
-  checkinTime       DateTime  @db.Time(0) @default(dbgenerated("'14:00:00'")) @map("GIO_CHECKIN")
-  checkoutTime      DateTime  @db.Time(0) @default(dbgenerated("'12:00:00'")) @map("GIO_CHECKOUT")
+model KHACH_HANG {
+  KH_MA       Int       @id @default(autoincrement())
+  KH_HOTEN    String
+  KH_NGAYSINH DateTime? // có thể null
+  KH_GIOITINH String? // Nam/Nữ/Khác
+  KH_CCCD     String    @unique // giấy tờ tuỳ thân
+  KH_EMAIL    String?   @unique
+  KH_SDT      String    @unique
+  KH_DIACHI   String?
+  KH_TAIKHOAN String?   @unique // username nếu có tài khoản web
+  KH_MATKHAU  String? // hash mật khẩu nếu có tài khoản
+  KH_NGAYTAO  DateTime  @default(now())
+  KH_NGAYSUA  DateTime  @updatedAt
 
-  depositPercent     Decimal   @db.Decimal(5, 2) @default(0) @map("TIEN_DAT_COC")
-  earlyCheckinFee   Decimal   @db.Decimal(12, 2) @default(0) @map("PHI_CHECKIN_SOM")
-  lateCheckoutFee   Decimal   @db.Decimal(12, 2) @default(0) @map("PHI_CHECKOUT_TRE")
-
-  updatedById       Int?      @map("NGUOI_CAPNHAT")
-  updatedAt         DateTime  @default(now()) @updatedAt @map("NGAY_CAPNHAT")
-
-  // FK -> USERS(ID_USER)
-  updatedBy         User?     @relation(fields: [updatedById], references: [id], name: "PolicyUpdatedBy")
-
-  @@map("CHINH_SACH")
+  HOP_DONG_DAT_PHONG HOP_DONG_DAT_PHONG[]
+  DANH_GIA           DANH_GIA[]
+  LUU_TRU_KHACH      LUU_TRU_KHACH[]
+  ChatSession        ChatSession[]
 }
 
+model LUU_TRU_KHACH {
+  KH_MA          Int
+  HDONG_MA       Int
+  LA_KHACH_CHINH Boolean @default(false)
+  LA_KHACH_DAT   Boolean @default(false)
+  GHI_CHU        String?
 
-model RoomTypePolicy {
-  roomTypeId Int       @map("ID_LP")
-  key        PolicyKey @map("KHOA")
-  timeValue    DateTime? @db.Time(0)   @map("GIA_TRI_GIO")
-  decimalValue Decimal?  @db.Decimal(12,2) @map("GIA_TRI_SO")
+  HOP_DONG_DAT_PHONG HOP_DONG_DAT_PHONG @relation(fields: [HDONG_MA], references: [HDONG_MA], onDelete: Cascade)
+  KHACH_HANG         KHACH_HANG         @relation(fields: [KH_MA], references: [KH_MA], onDelete: Restrict)
 
-  roomType   RoomType  @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
-
-  @@id([roomTypeId, key])
-  @@map("LP_CHINH_SACH")
+  @@id([HDONG_MA, KH_MA])
+  @@index([KH_MA])
+  @@index([HDONG_MA, LA_KHACH_CHINH])
+  @@index([HDONG_MA, LA_KHACH_DAT])
 }
 
-// ---------- USER (đã gộp KHÁCH) ----------
-model User {
-  id        Int      @id @default(autoincrement()) @map("ID_USER")
-  role      UserRole @default(GUEST) @map("CHUC_VU_USER")
+model NHAN_VIEN {
+  NV_MA        Int       @id @default(autoincrement())
+  NV_HOTEN     String
+  NV_EMAIL     String?   @unique
+  NV_SDT       String    @unique
+  NV_NGAYSINH  DateTime?
+  NV_GIOITINH  String?
+  NV_CHUCVU    String // Lễ tân / Quản lý / Admin...
+  NV_TAIKHOAN  String    @unique
+  NV_MATKHAU   String
+  NV_TRANGTHAI String    @default("DANG_LAM")
+  NV_NGAYTAO   DateTime  @default(now())
+  NV_NGAYSUA   DateTime  @updatedAt
 
-  // cho phép null để hỗ trợ khách chưa đăng ký tài khoản
-  username  String?  @unique @map("USERNAME")
-  password  String?  @map("MATKHAU_USER")
-
-  // hồ sơ (gộp từ Guest)
-  fullName  String?  @map("HOTEN")
-  phone     String?  @unique @map("SODIENTHOAI")
-  email     String?  @map("EMAIL")
-  address   String?  @map("DIACHI")
-  idCard    String?  @map("CCCD")
-
-  // quan hệ
-  createdReservations Reservation[] @relation("ReservationCreatedBy")
-  handledReservations Reservation[] @relation("ReservationHandledBy")
-  guestReservations   Reservation[] @relation("ReservationGuest")
-
-  invoices  Invoice[]     @relation("InvoiceCreator")
-  updatedPolicies HotelPolicy[] @relation("PolicyUpdatedBy")
-
-  chatSessions ChatSession[]
-  // reviews/votes/replies sẽ được định nghĩa ở các model tương ứng
-  reviewsAuthored Review[]       @relation("UserReviewsAuthored")
-  reviewReplies   ReviewReply[]  @relation("UserReviewReplies")
-  reviewVotes     ReviewVote[]   @relation("UserReviewVotes")
-  promotionUsages PromotionUsage[] @relation("UserPromotionUsages")
-
-  @@map("USERS")
+  HOP_DONG_DAT_PHONG HOP_DONG_DAT_PHONG[]
+  HOA_DON            HOA_DON[]
+  PHAN_HOI           PHAN_HOI[]
+  CHI_TIET_SU_DUNG   CHI_TIET_SU_DUNG[]
+  CHI_TIET_DICH_VU   CHI_TIET_DICH_VU[]
 }
-
-
 
 // ---------- ĐẶT PHÒNG ----------
-model Reservation {
-  id          Int       @id @default(autoincrement()) @map("ID_HOPDONG")
-  guestId     Int       @map("ID_KH")
-  createdByUserId    Int?      @map("CREATED_BY_USER_ID")    // khách hoặc lễ tân tạo
-  handledByUserId    Int?      @map("HANDLED_BY_USER_ID")    // lễ tân phụ trách
-  checkInPlan DateTime  @map("NGAYDAT")
-  checkOutPlan DateTime @map("NGAYTRA")
-  checkInAt   DateTime? @map("CHECKIN_AT")
-  checkOutAt  DateTime? @map("CHECKOUT_AT")
-  status      ResStatus @default(PENDING) @map("TRANG_THAI_HDONG")
-  createdAt   DateTime  @default(now()) @map("TAO_NGAY")
-  updatedAt   DateTime? @map("SUA_NGAY")
-  note        String?   @map("GHICHU_HDDP")
+model HOP_DONG_DAT_PHONG {
+  HDONG_MA Int  @id @default(autoincrement())
+  KH_MA    Int
+  NV_MA    Int?
+  HT_MA    Int
 
-  guest User  @relation("ReservationGuest",fields: [guestId], references: [id])
-  createdBy User? @relation("ReservationCreatedBy", fields: [createdByUserId], references: [id])
-  handledBy User? @relation("ReservationHandledBy", fields: [handledByUserId], references: [id])
+  HDONG_NGAYDAT      DateTime
+  HDONG_NGAYTRA      DateTime
+  HDONG_NGAYTHUCNHAN DateTime?
+  HDONG_NGAYTHUCTRA  DateTime?
 
-  usages    ReservationUsage[]
-  services  ReservationService[]
-  invoiceLinks InvoiceReservation[]
-  reviews   Review[]
+  HDONG_TONGTIENDUKIEN Decimal @default(0) @db.Decimal(14, 2)
+  HDONG_TILECOCAPDUNG  Decimal @default(0) @db.Decimal(5, 2)
+  HDONG_TIENCOCYEUCAU  Decimal @default(0) @db.Decimal(14, 2)
 
-  promoUsages PromotionUsage[] @relation("ReservationPromotionUsages")
+  HDONG_TRANG_THAI TRANGTHAI_HOPDONG @default(PENDING)
+  HDONG_TAO_LUC    DateTime          @default(now())
+  HDONG_SUA_LUC    DateTime?
+  HDONG_GHICHU     String?
 
-  @@index([guestId, status], map: "idx_res_guest_status")
-  @@index([checkInPlan, checkOutPlan], map: "idx_res_dates")
-  @@map("HOP_DONG_DAT_PHONG")
+  KHUYEN_MAI_SU_DUNG KHUYEN_MAI_SU_DUNG?
+  DANH_GIA           DANH_GIA?
+
+  CHI_TIET_SU_DUNG CHI_TIET_SU_DUNG[]
+  CHI_TIET_DICH_VU CHI_TIET_DICH_VU[]
+  LIEN_KET         HOA_DON_HOP_DONG[]
+
+  KHACH_HANG     KHACH_HANG      @relation(fields: [KH_MA], references: [KH_MA])
+  NHAN_VIEN      NHAN_VIEN?      @relation(fields: [NV_MA], references: [NV_MA])
+  HINH_THUC_THUE HINH_THUC_THUE  @relation(fields: [HT_MA], references: [HT_MA])
+  LUU_TRU_KHACH  LUU_TRU_KHACH[]
+
+  @@index([KH_MA, HDONG_TRANG_THAI])
+  @@index([HDONG_NGAYDAT, HDONG_NGAYTRA])
 }
 
-// Chi tiết sử dụng: 1 dòng = 1 đêm (NIGHT) hoặc 1 block giờ (HOUR)
-model ReservationUsage {
-  id            Int       @id @default(autoincrement()) @map("ID_CTDP")
-  reservationId Int       @map("ID_HOPDONG")
-  roomId        Int       @map("ID_PHONG")
-  unit          UsageUnit @map("CTDP_DONVI")       // NIGHT | HOUR
-  date          DateTime? @map("NGAY_DA_O")       // dùng khi unit = NIGHT (1 đêm)
-  startAt       DateTime? @map("O_TU_GIO")        // dùng khi unit = HOUR
-  endAt         DateTime? @map("O_DEN_GIO")       // dùng khi unit = HOUR
-  quantity      Int       @map("SO_LUONG_GIO")       // NIGHT: 1; HOUR: số giờ tính tiền (đã làm tròn)
-  unitPrice     Decimal  @db.Decimal(12,2)   @map("DON_GIA_DP")
-  amount        Decimal  @db.Decimal(12,2)   @map("CTDP_THANH_TIEN")
+//vì các cột thời gian có thể NULL, hãy đảm bảo logic ở code: THEO_NGAY ⇒ chỉ set CTSD_NGAY_DA_O, để 2 cột giờ NULL.THEO_GIO ⇒ chỉ set O_TU_GIO, O_DEN_GIO, để NGAY_DA_O NULL
+model CHI_TIET_SU_DUNG {
+  CTSD_STT       Int
+  HDONG_MA       Int
+  PHONG_MA       Int
+  CTSD_NGAY_DA_O DateTime? // dùng khi DONVI = NIGHT (1 đêm)
+  CTSD_O_TU_GIO  DateTime? // dùng khi DONVI = HOUR
+  CTSD_O_DEN_GIO DateTime? // dùng khi DONVI = HOUR
+  CTSD_SO_LUONG  Int
+  CTSD_DON_GIA   Decimal   @db.Decimal(12, 2)
+  CTSD_TONG_TIEN Decimal   @db.Decimal(12, 2)
 
-  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  room        Room        @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  CTSD_TRANGTHAI CTSD_TrangThai @default(ACTIVE)
+  CTSD_HUY_LUC   DateTime?
+  CTSD_HUY_LYDO  String?
+  CTSD_HUY_NV    Int?
 
-  @@unique([reservationId, roomId, unit, date])
-  @@index([reservationId, roomId, unit])
-  @@index([roomId, unit, date])
-  @@map("CHI_TIET_SU_DUNG")
+  CHI_TIET_DICH_VU CHI_TIET_DICH_VU[] @relation("CTSD_to_CTDV")
+
+  HOP_DONG_DAT_PHONG HOP_DONG_DAT_PHONG @relation(fields: [HDONG_MA], references: [HDONG_MA], onDelete: Cascade)
+  PHONG              PHONG              @relation(fields: [PHONG_MA], references: [PHONG_MA], onDelete: Restrict)
+  HUY_NV             NHAN_VIEN?         @relation(fields: [CTSD_HUY_NV], references: [NV_MA])
+
+  @@id([HDONG_MA, PHONG_MA, CTSD_STT])
+  @@unique([HDONG_MA, PHONG_MA, CTSD_NGAY_DA_O], map: "uniq_ctsd_night")
+  @@unique([HDONG_MA, PHONG_MA, CTSD_O_TU_GIO, CTSD_O_DEN_GIO], map: "uniq_ctsd_hour")
 }
 
 // ---------- DỊCH VỤ ----------
-model ServiceCategory {
-  id   Int    @id @default(autoincrement()) @map("ID_LOAIDICHVU")
-  name String @map("TEN_LOAIDICHVU")
-  services Service[]
+model LOAI_DICH_VU {
+  LDV_MA  Int    @id @default(autoincrement())
+  LDV_TEN String
 
-  @@map("LOAI_DICH_VU")
+  DICH_VU DICH_VU[]
 }
 
-model Service {
-  id        Int      @id @default(autoincrement()) @map("ID_DV")
-  categoryId Int     @map("ID_LOAIDICHVU")
-  name      String   @map("TEN_DV")
-  price     Decimal  @db.Decimal(12,2) @map("DONGIA_DV")
-  cost      Decimal? @db.Decimal(12,2) @map("GIAVON_DV")
-  stock     Int?     @map("TONKHO_DV")
-  unit      String?  @map("DONVI_DV")
-  ratingAvg   Decimal? @db.Decimal(3,2) @default(0) @map("DG_SAO_TB")
-  ratingCount Int      @default(0)      @map("DG_SO_LUONG")
+model DICH_VU {
+  DV_MA     Int     @id @default(autoincrement())
+  LDV_MA    Int
+  DV_TEN    String
+  DV_DONGIA Decimal @db.Decimal(12, 2)
 
-  used      ReservationService[]
-  category ServiceCategory @relation(fields: [categoryId], references: [id])
-  reviews   Review[] @relation("ServiceReviews")
-
-  @@map("DICH_VU")
+  CHI_TIET_DICH_VU CHI_TIET_DICH_VU[]
+  LOAI_DICH_VU     LOAI_DICH_VU       @relation(fields: [LDV_MA], references: [LDV_MA])
 }
 
-model ReservationService {
-  id            Int      @id @default(autoincrement()) @map("ID_HDDV")
-  reservationId Int      @map("ID_HOPDONG")
-  serviceId     Int      @map("ID_DV")
-  usedAt        DateTime @default(now()) @map("NGAY_HDDV")
-  quantity      Int      @map("SOLUONG_HDDV")
-  unitPrice     Decimal  @db.Decimal(12,2) @map("DONGIA_HDDV")
-  note          String?  @map("GHICHU_HDDV")
+model CHI_TIET_DICH_VU {
+  CTDV_STT Int
+  HDONG_MA Int
+  PHONG_MA Int
+  CTSD_STT Int
+  DV_MA    Int
 
-  reservation Reservation @relation(fields: [reservationId], references: [id])
-  service     Service     @relation(fields: [serviceId], references: [id])
+  CTDV_NGAY    DateTime @default(now())
+  CTDV_SOLUONG Int
+  CTDV_DONGIA  Decimal  @db.Decimal(12, 2)
+  CTDV_GHICHU  String?
 
-  @@index([reservationId])
-  @@map("CHI_TIET_DICH_VU")
+  CTDV_TRANGTHAI CTDV_TrangThai @default(ACTIVE)
+  CTDV_HUY_LUC   DateTime?
+  CTDV_HUY_LYDO  String?
+  CTDV_HUY_NV    Int?
+
+  DICH_VU                    DICH_VU             @relation(fields: [DV_MA], references: [DV_MA])
+  CTSD                       CHI_TIET_SU_DUNG    @relation(name: "CTSD_to_CTDV", fields: [HDONG_MA, PHONG_MA, CTSD_STT], references: [HDONG_MA, PHONG_MA, CTSD_STT], onDelete: Cascade)
+  HUY_NV                     NHAN_VIEN?          @relation(fields: [CTDV_HUY_NV], references: [NV_MA])
+  PHONG                      PHONG?              @relation(fields: [pHONGPHONG_MA], references: [PHONG_MA])
+  pHONGPHONG_MA              Int?
+  HOP_DONG_DAT_PHONG         HOP_DONG_DAT_PHONG? @relation(fields: [hOP_DONG_DAT_PHONGHDONG_MA], references: [HDONG_MA])
+  hOP_DONG_DAT_PHONGHDONG_MA Int?
+
+  @@id([HDONG_MA, PHONG_MA, CTSD_STT, DV_MA, CTDV_STT])
+  @@index([HDONG_MA, PHONG_MA, CTSD_STT])
+  @@index([DV_MA, CTDV_NGAY])
+  @@index([HDONG_MA])
+}
+
+//-----------KHUYẾN MÃI---------------
+
+model KHUYEN_MAI {
+  ID_KM         Int           @id @default(autoincrement()) @map("ID_KM")
+  KM_MA         String        @unique
+  KM_TEN        String
+  KM_MOTA       String
+  KM_KIEUAPDUNG KM_KieuApDung
+  KM_GIA_TRI    Decimal       @db.Decimal(12, 2) // 5 = 5% nếu PERCENT
+  KM_TU         DateTime
+  KM_DEN        DateTime?
+  KM_HIEU_LUC   Boolean
+
+  KHUYEN_MAI_SU_DUNG KHUYEN_MAI_SU_DUNG[]
+}
+
+model KHUYEN_MAI_SU_DUNG {
+  ID_KM          Int
+  HDONG_MA       Int
+  KM_SOTIEN_GIAM Decimal  @db.Decimal(12, 2)
+  KM_NGAY_SD     DateTime @default(now())
+
+  KHUYEN_MAI         KHUYEN_MAI         @relation(fields: [ID_KM], references: [ID_KM], onDelete: Restrict)
+  HOP_DONG_DAT_PHONG HOP_DONG_DAT_PHONG @relation(fields: [HDONG_MA], references: [HDONG_MA], onDelete: Cascade)
+
+  @@id([ID_KM, HDONG_MA]) // 1 mã X 1 HĐ: duy nhất
+  @@unique([HDONG_MA]) // mỗi HĐ chỉ có 1 mã
+  @@index([ID_KM])
+}
+
+//------ĐÁNH GIÁ-------
+
+model DANH_GIA {
+  DG_MA    Int @id @default(autoincrement())
+  KH_MA    Int
+  HDONG_MA Int
+
+  DG_SAO      Int // 1..5 (check ở code)
+  DG_TIEU_DE  String
+  DG_NOI_DUNG String? @db.Text
+
+  DG_TRANG_THAI DG_TrangThai @default(PUBLISHED)
+  DG_TAO_LUC    DateTime     @default(now())
+
+  DINH_KEMS DINH_KEM_DANH_GIA[]
+  PHAN_HOI  PHAN_HOI?
+
+  HOP_DONG_DAT_PHONG HOP_DONG_DAT_PHONG @relation(fields: [HDONG_MA], references: [HDONG_MA], onDelete: Cascade)
+  KHACH_HANG         KHACH_HANG         @relation(fields: [KH_MA], references: [KH_MA], onDelete: Restrict)
+
+  @@unique([HDONG_MA])
+  @@index([HDONG_MA, DG_TRANG_THAI])
+}
+
+model DINH_KEM_DANH_GIA {
+  DKDG_MA       Int        @id @default(autoincrement())
+  DG_MA         Int
+  DKDG_LOAI     MEDIA_Loai
+  DKDG_URL      String
+  DKDG_CHUTHICH String?
+
+  DANH_GIA DANH_GIA @relation(fields: [DG_MA], references: [DG_MA], onDelete: Cascade)
+}
+
+model PHAN_HOI {
+  PH_MA      Int      @id @default(autoincrement())
+  DG_MA      Int      @unique // 1 review -> 1 phản hồi (nếu muốn cho nhiều phản hồi, bỏ @unique)
+  NV_MA      Int
+  PH_NOIDUNG String   @db.Text
+  PH_TAO_LUC DateTime @default(now())
+
+  DANH_GIA  DANH_GIA  @relation(fields: [DG_MA], references: [DG_MA], onDelete: Cascade)
+  NHAN_VIEN NHAN_VIEN @relation(fields: [NV_MA], references: [NV_MA], onDelete: Restrict)
 }
 
 // ---------- HÓA ĐƠN & THANH TOÁN ----------
-model Invoice {
-  id          Int           @id @default(autoincrement()) @map("ID_HD")
-  userId      Int           @map("ID_USER")
-  subTotal    Decimal       @db.Decimal(12,2) @default(0) @map("TONG_TIEN")
-  grandTotal  Decimal       @db.Decimal(12,2) @default(0) @map("THANH_TIEN_HDON")
-  status      InvoiceStatus @default(ISSUED) @map("TRANG_THAI_HDON")
+model HOA_DON {
+  HDON_MA           Int              @id @default(autoincrement())
+  NV_MA             Int
+  HDON_TONG_TIEN    Decimal          @default(0) @db.Decimal(12, 2)
+  HDON_GIAM_GIA     Decimal          @default(0) @db.Decimal(12, 2)
+  HDON_PHI          Decimal          @default(0) @db.Decimal(12, 2)
+  HDON_COC_DA_TRU   Decimal          @default(0) @db.Decimal(12, 2)
+  HDON_THANH_TIEN   Decimal          @default(0) @db.Decimal(12, 2)
+  HDON_CHITIET_JSON Json
+  HDON_TRANG_THAI   TRANGTHAI_HOADON @default(ISSUED)
+  HDON_TAO_LUC      DateTime         @default(now())
 
-  user        User        @relation("InvoiceCreator", fields: [userId], references: [id])
-  reservations InvoiceReservation[] 
-  items     InvoiceItem[]
-  payments  Payment[]
-  promoUsages PromotionUsage[] @relation("InvoicePromotionUsages")
-
-  @@map("HOA_DON")
+  NHAN_VIEN  NHAN_VIEN          @relation(fields: [NV_MA], references: [NV_MA])
+  LIEN_KET   HOA_DON_HOP_DONG[]
+  THANH_TOAN THANH_TOAN[]
 }
 
-model InvoiceItem {
-  id        Int      @id @default(autoincrement()) @map("ID_CTHD")
-  invoiceId Int      @map("ID_HD")
-  type      ItemType @map("LOAI_SP")
-  description String @map("MOTA")
-  quantity  Int      @default(1) @map("SO_LUONG")
-  unitPrice Decimal  @db.Decimal(12,2) @map("DON_GIA")
+model THANH_TOAN {
+  TT_MA                   Int           @id @default(autoincrement())
+  HDON_MA                 Int
+  TT_PHUONG_THUC          PHUONGTHUC_TT
+  TT_NHA_CUNG_CAP         String?
+  TT_TRANG_THAI_GIAO_DICH TRANGTHAI_TT  @default(INITIATED)
+  TT_SO_TIEN              Decimal       @db.Decimal(12, 2)
+  TT_SO_TIEN_KHACH_DUA    Decimal?      @db.Decimal(12, 2)
+  TT_TIEN_THUA            Decimal?      @db.Decimal(12, 2)
+  TT_NGAY_GIO             DateTime      @default(now())
+  TT_NGAY_CAP_NHAT        DateTime      @updatedAt
+  TT_MA_GIAO_DICH         String?
+  TT_GHI_CHU              String?
 
-  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+  HOA_DON HOA_DON @relation(fields: [HDON_MA], references: [HDON_MA])
 
-  @@index([invoiceId, type])
-  @@map("CHI_TIET_HOA_DON")
-}
-
-model Payment {
-  id        Int       @id @default(autoincrement()) @map("ID_TT")
-  invoiceId Int       @map("ID_HD")
-  method    PayMethod @map("TT_PHUONG_THUC")
-  state     PayState  @default(SUCCEEDED) @map("TT_TRANG_THAI_GIAO_DICH")
-  amount    Decimal   @db.Decimal(12,2) @map("TT_SO_TIEN_KHACH_DUA")
-  paidAt    DateTime  @default(now()) @map("TT_NGAY_GIO")
-  transCode String?   @map("TT_MA_GIAO_DICH")
-
-  invoice Invoice @relation(fields: [invoiceId], references: [id])
-
-  @@index([invoiceId, state])
-  @@map("THANH_TOAN")
+  @@index([HDON_MA, TT_TRANG_THAI_GIAO_DICH])
 }
 
 // Bảng nối: gộp nhiều Reservation vào 1 Invoice (và ngược lại)
-model InvoiceReservation {
-  invoiceId     Int
-  reservationId Int
+model HOA_DON_HOP_DONG {
+  HDON_MA  Int
+  HDONG_MA Int
 
-  invoice     Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  HOA_DON            HOA_DON            @relation(fields: [HDON_MA], references: [HDON_MA], onDelete: Cascade)
+  HOP_DONG_DAT_PHONG HOP_DONG_DAT_PHONG @relation(fields: [HDONG_MA], references: [HDONG_MA], onDelete: Cascade)
 
-  @@id([invoiceId, reservationId])
-  @@map("HOA_DON_HOP_DONG")
+  @@id([HDON_MA, HDONG_MA])
 }
 
 // ---------- CHATBOT ----------
@@ -438,18 +511,18 @@ model ChatSession {
   guestId   Int?     @map("ID_KH")
   startedAt DateTime @default(now()) @map("STARTED_AT")
 
-  guest     User?   @relation(fields: [guestId], references: [id])
-  messages  ChatMessage[]
+  guest    KHACH_HANG?   @relation(fields: [guestId], references: [KH_MA])
+  messages ChatMessage[]
 
   @@map("CHAT_SESSION")
 }
 
 model ChatMessage {
-  id         BigInt   @id @default(autoincrement()) @map("ID_MES")
-  sessionId  Int      @map("ID_SESSION")
-  role       ChatRole @map("ROLE")
-  content    String   @map("CONTENT")
-  createdAt  DateTime @default(now()) @map("CREATED_AT")
+  id        BigInt   @id @default(autoincrement()) @map("ID_MES")
+  sessionId Int      @map("ID_SESSION")
+  role      ChatRole @map("ROLE")
+  content   String   @map("CONTENT")
+  createdAt DateTime @default(now()) @map("CREATED_AT")
 
   session ChatSession @relation(fields: [sessionId], references: [id])
 
@@ -481,121 +554,4 @@ model KbChunk {
 
   @@index([docId])
   @@map("KB_CHUNK")
-}
-
-model Review {
-  id            Int           @id @default(autoincrement()) @map("ID_DG")
-
-  authorId      Int           @map("ID_USER")
-  author        User          @relation("UserReviewsAuthored", fields: [authorId], references: [id], onDelete: Cascade)
-
-  reservationId Int?          @map("ID_HOPDONG")
-  reservation   Reservation?  @relation(fields: [reservationId], references: [id], onDelete: SetNull)
-
-  target        ReviewTarget  @map("DG_DOITUONG")
-  roomTypeId    Int?          @map("ID_LP")
-  roomType      RoomType?     @relation("RoomTypeReviews", fields: [roomTypeId], references: [id], onDelete: SetNull)
-  serviceId     Int?          @map("ID_DV")
-  service       Service?      @relation("ServiceReviews", fields: [serviceId], references: [id], onDelete: SetNull)
-
-  rating        Int           @map("DG_SAO")
-  title         String?       @map("DG_TIEUDE")
-  content       String?       @db.Text @map("DG_NOIDUNG")
-  isAnonymous   Boolean       @default(false) @map("DG_AN_DANH")
-  isVerified    Boolean       @default(false) @map("DG_DA_XACMINH")
-
-  status        ReviewStatus  @default(PENDING) @map("DG_TRANGTHAI")
-  createdAt     DateTime      @default(now()) @map("TAO_LUC")
-  publishedAt   DateTime?     @map("CONG_BO_LUC")
-
-  helpfulUp     Int           @default(0) @map("DG_HUUICH_UP")
-  helpfulDown   Int           @default(0) @map("DG_HUUICH_DOWN")
-  helpfulScore  Int           @default(0) @map("DG_HUUICH_SCORE")
-
-  media         ReviewMedia[]
-  votes         ReviewVote[]
-  reply         ReviewReply?
-
-  @@unique([authorId, target, roomTypeId, serviceId, reservationId], map: "uniq_author_target_resv")
-  @@index([status, target], map: "idx_review_status_target")
-  @@index([roomTypeId], map: "idx_review_roomtype")
-  @@index([serviceId], map: "idx_review_service")
-  @@map("DANH_GIA")
-}
-
-model ReviewMedia {
-  id        Int        @id @default(autoincrement()) @map("ID_DG_MEDIA")
-  reviewId  Int        @map("ID_DG")
-  review    Review     @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-
-  type      MediaType  @map("LOAI")
-  url       String     @map("URL")
-  caption   String?    @map("CHUTHICH")
-  createdAt DateTime   @default(now()) @map("TAO_LUC")
-
-  @@index([reviewId])
-  @@map("DG_MEDIA")
-}
-
-model ReviewReply {
-  id        Int      @id @default(autoincrement()) @map("ID_PH")
-  reviewId  Int      @unique @map("ID_DG")
-  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-
-  userId    Int      @map("ID_USER")
-  user      User     @relation("UserReviewReplies", fields: [userId], references: [id], onDelete: Restrict)
-
-  content   String   @db.Text @map("NOIDUNG")
-  createdAt DateTime @default(now()) @map("TAO_LUC")
-
-  @@map("DG_PHAN_HOI")
-}
-
-model ReviewVote {
-  reviewId  Int      @map("ID_DG")
-  voterId   Int      @map("ID_USER")
-  value     Int      @default(1) @map("GIA_TRI")
-  createdAt DateTime @default(now()) @map("TAO_LUC")
-
-  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-  voter  User   @relation("UserReviewVotes", fields: [voterId], references: [id], onDelete: Cascade)
-
-  @@id([reviewId, voterId])                // composite PK: 1 người chỉ vote 1 lần/review
-  @@index([reviewId], map: "idx_vote_review")
-  @@map("DG_BO_PHIEU")
-}
-
-// ---------- KHUYẾN MÃI (gọn vừa – 2 bảng) ----------
-model Promotion {
-  id        Int        @id @default(autoincrement()) @map("ID_KM")
-  code      String     @unique @map("MA_KM")
-  type      PromoType  @map("KM_LOAI")
-  value     Decimal    @db.Decimal(12,2) @map("KM_GIA_TRI")  // 5 = 5% nếu PERCENT
-  startAt   DateTime?  @map("KM_TU")
-  endAt     DateTime?  @map("KM_DEN")
-  isActive  Boolean    @default(true) @map("KM_HIEULUC")
-
-  usages    PromotionUsage[]
-
-  @@map("KHUYEN_MAI")
-}
-
-model PromotionUsage {
-  promotionId   Int   @map("ID_KHUYEN_MAI")
-  reservationId Int   @map("ID_HOPDONG")
-  userId        Int   @map("ID_USER")
-  invoiceId     Int?  @map("ID_HDON")         // (tuỳ) link hóa đơn có dòng DISCOUNT
-  amount        Decimal @db.Decimal(12,2) @map("KM_SOTIEN_GIAM")
-  appliedAt     DateTime @default(now()) @map("KM_NGAY_SD")
-
-  promotion   Promotion   @relation(fields: [promotionId], references: [id], onDelete: Restrict)
-  reservation Reservation @relation("ReservationPromotionUsages", fields: [reservationId], references: [id], onDelete: Cascade)
-  user        User        @relation("UserPromotionUsages", fields: [userId], references: [id], onDelete: Restrict)
-  invoice     Invoice?    @relation("InvoicePromotionUsages", fields: [invoiceId], references: [id], onDelete: SetNull)
-
-  @@id([promotionId, reservationId])   // mỗi HĐ chỉ dùng 1 lần mã này
-  @@index([reservationId])
-  @@index([userId])
-  @@index([invoiceId])
-  @@map("KHUYEN_MAI_SU_DUNG")
 }
