@@ -1,12 +1,11 @@
-import { Outfit } from 'next/font/google';
+import { Commissioner } from 'next/font/google';
 import './globals.css';
 
 import { SidebarProvider } from '@/context/SidebarContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 
-const outfit = Outfit({
-  subsets: ["latin"],
-});
+
+const openSans = Commissioner({ subsets: ['latin'], weight: ['400', '500', '600'] });
 
 export default function RootLayout({
   children,
@@ -15,7 +14,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${outfit.className} dark:bg-gray-900`}>
+      <body className={`${openSans.className} dark:bg-gray-900`}>
         <ThemeProvider>
           <SidebarProvider>{children}</SidebarProvider>
         </ThemeProvider>

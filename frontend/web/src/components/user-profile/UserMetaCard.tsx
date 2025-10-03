@@ -132,7 +132,7 @@ export default function UserMetaCard() {
                 fill=""
               />
             </svg>
-            Edit
+            Cập nhật
           </button>
         </div>
       </div>
