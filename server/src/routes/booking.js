@@ -1,7 +1,7 @@
 const r = require('express').Router();
 const auth = require('../middlewares/auth');
 const permit = require('../middlewares/permit');
-const ctl = require('../controllers/bookings.controller');
+const ctl = require('../controllers/booking');
 
 const staffOrAdmin = permit('ADMIN', 'RECEPTIONIST');
 r.use(auth);

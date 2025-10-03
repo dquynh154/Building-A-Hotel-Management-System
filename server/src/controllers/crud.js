@@ -41,7 +41,7 @@ exports.crud = (
         // =========== search ===========
         if (search && searchFields.length) {
             where.OR = searchFields.map((f) => ({
-                [f]: { contains: String(search), mode: 'insensitive' },
+                [f]: { contains: String(search)},
             }));
         }
 

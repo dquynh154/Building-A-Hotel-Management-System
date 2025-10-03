@@ -62,3 +62,14 @@ exports.changePassword = async (req, res, next) => {
         return ok(res, { message: 'Đổi mật khẩu thành công' });
     } catch (e) { next(e); }
 };
+exports.me = async (req, res, next) => {
+    try {
+        if (!req.user?.sub) return unauth(res);
+        const nv = await prisma.nHAN_VIEN.findUnique({
+            where: { NV_MA: req.user.sub },
+            select: { NV_MA: true, NV_HOTEN: true, NV_CHUCVU: true },
+        });
+        if (!nv) return unauth(res);
+        return ok(res, { staff: nv });
+    } catch (e) { next(e); }
+};

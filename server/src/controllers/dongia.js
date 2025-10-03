@@ -73,6 +73,28 @@ async function create(req, res, next) {
                 .then(r => { if (!r) { const e = new Error('TD_MA không tồn tại'); e.status = 400; throw e; } }),
         ]);
 
+        
+        const td = await prisma.tHOI_DIEM.findUnique({
+            where: { TD_MA: Number(TD_MA) },
+            include: { THOI_DIEM_BASE: true, THOI_DIEM_SPECIAL: true },
+        });
+        if (!td) { const e = new Error('TD_MA không tồn tại'); e.status = 400; throw e; }
+
+        // Nếu là BASE: chặn duplicate BASE cho cùng (LP, HT)
+        if (td.THOI_DIEM_BASE) {
+            const existsBase = await prisma.dON_GIA.findFirst({
+                where: {
+                    LP_MA: Number(LP_MA),
+                    HT_MA: Number(HT_MA),
+                    THOI_DIEM: { THOI_DIEM_BASE: { isNot: null } },
+                }
+            });
+            if (existsBase) {
+                const e = new Error('Mỗi cặp LP_MA×HT_MA chỉ được 1 đơn giá BASE');
+                e.status = 409; throw e;
+            }
+        }
+
         const row = await prisma.dON_GIA.create({
             data: {
                 LP_MA: Number(LP_MA),

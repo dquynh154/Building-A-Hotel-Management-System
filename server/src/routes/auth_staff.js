@@ -8,5 +8,5 @@ r.post('/login', c.login);
 
 // Đổi mật khẩu (nhân viên đã đăng nhập)
 r.post('/change-password', auth, permit('ADMIN', 'RECEPTIONIST'), c.changePassword);
-
+r.get('/me', auth, permit('ADMIN', 'RECEPTIONIST'), c.me);
 module.exports = r;

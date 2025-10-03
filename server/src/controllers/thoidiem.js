@@ -24,6 +24,15 @@ async function assertNoSpecialOverlap(from, to, excludeTdMa = null) {
     }
 }
 
+async function assertNoOtherBase() {
+    const existed = await prisma.tHOI_DIEM_BASE.findFirst({
+        select: { TD_MA: true }
+    });
+    if (existed) {
+        const e = new Error('Đã tồn tại THOI_DIEM_BASE. Chỉ được phép có 1 BASE duy nhất trong hệ thống.');
+        e.status = 409; throw e;
+    }
+}
 
 const thoiDiem = crud('tHOI_DIEM', {
     pk: 'TD_MA',
@@ -37,6 +46,7 @@ const thoiDiem = crud('tHOI_DIEM', {
         delete data.type; delete data.base; delete data.special;
 
         if (type === 'BASE') {
+            await assertNoOtherBase();
             data.THOI_DIEM_BASE = { create: { TD_MOTA_CHUNG: base.TD_MOTA_CHUNG ?? null } };
         } else if (type === 'SPECIAL') {
             const from = toDate(special.TD_NGAY_BAT_DAU);
@@ -67,14 +77,32 @@ const thoiDiem = crud('tHOI_DIEM', {
         const special = data.special || null;
         delete data.type; delete data.base; delete data.special;
 
-        // BASE
+        // // BASE
+        // if (type === 'BASE' || base) {
+        //     // chuyển sang BASE => xóa SPECIAL
+        //     if (type === 'BASE') data.THOI_DIEM_SPECIAL = { delete: true };
+        //     data.THOI_DIEM_BASE = {
+        //         upsert: {
+        //             update: { TD_MOTA_CHUNG: base?.TD_MOTA_CHUNG ?? null },
+        //             create: { TD_MOTA_CHUNG: base?.TD_MOTA_CHUNG ?? null },
+        //         }
+        //     };
+        // }
+
         if (type === 'BASE' || base) {
-            // chuyển sang BASE => xóa SPECIAL
-            if (type === 'BASE') data.THOI_DIEM_SPECIAL = { delete: true };
+            // Nếu record này CHƯA phải BASE và bạn muốn chuyển nó thành BASE → cũng phải chặn
+            const self = await prisma.tHOI_DIEM.findUnique({
+                where: { TD_MA: Number(id) },
+                select: { THOI_DIEM_BASE: { select: { TD_MA: true } } }
+            });
+            if (!self?.THOI_DIEM_BASE) {
+                await assertNoOtherBase(); // đã có BASE khác ⇒ 409
+            }
+            data.THOI_DIEM_SPECIAL = { delete: true }; // chuyển kiểu → xoá SPECIAL nếu có
             data.THOI_DIEM_BASE = {
                 upsert: {
                     update: { TD_MOTA_CHUNG: base?.TD_MOTA_CHUNG ?? null },
-                    create: { TD_MOTA_CHUNG: base?.TD_MOTA_CHUNG ?? null },
+                    create: { TD_MOTA_CHUNG: base?.TD_MOTA_CHUNG ?? null }
                 }
             };
         }
