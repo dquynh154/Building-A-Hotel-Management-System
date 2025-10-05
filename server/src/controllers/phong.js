@@ -67,5 +67,54 @@ const phong = crud('pHONG', {
     eqFields: ['PHONG_TRANGTHAI', 'LP_MA', 'TANG_MA'],
 });
 
+phong.countByLoaiPhong = async (req, res, next) => {
+    try {
+        // Nhận filter từ query
+        const q = req.query || {};
+        const where = {};
 
+        // search theo tên phòng
+        if (q.search) {
+            where.PHONG_TEN = { contains: String(q.search).trim(), mode: 'insensitive' };
+        }
+        // filter trạng thái (ví dụ: AVAILABLE, OCCUPIED, ...)
+        if (q['eq.PHONG_TRANGTHAI']) {
+            where.PHONG_TRANGTHAI = String(q['eq.PHONG_TRANGTHAI']);
+        }
+        // filter theo tầng nếu cần
+        if (q['eq.TANG_MA']) {
+            where.TANG_MA = Number(q['eq.TANG_MA']);
+        }
+        // (tuỳ) filter theo LP_MA cụ thể
+        if (q['eq.LP_MA']) {
+            where.LP_MA = Number(q['eq.LP_MA']);
+        }
+
+        // groupBy để đếm
+        const grouped = await prisma.pHONG.groupBy({
+            by: ['LP_MA'],
+            _count: { _all: true },
+            where,
+        });
+        const countMap = Object.fromEntries(
+            grouped.map(g => [g.LP_MA, g._count._all])
+        );
+
+        // Lấy danh sách loại phòng để trả cả loại không có phòng (count=0)
+        const lpList = await prisma.lOAI_PHONG.findMany({
+            select: { LP_MA: true, LP_TEN: true },
+            orderBy: { LP_MA: 'asc' },
+        });
+
+        const rows = lpList.map(lp => ({
+            LP_MA: lp.LP_MA,
+            LP_TEN: lp.LP_TEN,
+            count: countMap[lp.LP_MA] ?? 0,
+        }));
+
+        res.json(rows);
+    } catch (err) {
+        next(err);
+    }
+};
 module.exports = phong;

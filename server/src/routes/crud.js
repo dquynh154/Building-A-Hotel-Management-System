@@ -40,16 +40,69 @@ const loaiPhong = crud('lOAI_PHONG', {
         if (!data.LP_TEN || !String(data.LP_TEN).trim()) {
             const err = new Error('Vui lòng điền tên loại phòng'); err.status = 400; throw err;
         }
+        const v = Number(data.LP_SONGUOI);
+        if (!Number.isInteger(v) || v < 1) {
+            const e = new Error('Sức chứa bắt buộc và phải là số nguyên ≥ 1'); e.status = 400; throw e;
+        }
+        data.LP_TEN = String(data.LP_TEN).trim();
+        data.LP_SONGUOI = v;
+        return data;
+    },
+    beforeUpdate: async (data) => {
+        if (data.LP_SONGUOI != null) {
+            const v = Number(data.LP_SONGUOI);
+            if (!Number.isInteger(v) || v < 1) {
+                const e = new Error('Sức chứa phải là số nguyên ≥ 1'); e.status = 400; throw e;
+            }
+            data.LP_SONGUOI = v;
+        }
         return data;
     },
     searchFields: ['LP_TEN'],
     eqFields: [],
 });
+loaiPhong.listWithCount = async (req, res, next) => {
+    try {
+        const q = req.query || {};
+
+        // where cho PHONG (để lọc count theo trạng thái, tầng, search tên phòng,… nếu muốn)
+        const roomWhere = {};
+        if (q['eq.PHONG_TRANGTHAI']) roomWhere.PHONG_TRANGTHAI = String(q['eq.PHONG_TRANGTHAI']);
+        if (q['eq.TANG_MA']) roomWhere.TANG_MA = Number(q['eq.TANG_MA']);
+        if (q.search) roomWhere.PHONG_TEN = { contains: String(q.search).trim(), mode: 'insensitive' };
+
+        // 1) Đếm theo LP_MA bên bảng PHONG
+        const grouped = await prisma.pHONG.groupBy({
+            by: ['LP_MA'],
+            _count: { _all: true },
+            where: roomWhere,
+        });
+        const countMap = Object.fromEntries(grouped.map(g => [g.LP_MA, g._count._all]));
+
+        // 2) Lấy danh sách LOAI_PHONG rồi merge count (để loại không có phòng vẫn trả count=0)
+        const lpList = await prisma.lOAI_PHONG.findMany({
+            select: { LP_MA: true, LP_TEN: true, LP_SONGUOI: true },
+            orderBy: { LP_MA: 'asc' },
+        });
+
+        const rows = lpList.map(lp => ({
+            LP_MA: lp.LP_MA,
+            LP_TEN: lp.LP_TEN,
+            LP_SONGUOI: lp.LP_SONGUOI,
+            ROOM_COUNT: countMap[lp.LP_MA] ?? 0,
+        }));
+
+        res.json(rows);
+    } catch (err) {
+        next(err);
+    }
+};
 r.get('/loai-phong', staffOrAdmin, loaiPhong.list);
 r.get('/loai-phong/:id', staffOrAdmin, loaiPhong.get);
 r.post('/loai-phong', onlyAdmin, loaiPhong.create);
 r.put('/loai-phong/:id', onlyAdmin, loaiPhong.update);
 r.delete('/loai-phong/:id', onlyAdmin, loaiPhong.remove);
+r.get('/loai-phong/with-count', staffOrAdmin, loaiPhong.listWithCount);
 
 const tienNghi = crud('tIEN_NGHI', { 
     pk: 'TN_MA',
@@ -75,6 +128,7 @@ r.get('/phong/:id', staffOrAdmin, phong.get);
 r.post('/phong', onlyAdmin, phong.create);
 r.put('/phong/:id', onlyAdmin, phong.update);
 r.delete('/phong/:id', onlyAdmin, phong.remove);
+r.get('/phong/count-by-loaiphong', staffOrAdmin, phong.countByLoaiPhong);
 
 const loaidv = crud('lOAI_DICH_VU', {
     pk: 'LDV_MA',

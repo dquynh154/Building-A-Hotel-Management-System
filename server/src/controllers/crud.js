@@ -59,9 +59,22 @@ exports.crud = (
                 const orderBy = sort ? { [sort]: dir } : undefined;
 
                 const where = buildWhere(req);
+                const wantTotal =
+                    String(req.query.withTotal || req.query.total || '') === '1';
 
-                const rows = await model.findMany(withFields({ skip, take, where, orderBy }));
-                res.json(rows);
+                if (!wantTotal) {
+                    // Giữ hành vi cũ
+                    const rows = await model.findMany(withFields({ skip, take, where, orderBy }));
+                    return res.json(rows);
+                }
+
+                // Trả {items,total,page,take}
+                const [items, total] = await Promise.all([
+                    model.findMany(withFields({ skip, take, where, orderBy })),
+                    model.count({ where }),
+                ]);
+
+                return res.json({ items, total, page: Math.floor(skip / take) + 1, take });
             } catch (e) { next(e); }
         },
         get: async (req, res, next) => {

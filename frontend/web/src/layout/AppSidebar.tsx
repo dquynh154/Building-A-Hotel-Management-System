@@ -16,6 +16,7 @@ import {
   PlugInIcon,
   TableIcon,
   UserCircleIcon,
+  Room,
 } from "../icons/index";
 // import SidebarWidget from "./SidebarWidget";
 
@@ -31,6 +32,13 @@ const navItems: NavItem[] = [
     icon: <GridIcon />,
     name: "Bảng điều khiển",
     subItems: [{ name: "Báo cáo thống kê", path: "/admin", pro: false }],
+  },
+  {
+    icon: <Room />,
+    name: "Phòng",
+    subItems: [{ name: "Phòng & Loại phòng", path: "/admin/others-pages/phong", pro: false },
+      { name: "Thiết lập giá", path: "#", pro: false }
+    ],
   },
   {
     icon: <CalenderIcon />,
