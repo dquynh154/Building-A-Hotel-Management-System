@@ -91,21 +91,57 @@ export default function LoaiPhongEditModal({
     }
 
     // upload thêm ảnh (chọn nhiều file)
+    // async function uploadMore(e: React.ChangeEvent<HTMLInputElement>) {
+    //     const files = Array.from(e.target.files || []);
+    //     e.currentTarget.value = ''; // cho phép chọn lại cùng file
+    //     if (!files.length || !id) return;
+
+    //     const fd = new FormData();
+    //     files.forEach((f) => fd.append('files', f)); // field name: 'files'
+    //     const up = await api.post('/upload/loai-phong', fd);
+    //     const urls: string[] = up.data?.urls || [];
+
+    //     if (urls.length) {
+    //         await api.post(`/loai-phong/${id}/images`, { urls });
+    //         await reloadImages();
+    //     }
+    // }
+
     async function uploadMore(e: React.ChangeEvent<HTMLInputElement>) {
-        const files = Array.from(e.target.files || []);
-        e.currentTarget.value = ''; // cho phép chọn lại cùng file
-        if (!files.length || !id) return;
+        const picked = Array.from(e.target.files || []);
+        e.currentTarget.value = ''; // cho chọn lại cùng file lần sau
+        if (!picked.length || !id) return;
 
-        const fd = new FormData();
-        files.forEach((f) => fd.append('files', f)); // field name: 'files'
-        const up = await api.post('/upload/loai-phong', fd);
-        const urls: string[] = up.data?.urls || [];
+        try {
+            // 1) upload file lên server
+            const fd = new FormData();
+            picked.forEach(f => fd.append('files', f)); // field: 'files'
 
-        if (urls.length) {
-            await api.post(`/loai-phong/${id}/images`, { urls });
+            const up = await api.post('/upload/loai-phong', fd, {
+                // QUAN TRỌNG: để axios tự set multipart boundary
+                headers: { 'Content-Type': undefined },
+                withCredentials: true,
+            });
+
+            const urls: string[] = up.data?.urls || [];
+            if (!urls.length) {
+                setErr('Upload không trả về URL hợp lệ');
+                return;
+            }
+
+            // 2) ghi record ảnh vào DB
+            const resp = await api.post(`/loai-phong/${id}/images`, { urls });
+            // nếu route này đang onlyAdmin mà bạn login lễ tân => 403
+            // -> đổi BE thành staffOrAdmin hoặc login ADMIN
+
+            // 3) reload danh sách ảnh
             await reloadImages();
+        } catch (err: any) {
+            console.error('UPLOAD_MORE_ERR', err?.response?.status, err?.response?.data || err);
+            setErr(err?.response?.data?.message || 'Thêm ảnh thất bại');
         }
     }
+
 
     // đặt ảnh đại diện
     async function setMain(imgId: number) {

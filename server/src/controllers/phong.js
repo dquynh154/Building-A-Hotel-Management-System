@@ -50,7 +50,7 @@ const phong = crud('pHONG', {
         if (data.PHONG_TRANGTHAI != null) {
             const next = String(data.PHONG_TRANGTHAI);
             if (!['AVAILABLE', 'MAINTENANCE'].includes(next)) {
-                const e = new Error('Chỉ cho phép đổi AVAILABLE/MAINTENANCE tại CRUD. OCCUPIED/CHUA_DON đổi qua check-in/checkout');
+                const e = new Error('Chỉ cho phép đổi trạng thái Trống / Bảo trì tại khi quản lý. Đang ở / Chưa dọn chỉ đổi qua khi check-in/checkout');
                 e.status = 400; throw e;
             }
             // (tuỳ) Không cho chuyển sang AVAILABLE nếu hiện tại đang CHUA_DON:

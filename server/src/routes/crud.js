@@ -106,7 +106,7 @@ loaiPhong.listWithCount = async (req, res, next) => {
         // 2) Lấy danh sách LOAI_PHONG rồi merge count (để loại không có phòng vẫn trả count=0)
         const lpList = await prisma.lOAI_PHONG.findMany({
             select: {
-                LP_MA: true, LP_TEN: true, LP_SONGUOI: true,
+                LP_MA: true, LP_TEN: true, LP_SONGUOI: true, LP_TRANGTHAI: true,
                 images: {
                     select: { IMG_ID: true, URL: true, IS_MAIN: true, ORD: true },
                     orderBy: [{ IS_MAIN: 'desc' }, { ORD: 'asc' }, { IMG_ID: 'asc' }],
@@ -121,6 +121,7 @@ loaiPhong.listWithCount = async (req, res, next) => {
             LP_MA: lp.LP_MA,
             LP_TEN: lp.LP_TEN,
             LP_SONGUOI: lp.LP_SONGUOI,
+            LP_TRANGTHAI: lp.LP_TRANGTHAI,
             ROOM_COUNT: countMap[lp.LP_MA] ?? 0,
             images: lp.images,
         }));

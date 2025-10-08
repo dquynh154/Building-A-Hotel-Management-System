@@ -51,13 +51,15 @@ export default function PhongTable({
     htList,               // danh sách hình thức thuê
     baseByLP_HT,          // map: LP_MA -> { [HT_MA]: DG_DONGIA }  (giá cơ bản)
     specialByLP_HT,       // map: LP_MA -> { [HT_MA]: DG_DONGIA }  (giá theo TD special đã chọn) (có thể rỗng)
-    specialLabel,         // nhãn hiển thị của TD special (vd: "Noel 2025")
+    specialLabel,  
+    onRowDoubleClick,       // nhãn hiển thị của TD special (vd: "Noel 2025")
 }: {
     rows: PhongRow[];
     htList: HT[];
     baseByLP_HT: Record<number, Record<number, number | string>>;
     specialByLP_HT?: Record<number, Record<number, number | string>>;
     specialLabel?: string;
+    onRowDoubleClick?: (row: PhongRow) => void; 
 }) {
     return (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
@@ -100,7 +102,7 @@ export default function PhongTable({
 
                         <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                             {rows.map((r) => (
-                                <TableRow key={r.PHONG_MA}>
+                                <TableRow key={r.PHONG_MA} onDoubleClick={() => onRowDoubleClick?.(r)} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5">
                                     <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">
                                         {r.PHONG_MA}
                                     </TableCell>

@@ -9,10 +9,11 @@ import ComponentCard from "@/components/common/ComponentCard";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import Button from "@/components/ui/button/Button";
 import { Search, PlusIcon } from "@/icons";
-import Pagination from "@/components/tables/Pagination"; 
+import Pagination from "@/components/tables/Pagination";  // thêm import Pagination
 import PhongCreateModal from "@/components/ui/modal/PhongCreateModal";
 import LoaiPhongCreateModal from '@/components/ui/modal/LoaiPhongCreateModal';
 import LoaiPhongEditModal from "@/components/ui/modal/LoaiPhongEditModal";
+import PhongEditModal from "@/components/ui/modal/PhongEditModal";
 
 type HT = { HT_MA: number; HT_TEN: string };
 type TD = { TD_MA: number; TD_TEN: string; TD_TRANGTHAI: boolean };
@@ -159,7 +160,12 @@ export default function PhongPage() {
         setEditLoaiPhongId(row.LP_MA);
         setOpenEditLoaiPhong(true);
     };
-
+    const [editPhongId, setEditPhongId] = useState<number | null>(null);
+    const [openEditPhong, setOpenEditPhong] = useState(false);
+    const openEditRoom = (row: PhongRow) => {
+        setEditPhongId(row.PHONG_MA);   // dùng đúng key của payload phòng
+        setOpenEditPhong(true);
+    };
     
     useEffect(() => {
         // loadRooms();
@@ -296,6 +302,7 @@ export default function PhongPage() {
                                     ? tdSpecialList.find(t => t.TD_MA === tdSpecial)?.TD_TEN
                                     : undefined
                             }
+                            onRowDoubleClick={openEditRoom}
                         />
                     ) : (
                         <LoaiPhongTable
@@ -366,6 +373,13 @@ export default function PhongPage() {
                 id={editLoaiPhongId}
                 onClose={() => setOpenEditLoaiPhong(false)}
                 onUpdated={() => loadTypeRooms(/* về page hiện tại */)}
+            />
+            
+            <PhongEditModal
+                open={openEditPhong}
+                id={editPhongId}
+                onClose={() => setOpenEditPhong(false)}
+                onUpdated={() => loadRooms(/* về page hiện tại */)}
             />
 
         </div>

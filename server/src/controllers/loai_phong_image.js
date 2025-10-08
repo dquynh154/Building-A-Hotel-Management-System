@@ -25,17 +25,52 @@ exports.listByLoaiPhong = async (req, res, next) => {
     } catch (e) { next(e); }
 };
 
+// exports.addMany = async (req, res, next) => {
+//     try {
+//         const lpId = Number(req.params.id);
+//         const { urls } = req.body; // string[]
+//         if (!Array.isArray(urls) || urls.length === 0) return res.json([]);
+
+//         const created = await prisma.$transaction(
+//             urls.map((u, i) => prisma.lOAI_PHONG_IMAGE.create({
+//                 data: { LP_MA: lpId, URL: String(u), ORD: i },
+//             }))
+//         );
+//         res.status(201).json(created);
+//     } catch (e) { next(e); }
+// };
 exports.addMany = async (req, res, next) => {
     try {
         const lpId = Number(req.params.id);
         const { urls } = req.body; // string[]
         if (!Array.isArray(urls) || urls.length === 0) return res.json([]);
 
+        // Lấy ảnh hiện có để biết đã có MAIN chưa và tính ORD bắt đầu
+        const exist = await prisma.lOAI_PHONG_IMAGE.findMany({
+            where: { LP_MA: lpId },
+            select: { IMG_ID: true, IS_MAIN: true, ORD: true },
+            orderBy: [{ IS_MAIN: 'desc' }, { ORD: 'asc' }, { IMG_ID: 'asc' }],
+        });
+        const hasMain = exist.some(x => x.IS_MAIN);
+        const startOrd = exist.length;
+
+        // Tạo các record ảnh mới
         const created = await prisma.$transaction(
-            urls.map((u, i) => prisma.lOAI_PHONG_IMAGE.create({
-                data: { LP_MA: lpId, URL: String(u), ORD: i },
-            }))
+            urls.map((u, i) =>
+                prisma.lOAI_PHONG_IMAGE.create({
+                    data: { LP_MA: lpId, URL: String(u), ORD: startOrd + i },
+                })
+            )
         );
+
+        // Nếu chưa có MAIN thì set ảnh đầu tiên vừa tạo làm MAIN
+        if (!hasMain && created.length) {
+            await prisma.lOAI_PHONG_IMAGE.update({
+                where: { IMG_ID: created[0].IMG_ID },
+                data: { IS_MAIN: true },
+            });
+        }
+
         res.status(201).json(created);
     } catch (e) { next(e); }
 };
@@ -82,15 +117,44 @@ exports.updateOrder = async (req, res, next) => {
 //     } catch (e) { next(e); }
 // };
 
+// exports.remove = async (req, res, next) => {
+//     try {
+//         const imgId = Number(req.params.imgId);
+//         const img = await prisma.lOAI_PHONG_IMAGE.findUnique({ where: { IMG_ID: imgId } });
+//         if (!img) return res.status(404).json({ message: 'Not found' });
+
+//         // xóa file trước (an toàn) rồi xóa record
+//         safeUnlink(img.URL);
+//         await prisma.lOAI_PHONG_IMAGE.delete({ where: { IMG_ID: imgId } });
+//         res.json({ ok: true });
+//     } catch (e) { next(e); }
+// };
+
 exports.remove = async (req, res, next) => {
     try {
         const imgId = Number(req.params.imgId);
-        const img = await prisma.lOAI_PHONG_IMAGE.findUnique({ where: { IMG_ID: imgId } });
+        const img = await prisma.lOAI_PHONG_IMAGE.findUnique({
+            where: { IMG_ID: imgId },
+            select: { IMG_ID: true, LP_MA: true, URL: true, IS_MAIN: true },
+        });
         if (!img) return res.status(404).json({ message: 'Not found' });
 
-        // xóa file trước (an toàn) rồi xóa record
-        safeUnlink(img.URL);
+        // (nếu bạn có xóa file trên đĩa thì gọi safeUnlink(img.URL) ở đây)
         await prisma.lOAI_PHONG_IMAGE.delete({ where: { IMG_ID: imgId } });
+
+        // Đảm bảo vẫn có 1 ảnh MAIN nếu còn ảnh
+        const remain = await prisma.lOAI_PHONG_IMAGE.findMany({
+            where: { LP_MA: img.LP_MA },
+            orderBy: [{ ORD: 'asc' }, { IMG_ID: 'asc' }],
+            select: { IMG_ID: true, IS_MAIN: true },
+        });
+        if (remain.length && !remain.some(r => r.IS_MAIN)) {
+            await prisma.lOAI_PHONG_IMAGE.update({
+                where: { IMG_ID: remain[0].IMG_ID },
+                data: { IS_MAIN: true },
+            });
+        }
+
         res.json({ ok: true });
     } catch (e) { next(e); }
 };

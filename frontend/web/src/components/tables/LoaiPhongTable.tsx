@@ -6,6 +6,9 @@ export type LoaiPhongRow = {
     LP_MA: number;
     LP_TEN: string;
     LP_SONGUOI: number;
+    LP_TRANGTHAI: 'DANG_KINH_DOANH' | 'NGUNG_KINH_DOANH';
+    ROOM_COUNT: number;
+    images: { IMG_ID: number; URL: string; IS_MAIN: number; ORD: number }[];
 };
 
 export type HT = { HT_MA: number; HT_TEN: string };
@@ -17,7 +20,14 @@ const vnd = (n?: number | string | null) => {
     if (Number.isNaN(num)) return "—";
     return new Intl.NumberFormat("vi-VN").format(num);
 };
-
+function StatusBadge({ s }: { s: LoaiPhongRow['LP_TRANGTHAI'] }) {
+    const label = s === 'DANG_KINH_DOANH' ? 'Đang kinh doanh' : 'Ngừng kinh doanh';
+    const cls =
+        s === 'DANG_KINH_DOANH'
+            ? 'bg-green-100 text-green-700 border-green-200'
+            : 'bg-amber-100 text-amber-700 border-amber-200';
+    return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${cls}`}>{label}</span>;
+}
 
 export default function LoaiPhongTable({
     rows,
@@ -68,6 +78,9 @@ export default function LoaiPhongTable({
                                         Giá {specialLabel} — {ht.HT_TEN}
                                     </TableCell>
                                 ))}
+                                <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                                    Trạng thái
+                                </TableCell>
                             </TableRow>
                         </TableHeader>
 
@@ -103,6 +116,11 @@ export default function LoaiPhongTable({
                                             {vnd(specialByLP_HT?.[r.LP_MA]?.[ht.HT_MA])}
                                         </TableCell>
                                     ))}
+
+                                    <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">
+                                        <StatusBadge s={r.LP_TRANGTHAI} />
+                                    </TableCell>
+                                    
                                 </TableRow>
                             ))}
 
