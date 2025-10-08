@@ -34,6 +34,22 @@ r.post('/tang', onlyAdmin , tang.create);
 r.put('/tang/:id', onlyAdmin, tang.update);
 r.delete('/tang/:id', onlyAdmin, tang.remove);
 
+
+const path = require('path');
+const fs = require('fs');
+const { UPLOAD_DIR } = require('../config/paths');
+
+// Hàm xóa file an toàn
+function safeUnlink(relUrl) {
+    try {
+        const filePath = path.join(UPLOAD_DIR, path.basename(relUrl));
+        fs.unlinkSync(filePath);
+    } catch (e) {
+        if (e.code !== 'ENOENT') console.error('unlink error:', e.message);
+    }
+}
+
+
 const loaiPhong = crud('lOAI_PHONG', {
     pk: 'LP_MA',
     beforeCreate: async (data) => {
@@ -60,6 +76,14 @@ const loaiPhong = crud('lOAI_PHONG', {
     },
     searchFields: ['LP_TEN'],
     eqFields: [],
+    include: {
+        images: {
+            select: { IMG_ID: true, URL: true, IS_MAIN: true, ORD: true },
+            orderBy: [{ IS_MAIN: 'desc' }, { ORD: 'asc' }, { IMG_ID: 'asc' }],
+            // để payload gọn, chỉ cần 1 ảnh đại diện:
+            take: 1,
+        },
+    },  
 });
 loaiPhong.listWithCount = async (req, res, next) => {
     try {
@@ -81,8 +105,16 @@ loaiPhong.listWithCount = async (req, res, next) => {
 
         // 2) Lấy danh sách LOAI_PHONG rồi merge count (để loại không có phòng vẫn trả count=0)
         const lpList = await prisma.lOAI_PHONG.findMany({
-            select: { LP_MA: true, LP_TEN: true, LP_SONGUOI: true },
+            select: {
+                LP_MA: true, LP_TEN: true, LP_SONGUOI: true,
+                images: {
+                    select: { IMG_ID: true, URL: true, IS_MAIN: true, ORD: true },
+                    orderBy: [{ IS_MAIN: 'desc' }, { ORD: 'asc' }, { IMG_ID: 'asc' }],
+                    take: 1,
+                }, 
+            },
             orderBy: { LP_MA: 'asc' },
+
         });
 
         const rows = lpList.map(lp => ({
@@ -90,6 +122,7 @@ loaiPhong.listWithCount = async (req, res, next) => {
             LP_TEN: lp.LP_TEN,
             LP_SONGUOI: lp.LP_SONGUOI,
             ROOM_COUNT: countMap[lp.LP_MA] ?? 0,
+            images: lp.images,
         }));
 
         res.json(rows);
@@ -97,11 +130,41 @@ loaiPhong.listWithCount = async (req, res, next) => {
         next(err);
     }
 };
+
 r.get('/loai-phong', staffOrAdmin, loaiPhong.list);
 r.get('/loai-phong/:id', staffOrAdmin, loaiPhong.get);
 r.post('/loai-phong', onlyAdmin, loaiPhong.create);
 r.put('/loai-phong/:id', onlyAdmin, loaiPhong.update);
-r.delete('/loai-phong/:id', onlyAdmin, loaiPhong.remove);
+// r.delete('/loai-phong/:id', onlyAdmin, loaiPhong.remove);
+r.delete('/loai-phong/:id', onlyAdmin, async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ message: 'ID không hợp lệ' });
+
+    try {
+        // 1) Lấy danh sách ảnh đang gắn với loại phòng
+        const imgs = await prisma.lOAI_PHONG_IMAGE.findMany({
+            where: { LP_MA: id },
+            select: { IMG_ID: true, URL: true },
+        });
+
+        // 2) Xóa record ảnh trước (để tránh FK), đồng thời xóa file trên đĩa
+        if (imgs.length) {
+            await prisma.lOAI_PHONG_IMAGE.deleteMany({ where: { LP_MA: id } });
+            imgs.forEach(img => safeUnlink(img.URL));
+        }
+
+        // 3) Xóa loại phòng
+        await prisma.lOAI_PHONG.delete({ where: { LP_MA: id } });
+
+        res.json({ ok: true });
+    } catch (e) {
+        // Nếu còn phòng tham chiếu (FK), Prisma có thể ném P2003
+        if (e.code === 'P2003') {
+            return res.status(409).json({ message: 'Không thể xóa: còn phòng tham chiếu loại phòng này.' });
+        }
+        next(e);
+    }
+});
 r.get('/loai-phong/with-count', staffOrAdmin, loaiPhong.listWithCount);
 
 const tienNghi = crud('tIEN_NGHI', { 
@@ -282,5 +345,16 @@ r.post('/trang-bi', onlyAdmin, trangBi.create);
 r.get('/trang-bi/:LP_MA/:TN_MA', staffOrAdmin, trangBi.get);
 r.put('/trang-bi/:LP_MA/:TN_MA', onlyAdmin, trangBi.update);
 r.delete('/trang-bi/:LP_MA/:TN_MA', onlyAdmin, trangBi.remove);
+
+
+const uploadRoutes = require('./upload');
+r.use('/upload', staffOrAdmin, uploadRoutes);
+
+const imgCtl = require('../controllers/loai_phong_image');
+r.get('/loai-phong/:id/images', staffOrAdmin, imgCtl.listByLoaiPhong);
+r.post('/loai-phong/:id/images', onlyAdmin, imgCtl.addMany);
+r.put('/loai-phong/images/:imgId/main', onlyAdmin, imgCtl.setMain);
+r.put('/loai-phong/images/order', onlyAdmin, imgCtl.updateOrder);
+r.delete('/loai-phong/images/:imgId', onlyAdmin, imgCtl.remove);
 
 module.exports = r;

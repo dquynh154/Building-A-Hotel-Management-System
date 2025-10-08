@@ -29,30 +29,104 @@ export default function LoaiPhongCreateModal({
     const create = async () => {
         setSaving(true); setErr(null);
         try {
-            await api.post('/loai-phong', {
+            // 1) tạo loại phòng
+            const res = await api.post('/loai-phong', {
                 LP_TEN: ten.trim(),
                 LP_SONGUOI: Number(soNguoi),
             });
+            const lpId = res.data?.LP_MA;
+
+            // 2) nếu có ảnh → upload + ghi DB
+            const urls = await uploadImages();
+            if (lpId && urls.length) await createImageRecords(lpId, urls);
+
             onCreated?.();
+            return lpId;
         } catch (e: any) {
             setErr(e?.response?.data?.message || 'Lưu thất bại');
             throw e;
-        } finally { setSaving(false); }
+        } finally {
+            setSaving(false);
+        }
     };
 
     const onSave = async () => {
         if (!canSave) return;
-        await create();
-        onClose(); // đóng modal
+        const lpId = await create();
+        if (lpId) {
+            // đóng modal
+            onClose();
+            // reset form
+            setTen(''); setSoNguoi(''); setFiles([]); setPreviews([]);
+        }
     };
 
     const onSaveAndNew = async () => {
         if (!canSave) return;
-        await create();
-        // reset để nhập tiếp
-        setTen(''); setSoNguoi('');
-        setTimeout(() => nameRef.current?.focus(), 0);
+        const lpId = await create();
+        if (lpId) {
+            // giữ modal mở để nhập tiếp
+            setTen(''); setSoNguoi('');
+            setFiles([]); setPreviews([]);
+            // focus lại ô tên nếu muốn
+            // nameRef.current?.focus();
+        }
     };
+
+    const [files, setFiles] = useState<File[]>([]);
+    const [previews, setPreviews] = useState<string[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    function handlePickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+        const picked = Array.from(e.target.files || []);
+        if (!picked.length) return;
+
+        setFiles(prev => {
+            // gộp + khử trùng lặp (theo name|size|lastModified)
+            const merged = [...prev, ...picked];
+            const uniq = new Map<string, File>();
+            for (const f of merged) {
+                const k = `${f.name}|${f.size}|${f.lastModified}`;
+                if (!uniq.has(k)) uniq.set(k, f);
+            }
+            // BE giới hạn 10 file: cắt bớt nếu cần
+            return Array.from(uniq.values()).slice(0, 10);
+        });
+
+        setPreviews(prev => [
+            ...prev,
+            ...picked.map(f => URL.createObjectURL(f)),
+        ]);
+
+        // rất quan trọng: reset value để có thể chọn lại cùng 1 file lần sau
+        e.currentTarget.value = "";
+    }
+    function removeAt(i: number) {
+        setFiles(fs => fs.filter((_, idx) => idx !== i));
+        setPreviews(ps => ps.filter((_, idx) => idx !== i));
+    }
+
+    async function uploadImages(): Promise<string[]> {
+        if (files.length === 0) return [];
+        const fd = new FormData();
+        files.forEach(f => fd.append('files', f));
+        const res = await api.post('/upload/loai-phong', fd, {
+            headers: { 'Content-Type': undefined },
+            withCredentials: true,
+        });
+        return res.data?.urls ?? [];
+    }
+
+    async function createImageRecords(lpId: number, urls: string[]) {
+        if (!urls.length) return;
+        // tạo record ảnh
+        await api.post(`/loai-phong/${lpId}/images`, { urls });
+        // đặt ảnh đầu làm đại diện (tuỳ chọn)
+        try {
+            const list = await api.get(`/loai-phong/${lpId}/images`);
+            const first = list.data?.[0];
+            if (first) await api.put(`/loai-phong/images/${first.IMG_ID}/main`);
+        } catch { }
+    }
 
     return (
         <Modal isOpen={open} onClose={onClose} className="max-w-3xl p-5 sm:p-6">
@@ -88,6 +162,34 @@ export default function LoaiPhongCreateModal({
                         <p className="mt-1 text-xs text-red-500">Phải là số nguyên ≥ 1</p>
                     )}
                 </div>
+                <div className="sm:col-span-2">
+                    <label className="mb-1 block text-sm">Ảnh loại phòng (tùy chọn)</label>
+                    <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handlePickFiles}
+                        className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-slate-300 file:bg-white file:px-3 file:py-2 dark:file:border-slate-700 dark:file:bg-slate-800"
+                    />
+                    {previews.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {previews.map((src, i) => (
+                                <div key={i} className="relative">
+                                    <img src={src} className="h-16 w-24 rounded object-cover" />
+                                    <button
+                                        type="button"
+                                        onClick={() => removeAt(i)}
+                                        className="absolute -right-2 -top-2 rounded-full bg-black/60 px-2 py-1 text-white text-xs"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <p className="mt-1 text-xs text-slate-500">Có thể chọn nhiều ảnh. Ảnh đầu sẽ đặt làm ảnh đại diện.</p>
+                </div>
+
             </div>
 
             {err && <p className="mt-3 text-sm text-red-500">{err}</p>}

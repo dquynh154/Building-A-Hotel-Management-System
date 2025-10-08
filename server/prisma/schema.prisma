@@ -104,10 +104,23 @@ model LOAI_PHONG {
   LP_MA      Int    @id @default(autoincrement())
   LP_TEN     String
   LP_SONGUOI Int
+  LP_TRANGTHAI String  @default("DANG_KINH_DOANH")
 
+  images      LOAI_PHONG_IMAGE[]
   PHONG            PHONG[]
   TRANGBI_TIENNGHI TRANGBI_TIENNGHI[]
   DON_GIA          DON_GIA[]
+}
+
+model LOAI_PHONG_IMAGE {
+  IMG_ID     Int    @id @default(autoincrement())
+  LP_MA      Int
+  URL        String           // link file
+  IS_MAIN    Boolean @default(false)
+  ORD        Int?             // thứ tự hiển thị
+  createdAt  DateTime @default(now())
+
+  loaiPhong  LOAI_PHONG @relation(fields: [LP_MA], references: [LP_MA], onDelete: Cascade)
 }
 
 model HINH_THUC_THUE {

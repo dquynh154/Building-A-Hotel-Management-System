@@ -19,21 +19,23 @@ interface TableBodyProps {
 }
 
 // Props for TableRow
-interface TableRowProps {
+interface TableRowProps extends React.HTMLAttributes<HTMLTableRowElement> {
   children: ReactNode; // Cells (th or td)
   className?: string; // Optional className for styling
 }
-
+type TableCellDOMProps =
+  React.TdHTMLAttributes<HTMLTableCellElement> &
+  React.ThHTMLAttributes<HTMLTableCellElement>;
 // Props for TableCell
-interface TableCellProps {
+interface TableCellProps extends TableCellDOMProps {
   children: ReactNode; // Cell content
   isHeader?: boolean; // If true, renders as <th>, otherwise <td>
   className?: string; // Optional className for styling
 }
 
 // Table Component
-const Table: React.FC<TableProps> = ({ children, className }) => {
-  return <table className={`min-w-full  ${className}`}>{children}</table>;
+const Table: React.FC<TableProps> = ({ children, className, ...rest }) => {
+  return <table className={`min-w-full  ${className}`}{...rest}>{children}</table>;
 };
 
 // TableHeader Component
@@ -47,8 +49,8 @@ const TableBody: React.FC<TableBodyProps> = ({ children, className }) => {
 };
 
 // TableRow Component
-const TableRow: React.FC<TableRowProps> = ({ children, className }) => {
-  return <tr className={className}>{children}</tr>;
+const TableRow: React.FC<TableRowProps> = ({ children, className, ...rest }) => {
+  return <tr className={className}{...rest}>{children}</tr>;
 };
 
 // TableCell Component

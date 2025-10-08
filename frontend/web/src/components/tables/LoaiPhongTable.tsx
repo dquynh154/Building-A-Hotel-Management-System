@@ -26,6 +26,7 @@ export default function LoaiPhongTable({
     specialByLP_HT,       // map: LP_MA -> { [HT_MA]: DG_DONGIA }  (giá theo TD special đã chọn) (có thể rỗng)
     specialLabel,         // nhãn hiển thị của TD special (vd: "Noel 2025")
     countByLP = {},
+    onRowDoubleClick,
 }: {
     rows: LoaiPhongRow[];
     htList: HT[];
@@ -33,6 +34,7 @@ export default function LoaiPhongTable({
     specialByLP_HT?: Record<number, Record<number, number | string>>;
     specialLabel?: string;
     countByLP?: Record<number, number>;
+    onRowDoubleClick?: (row: LoaiPhongRow) => void; 
 }) {
     return (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
@@ -71,7 +73,11 @@ export default function LoaiPhongTable({
 
                         <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                             {rows.map((r) => (
-                                <TableRow key={r.LP_MA}>
+                                <TableRow
+                                    key={r.LP_MA}
+                                    className="cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5"
+                                    onDoubleClick={() => onRowDoubleClick?.(r)}
+                                >
                                     <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">
                                         {r.LP_MA}
                                     </TableCell>

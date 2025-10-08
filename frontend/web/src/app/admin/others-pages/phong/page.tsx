@@ -9,10 +9,10 @@ import ComponentCard from "@/components/common/ComponentCard";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import Button from "@/components/ui/button/Button";
 import { Search, PlusIcon } from "@/icons";
-import Pagination from "@/components/tables/Pagination";  // thêm import Pagination
+import Pagination from "@/components/tables/Pagination"; 
 import PhongCreateModal from "@/components/ui/modal/PhongCreateModal";
 import LoaiPhongCreateModal from '@/components/ui/modal/LoaiPhongCreateModal';
-
+import LoaiPhongEditModal from "@/components/ui/modal/LoaiPhongEditModal";
 
 type HT = { HT_MA: number; HT_TEN: string };
 type TD = { TD_MA: number; TD_TEN: string; TD_TRANGTHAI: boolean };
@@ -153,6 +153,14 @@ export default function PhongPage() {
     };
 
     const [openCreatePhong, setOpenCreatePhong] = useState(false);
+    const [editLoaiPhongId, setEditLoaiPhongId] = useState<number | null>(null);
+    const [openEditLoaiPhong, setOpenEditLoaiPhong] = useState(false);
+    const openEdit = (row: LoaiPhongRow) => {
+        setEditLoaiPhongId(row.LP_MA);
+        setOpenEditLoaiPhong(true);
+    };
+
+    
     useEffect(() => {
         // loadRooms();
         loadHTandTD();
@@ -251,18 +259,7 @@ export default function PhongPage() {
                                         <option value="MAINTENANCE">Bảo trì</option>
                                     </select>
                                 </>
-                            )}
-                            {/* <select
-                                    className={ctrl}
-                                    value={status}
-                                    onChange={(e) => setStatus(e.target.value as Status)}
-                                >
-                                    <option value="ALL">Tất cả trạng thái</option>
-                                    <option value="AVAILABLE">AVAILABLE</option>
-                                    <option value="OCCUPIED">OCCUPIED</option>
-                                    <option value="CHUA_DON">CHUA_DON</option>
-                                    <option value="MAINTENANCE">MAINTENANCE</option>
-                                </select> */}
+                            )}                          
 
                             <select
                                 className={ctrl}
@@ -312,6 +309,7 @@ export default function PhongPage() {
                                     : undefined
                             }
                             countByLP={countByLP}
+                            onRowDoubleClick={openEdit}  
                         />
                     )}
 
@@ -362,6 +360,12 @@ export default function PhongPage() {
                     // setPageRooms(1);
                     loadRooms(1);
                 }}
+            />
+            <LoaiPhongEditModal
+                open={openEditLoaiPhong}
+                id={editLoaiPhongId}
+                onClose={() => setOpenEditLoaiPhong(false)}
+                onUpdated={() => loadTypeRooms(/* về page hiện tại */)}
             />
 
         </div>
