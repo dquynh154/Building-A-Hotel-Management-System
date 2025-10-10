@@ -4,6 +4,13 @@ import { Modal } from '@/components/ui/modal';
 import Button from '@/components/ui/button/Button';
 import api from '@/lib/api';
 import { absUrl } from '@/lib/url';
+
+const TD_BASE_MA = 1;
+
+type HT = { HT_MA: number; HT_TEN: string };
+
+
+
 export default function LoaiPhongEditModal({
     open, id, onClose, onUpdated,
 }: {
@@ -12,6 +19,8 @@ export default function LoaiPhongEditModal({
     onClose: () => void;
     onUpdated?: () => void;
 }) {
+    const [htList, setHtList] = useState<HT[]>([]);
+    const [prices, setPrices] = useState<Record<number, string>>({});
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState<string | null>(null);
@@ -38,6 +47,16 @@ export default function LoaiPhongEditModal({
                 setSoNguoi(r.LP_SONGUOI ?? '');
                 setTrangThai(r.LP_TRANGTHAI ?? 'DANG_KINH_DOANH');
                 setImages(imgs.data ?? []);
+                await fetchPrices(id);
+                const htRes = await api.get<HT[]>('/hinh-thuc-thue', { params: { take: 200 } }).catch(() => ({ data: [] as HT[] }));
+                setHtList(htRes.data || []);
+                const dgRes = await api.get<any[]>('/don-gia', { params: { LP_MA: id, TD_MA: TD_BASE_MA, _ts: Date.now(), take: 2000 } })
+                    .catch(() => ({ data: [] as any[] }));
+
+                const map: Record<number, string> = {};
+                (dgRes.data || []).forEach((d: any) => { map[d.HT_MA] = String(d.DG_DONGIA ?? ''); });
+                setPrices(map);
+
             } catch (e: any) {
                 setErr(e?.response?.data?.message || 'Không tải được dữ liệu');
             } finally { setLoading(false); }
@@ -46,15 +65,59 @@ export default function LoaiPhongEditModal({
 
     const canSave = ten.trim().length > 0 && (soNguoi === '' || (Number.isInteger(Number(soNguoi)) && Number(soNguoi) >= 1)) && !saving;
 
+    // const save = async () => {
+    //     if (!id || !canSave) return;
+    //     setSaving(true); setErr(null);
+    //     try {
+    //         await api.put(`/loai-phong/${id}`, {
+    //             LP_TEN: ten.trim(),
+    //             ...(soNguoi === '' ? { LP_SONGUOI: null } : { LP_SONGUOI: Number(soNguoi) }),
+    //             LP_TRANGTHAI: trangThai,
+                
+    //         });
+    //         onUpdated?.();
+    //         onClose();
+    //     } catch (e: any) {
+    //         setErr(e?.response?.data?.message || 'Cập nhật thất bại');
+    //     } finally { setSaving(false); }
+    // };
+
+    // Soft delete / ngừng kinh doanh
+    
     const save = async () => {
         if (!id || !canSave) return;
         setSaving(true); setErr(null);
         try {
+            // 1) cập nhật thông tin loại phòng
             await api.put(`/loai-phong/${id}`, {
                 LP_TEN: ten.trim(),
                 ...(soNguoi === '' ? { LP_SONGUOI: null } : { LP_SONGUOI: Number(soNguoi) }),
                 LP_TRANGTHAI: trangThai,
             });
+
+            // 2) upsert đơn giá TD cơ bản
+            const entries = Object.entries(prices)
+                .map(([ht, val]) => ({ HT_MA: Number(ht), DG_DONGIA: String(val || '').trim() }))
+                .filter(e => e.DG_DONGIA !== '');
+
+            // Với API bạn đã có:
+            // - POST /don-gia (create)  (PK: LP_MA, HT_MA, TD_MA)
+            // - PUT /don-gia/:LP_MA/:HT_MA/:TD_MA (update)
+            await Promise.all(entries.map(async (e) => {
+                try {
+                    // thử cập nhật trước
+                    await api.put(`/don-gia/${id}/${e.HT_MA}/${TD_BASE_MA}`, { DG_DONGIA: e.DG_DONGIA });
+                } catch (err: any) {
+                    // nếu 404/400 → tạo mới
+                    await api.post('/don-gia', {
+                        LP_MA: id,
+                        HT_MA: e.HT_MA,
+                        TD_MA: TD_BASE_MA,
+                        DG_DONGIA: e.DG_DONGIA,
+                    });
+                }
+            }));
+            await fetchPrices(id);
             onUpdated?.();
             onClose();
         } catch (e: any) {
@@ -62,7 +125,7 @@ export default function LoaiPhongEditModal({
         } finally { setSaving(false); }
     };
 
-    // Soft delete / ngừng kinh doanh
+
     const toggleKinhDoanh = async () => {
         if (!id) return;
         const next = trangThai === 'DANG_KINH_DOANH' ? 'NGUNG_KINH_DOANH' : 'DANG_KINH_DOANH';
@@ -155,7 +218,20 @@ export default function LoaiPhongEditModal({
         await api.delete(`/loai-phong/images/${imgId}`);
         await reloadImages();
     }
+    async function fetchPrices(lpId: number) {
+        // lấy danh sách HT
+        const htRes = await api.get<HT[]>('/hinh-thuc-thue', { params: { take: 200 } })
+            .catch(() => ({ data: [] as HT[] }));
+        setHtList(htRes.data || []);
 
+        // lấy đơn giá TD cơ bản của chính LP này
+        const dgRes = await api.get<any[]>('/don-gia', { params: { LP_MA: lpId, TD_MA: TD_BASE_MA, take: 2000 } })
+            .catch(() => ({ data: [] as any[] }));
+
+        const map: Record<number, string> = {};
+        (dgRes.data || []).forEach((d: any) => { map[d.HT_MA] = String(d.DG_DONGIA ?? ''); });
+        setPrices(map);
+    }
     return (
         <Modal isOpen={open} onClose={onClose} className="max-w-4xl p-5 sm:p-6">
             <h3 className="mb-4 text-base font-medium">Sửa loại phòng</h3>
@@ -185,6 +261,43 @@ export default function LoaiPhongEditModal({
                                 <option value="NGUNG_KINH_DOANH">Ngừng kinh doanh</option>
                             </select>
                         </div>
+                            {/* Đơn giá (TD cơ bản) */}
+                            <div className="mt-6 rounded-xl border p-4">
+                                <div className="mb-2 text-sm font-medium">Đơn giá (Thời điểm cơ bản)</div>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    {htList.map((ht) => (
+                                        <div key={ht.HT_MA} className="flex items-center gap-2">
+                                            <div className=" shrink-0 text-sm">{ht.HT_TEN}</div>
+                                            <input
+                                                type="number"
+                                                inputMode="decimal"
+                                                min={0}
+                                                step="1"
+                                                className="w-full rounded-lg border px-3 py-2 text-sm"
+                                                placeholder="Nhập đơn giá"
+                                                value={prices[ht.HT_MA] ?? ''}
+                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                                    let v = e.target.value.trim();
+                                                    if (v === '') {                         // cho phép để trống
+                                                        setPrices(prev => ({ ...prev, [ht.HT_MA]: '' }));
+                                                        return;
+                                                    }
+                                                    // chuẩn hoá & chặn âm
+                                                    const num = Number(v);
+                                                    const safe = isNaN(num) ? '' : Math.max(0, num); // không âm
+                                                    // nếu muốn 2 chữ số thập phân:
+                                                    const formatted = safe === '' ? '' : String(safe);
+                                                    setPrices(prev => ({ ...prev, [ht.HT_MA]: formatted }));
+                                                }}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Lưu ý: giá được lưu ở thời điểm cơ bản (Mã thời điểm = {TD_BASE_MA}). Để giá đặc biệt/khác thời điểm, tạo ở 'Thiết lập thời điểm'.
+                                </p>
+                            </div>
+
                     </div>
 
                     {/* ảnh xem nhanh */}

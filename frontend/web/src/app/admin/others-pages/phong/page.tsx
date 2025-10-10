@@ -40,6 +40,8 @@ export default function PhongPage() {
     const [rooms, setRooms] = useState<PhongRow[]>([]);
     const [typerooms, setTypeRooms] = useState<LoaiPhongRow[]>([]);
     const [htList, setHtList] = useState<HT[]>([]);
+    const [suggest, setSuggest] = useState<Record<number, string>>({}); // HT_MA -> giá
+    const [useBase, setUseBase] = useState(true); 
     const [tdSpecialList, setTdSpecialList] = useState<TD[]>([]);
     const [tdSpecial, setTdSpecial] = useState<number | ''>(''); // chọn 1 TD special
 
@@ -194,7 +196,22 @@ export default function PhongPage() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
-
+    useEffect(() => {
+        if (!open) return;
+        (async () => {
+            try {
+                const [htRes, baseRes] = await Promise.all([
+                    api.get<HT[]>('/hinh-thuc-thue', { params: { take: 100 } }),
+                    api.get<DonGiaRow[]>('/don-gia', { params: { TD_MA: TD_BASE_MA, take: 2000 } })
+                ]);
+                setHtList(htRes.data || []);
+                // map giá cơ bản theo HT
+                const map: Record<number, string> = {};
+                (baseRes.data || []).forEach(d => { map[d.HT_MA] = String(d.DG_DONGIA ?? ''); });
+                setSuggest(map);
+            } catch { /* ignore */ }
+        })();
+    }, [open]);
     return (
         <div>
             <PageBreadcrumb pageTitle="Loại phòng & Phòng" />
@@ -210,7 +227,7 @@ export default function PhongPage() {
 
                 <Button
                     size="sm"
-                    variant="primary"
+                    variant="add"
                     startIcon={<PlusIcon />}
                     onClick={() => {
                         if (activeTab === 'types') {
@@ -372,9 +389,13 @@ export default function PhongPage() {
                 open={openEditLoaiPhong}
                 id={editLoaiPhongId}
                 onClose={() => setOpenEditLoaiPhong(false)}
-                onUpdated={() => loadTypeRooms(/* về page hiện tại */)}
+                onUpdated={() => {
+                    loadTypeRooms();
+                    loadBasePrices();
+                    if (tdSpecial) loadSpecialPrices(Number(tdSpecial));
+                }} 
             />
-            
+
             <PhongEditModal
                 open={openEditPhong}
                 id={editPhongId}

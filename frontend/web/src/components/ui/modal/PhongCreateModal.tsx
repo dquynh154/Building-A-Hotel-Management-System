@@ -3,8 +3,11 @@ import { useState, useEffect } from "react";
 import { Modal } from "@/components/ui/modal"; // modal bạn đã có
 import Button from "@/components/ui/button/Button";
 import api from "@/lib/api";
-
+import { absUrl } from "@/lib/url";
 type Option = { value: number; label: string };
+const TD_BASE_MA = 1; // thời điểm cơ bản
+
+type HT = { HT_MA: number; HT_TEN: string };
 
 export default function PhongCreateModal({
     open,
@@ -15,6 +18,10 @@ export default function PhongCreateModal({
     onClose: () => void;
     onCreated?: () => void;
 }) {
+
+    const [htList, setHtList] = useState<HT[]>([]);
+    const [typePrices, setTypePrices] = useState<Record<number, string>>({}); // HT_MA -> giá
+    const [typeImages, setTypeImages] = useState<any[]>([]);
     const [ten, setTen] = useState("");
     const [lp, setLp] = useState<number | "">("");
     const [tang, setTang] = useState<number | "">("");
@@ -27,7 +34,12 @@ export default function PhongCreateModal({
 
     useEffect(() => {
         if (!open) return;
-        // load dropdowns
+        (async () => {
+            try {
+                const htRes = await api.get<HT[]>('/hinh-thuc-thue', { params: { take: 200 } }).catch(() => ({ data: [] as HT[] }));
+                setHtList(htRes.data || []);
+            } catch { }
+        })();
         Promise.all([
             api.get("/loai-phong", { params: { take: 200 } }),
             api.get("/tang", { params: { take: 200 } }),
@@ -36,6 +48,31 @@ export default function PhongCreateModal({
             setTangOptions((tangRes.data || []).map((x: any) => ({ value: x.TANG_MA, label: x.TANG_TEN || `Tầng ${x.TANG_MA}` })));
         }).catch(() => { });
     }, [open]);
+    useEffect(() => {
+        if (!open) return;
+        // giả sử bạn có state lpMa trong modal tạo phòng
+        if (!lp) { setTypePrices({}); setTypeImages([]); return; }
+
+        (async () => {
+            try {
+                // Giá TD cơ bản của loại phòng đã chọn
+                const dgRes = await api.get<any[]>('/don-gia', {
+                    params: { LP_MA: lp, TD_MA: TD_BASE_MA, take: 2000 }
+                }).catch(() => ({ data: [] as any[] }));
+
+                const map: Record<number, string> = {};
+                (dgRes.data || []).forEach((d: any) => { map[d.HT_MA] = String(d.DG_DONGIA ?? ''); });
+                setTypePrices(map);
+
+                // Ảnh của loại phòng đã chọn
+                const imgRes = await api.get<any[]>(`/loai-phong/${lp}/images`).catch(() => ({ data: [] as any[] }));
+                setTypeImages(imgRes.data || []);
+            } catch {
+                setTypePrices({});
+                setTypeImages([]);
+            }
+        })();
+    }, [open, lp]);
 
     const canSave = ten.trim().length > 0 && lp !== "" && tang !== "" && !saving;
 
@@ -114,6 +151,61 @@ export default function PhongCreateModal({
                         <option value="MAINTENANCE">Bảo trì</option>
                     </select>
                 </div>
+                {/* Thông tin loại phòng đã chọn (chỉ hiển thị) */}
+                {lp && (
+                    <div className="sm:col-span-2 mt-3 rounded-xl border p-3">
+                        <div className="mb-2 text-sm font-medium">Giá theo loại phòng (TD cơ bản)</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {htList.length ? htList.map(ht => (
+                                <div key={ht.HT_MA} className="flex items-center gap-2">
+                                    <div className="w-40 text-sm">{ht.HT_TEN}</div>
+                                    <input
+                                        type="text"
+                                        className="w-full rounded-lg border px-3 py-2 text-sm bg-slate-50 text-slate-700"
+                                        value={typePrices[ht.HT_MA] ?? ''}
+                                        readOnly
+                                        disabled
+                                    />
+                                </div>
+                            )) : (
+                                // fallback nếu không lấy được HT list (thiếu quyền)
+                                Object.keys(typePrices).map((k) => (
+                                    <div key={k} className="flex items-center gap-2">
+                                        <div className="w-40 text-sm">HT #{k}</div>
+                                        <input
+                                            type="text"
+                                            className="w-full rounded-lg border px-3 py-2 text-sm bg-slate-50 text-slate-700"
+                                            value={typePrices[Number(k)] ?? ''}
+                                            readOnly
+                                            disabled
+                                        />
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        <div className="mt-3">
+                            <div className="mb-2 text-sm font-medium">Ảnh loại phòng</div>
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                                {typeImages.length ? typeImages.map((img: any) => (
+                                    <div key={img.IMG_ID} className="relative rounded-lg border p-2">
+                                        <img src={absUrl(img.URL)} className="h-24 w-full rounded object-cover" />
+                                        {img.IS_MAIN && (
+                                            <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-0.5 text-xs text-white">
+                                                Đại diện
+                                            </span>
+                                        )}
+                                    </div>
+                                )) : (
+                                    <div className="col-span-full rounded-lg border p-6 text-center text-slate-500">
+                                        Chưa có ảnh
+                                    </div>
+                                )}
+                            </div>
+                            <p className="mt-2 text-xs text-slate-500">Giá & ảnh chỉ để xem. Muốn chỉnh, qua tab “Loại phòng”.</p>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {err && <p className="mt-3 text-sm text-red-500">{err}</p>}

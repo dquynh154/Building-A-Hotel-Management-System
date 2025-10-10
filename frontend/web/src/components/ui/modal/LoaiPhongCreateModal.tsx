@@ -1,8 +1,13 @@
 'use client';
-import { useState, useRef } from 'react';
+import { useState, useRef,useEffect } from 'react';
 import { Modal } from '@/components/ui/modal';
 import Button from '@/components/ui/button/Button';
 import api from '@/lib/api';
+// === Giá cơ bản gợi ý khi tạo loại phòng ===
+const TD_BASE_MA = 1;
+type HT = { HT_MA: number; HT_TEN: string };
+
+const PRICE_SOURCE_LP_MA = 1; 
 
 export default function LoaiPhongCreateModal({
     open,
@@ -13,6 +18,9 @@ export default function LoaiPhongCreateModal({
     onClose: () => void;
     onCreated?: () => void; // gọi để reload list
 }) {
+    const [useBase, setUseBase] = useState(true);
+    const [htList, setHtList] = useState<HT[]>([]);
+    const [suggest, setSuggest] = useState<Record<number, string>>({});
     const [ten, setTen] = useState('');
     const [soNguoi, setSoNguoi] = useState<number | ''>('');
     const [saving, setSaving] = useState(false);
@@ -35,6 +43,21 @@ export default function LoaiPhongCreateModal({
                 LP_SONGUOI: Number(soNguoi),
             });
             const lpId = res.data?.LP_MA;
+            if (lpId) {
+                if (useBase) {
+                    const entries = Object.entries(suggest)
+                        .map(([ht, val]) => ({ HT_MA: Number(ht), DG_DONGIA: String(val || '').trim() }))
+                        .filter(e => e.DG_DONGIA !== '');
+                    await Promise.all(entries.map(e =>
+                        api.post('/don-gia', {
+                            LP_MA: lpId,
+                            HT_MA: e.HT_MA,
+                            TD_MA: TD_BASE_MA,
+                            DG_DONGIA: e.DG_DONGIA,
+                        })
+                    ));
+                }                
+            }
 
             // 2) nếu có ảnh → upload + ghi DB
             const urls = await uploadImages();
@@ -128,6 +151,79 @@ export default function LoaiPhongCreateModal({
         } catch { }
     }
 
+    async function loadBaseFromFixedLP(lp_ma: number) {
+        try {
+            // gọi thẳng theo LP nguồn + TD cơ bản
+            const res = await api.get('/don-gia', {
+                params: { TD_MA: TD_BASE_MA, LP_MA: lp_ma, take: 2000 },
+            });
+
+            // nếu BE CHƯA hỗ trợ filter LP_MA, fallback filter ở FE:
+            const rows = (res.data || []).filter((d: any) =>
+                d.LP_MA === lp_ma && Number(d.TD_MA) === TD_BASE_MA
+            );
+
+            const map: Record<number, string> = {};
+            rows.forEach((d: any) => { map[d.HT_MA] = String(d.DG_DONGIA ?? ''); });
+            setSuggest(map); // ← đổ vào các ô input
+        } catch (e) {
+            // không có giá nguồn thì để trống
+            setSuggest({});
+        }
+    }
+
+    // useEffect(() => {
+    //     if (!open) return;
+    //     (async () => {
+    //         try {
+    //             const [htRes, baseRes] = await Promise.all([
+    //                 api.get<HT[]>('/hinh-thuc-thue', { params: { take: 100 } }).catch(() => ({ data: [] as HT[] })),
+    //                 api.get<any[]>('/don-gia', { params: { TD_MA: TD_BASE_MA, take: 2000 } }).catch(() => ({ data: [] as any[] })),
+    //             ]);
+    //             setHtList(htRes.data || []);
+    //             const map: Record<number, string> = {};
+    //             (baseRes.data || []).forEach((d: any) => { map[d.HT_MA] = String(d.DG_DONGIA ?? ''); });
+    //             setSuggest(map);
+    //         } catch { }
+    //     })();
+    // }, [open]);
+    useEffect(() => {
+        if (!open) return;
+        (async () => {
+            try {
+                // 1) Lấy danh sách HT để render các ô input
+                const htRes = await api
+                    .get<HT[]>('/hinh-thuc-thue', { params: { take: 100 } })
+                    .catch(() => ({ data: [] as HT[] }));
+                setHtList(htRes.data || []);
+
+                // 2) Lấy giá từ LP nguồn cố định (TD cơ bản)
+                // Nếu BE hỗ trợ filter theo LP_MA:
+                const srcRes = await api
+                    .get<any[]>('/don-gia', {
+                        params: { TD_MA: TD_BASE_MA, LP_MA: PRICE_SOURCE_LP_MA, take: 2000 },
+                    })
+                    .catch(() => ({ data: [] as any[] }));
+
+                // Nếu BE CHƯA hỗ trợ LP_MA trong params, dùng filter FE:
+                const rows = (srcRes.data || []).filter(
+                    (d: any) =>
+                        Number(d.LP_MA) === PRICE_SOURCE_LP_MA &&
+                        Number(d.TD_MA) === TD_BASE_MA
+                );
+
+                const map: Record<number, string> = {};
+                rows.forEach((d: any) => {
+                    map[d.HT_MA] = String(d.DG_DONGIA ?? '');
+                });
+                setSuggest(map); // gợi ý giá đổ vào input
+            } catch {
+                setSuggest({});
+            }
+        })();
+    }, [open]);
+
+
     return (
         <Modal isOpen={open} onClose={onClose} className="max-w-3xl p-5 sm:p-6">
             <h3 className="mb-4 text-base font-medium">Thêm loại phòng mới</h3>
@@ -162,6 +258,61 @@ export default function LoaiPhongCreateModal({
                         <p className="mt-1 text-xs text-red-500">Phải là số nguyên ≥ 1</p>
                     )}
                 </div>
+
+                <div className="sm:col-span-2 mt-2 rounded-lg border p-3">
+                    <label className="flex items-center gap-2 text-sm">
+                        <input
+                            type="checkbox"
+                            checked={useBase}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>{
+                                const checked = e.target.checked;
+                                setUseBase(checked)
+                                if (!checked) {
+                                    // bỏ tick → xoá hết giá prefill để không bị lưu
+                                    setSuggest({});
+                                } else {
+                                    // tick lại → có thể reload base để prefill (tuỳ bạn)
+                                    // preloadBase(); // nếu bạn viết sẵn hàm nạp giá cơ bản
+                                }
+                            }} 
+                        />
+                        <span>Dùng giá cơ bản (TD = {TD_BASE_MA}) — có thể sửa trước khi lưu</span>
+                    </label>
+
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {htList.map((ht) => (
+                            <div key={ht.HT_MA} className="flex items-center gap-2">
+                                <div className="w-40 text-sm">{ht.HT_TEN}</div>
+                                <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    min={0}
+                                    step="1"
+                                    className="w-full rounded border px-2 py-1 text-sm"
+                                    placeholder="Nhập đơn giá"
+                                    value={suggest[ht.HT_MA] ?? ''}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                        let v = e.target.value.trim();
+                                        if (v === '') {                         // cho phép để trống
+                                            setSuggest(prev => ({ ...prev, [ht.HT_MA]: '' }));
+                                            return;
+                                        }
+                                        // chuẩn hoá & chặn âm
+                                        const num = Number(v);
+                                        const safe = isNaN(num) ? '' : Math.max(0, num); // không âm
+                                        // nếu muốn 2 chữ số thập phân:
+                                        const formatted = safe === '' ? '' : String(safe);
+                                        setSuggest(prev => ({ ...prev, [ht.HT_MA]: formatted }));
+                                    }}
+                                   
+                                />
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Lưu ý: hệ thống sẽ tạo đơn giá cho TD cơ bản theo các giá bạn nhập ở trên */}
+                </div>
+
                 <div className="sm:col-span-2">
                     <label className="mb-1 block text-sm">Ảnh loại phòng (tùy chọn)</label>
                     <input
