@@ -5,7 +5,7 @@ import Label from './Label';
 import { CalenderIcon } from '../../icons';
 import Hook = flatpickr.Options.Hook;
 import DateOption = flatpickr.Options.DateOption;
-
+import { Vietnamese } from 'flatpickr/dist/l10n/vn.js';
 type PropsType = {
   id: string;
   mode?: "single" | "multiple" | "range" | "time";
@@ -22,6 +22,7 @@ export default function DatePicker({
   label,
   defaultDate,
   placeholder,
+  
 }: PropsType) {
   useEffect(() => {
     const flatPickr = flatpickr(`#${id}`, {
@@ -31,6 +32,7 @@ export default function DatePicker({
       dateFormat: "Y-m-d",
       defaultDate,
       onChange,
+      locale: { ...Vietnamese, firstDayOfWeek: 1 },
     });
 
     return () => {

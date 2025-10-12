@@ -172,7 +172,7 @@ model DON_GIA {
 
   LOAI_PHONG     LOAI_PHONG     @relation(fields: [LP_MA], references: [LP_MA], onDelete: Cascade)
   HINH_THUC_THUE HINH_THUC_THUE @relation(fields: [HT_MA], references: [HT_MA])
-  THOI_DIEM      THOI_DIEM      @relation(fields: [TD_MA], references: [TD_MA])
+  THOI_DIEM      THOI_DIEM      @relation(fields: [TD_MA], references: [TD_MA], onDelete: Cascade)
 
   @@id([LP_MA, HT_MA, TD_MA])
 }

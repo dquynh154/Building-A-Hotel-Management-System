@@ -41,7 +41,7 @@ export default function PhongPage() {
     const [typerooms, setTypeRooms] = useState<LoaiPhongRow[]>([]);
     const [htList, setHtList] = useState<HT[]>([]);
     const [suggest, setSuggest] = useState<Record<number, string>>({}); // HT_MA -> giá
-    const [useBase, setUseBase] = useState(true); 
+    const [useBase, setUseBase] = useState(true);
     const [tdSpecialList, setTdSpecialList] = useState<TD[]>([]);
     const [tdSpecial, setTdSpecial] = useState<number | ''>(''); // chọn 1 TD special
 
@@ -168,7 +168,7 @@ export default function PhongPage() {
         setEditPhongId(row.PHONG_MA);   // dùng đúng key của payload phòng
         setOpenEditPhong(true);
     };
-    
+
     useEffect(() => {
         // loadRooms();
         loadHTandTD();
@@ -185,13 +185,13 @@ export default function PhongPage() {
         if (activeTab === 'rooms') {
             setPageRooms(1);
             loadRooms(1);
-            
+
             loadBasePrices();               // nếu giá cần cho bảng phòng
         } else {
             loadRooms(1);
             setPageTypes(1);
             loadTypeRooms(1);
-            
+
             loadBasePrices();               // nếu giá cần hiển thị ở bảng loại phòng
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -282,7 +282,7 @@ export default function PhongPage() {
                                         <option value="MAINTENANCE">Bảo trì</option>
                                     </select>
                                 </>
-                            )}                          
+                            )}
 
                             <select
                                 className={ctrl}
@@ -320,6 +320,12 @@ export default function PhongPage() {
                                     : undefined
                             }
                             onRowDoubleClick={openEditRoom}
+                            onEdit={(row) => openEditRoom(row)}
+                            onDelete={async (row) => {
+                                if (!confirm(`Xóa phòng "${row.PHONG_TEN}"?`)) return;
+                                await api.delete(`/phong/${row.PHONG_MA}`);
+                                loadRooms(pageRooms);
+                            }}
                         />
                     ) : (
                         <LoaiPhongTable
@@ -333,7 +339,7 @@ export default function PhongPage() {
                                     : undefined
                             }
                             countByLP={countByLP}
-                            onRowDoubleClick={openEdit}  
+                            onRowDoubleClick={openEdit}
                         />
                     )}
 
@@ -393,7 +399,7 @@ export default function PhongPage() {
                     loadTypeRooms();
                     loadBasePrices();
                     if (tdSpecial) loadSpecialPrices(Number(tdSpecial));
-                }} 
+                }}
             />
 
             <PhongEditModal

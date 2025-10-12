@@ -266,7 +266,7 @@ const dichvu = crud('dICH_VU', {
         return data;
     },
 
-    searchFields: ['DV_TEN','DV_DONGIA'],
+    searchFields: ['DV_TEN'],
     eqFields: ['LDV_MA'],
 });
 r.get('/dich-vu', staffOrAdmin, dichvu.list);

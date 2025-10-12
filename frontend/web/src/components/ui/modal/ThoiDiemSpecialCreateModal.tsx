@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Modal } from '@/components/ui/modal';
 import Button from '@/components/ui/button/Button';
 import api from '@/lib/api';
@@ -7,36 +7,96 @@ import DatePicker from '@/components/form/date-picker';
 
 export default function ThoiDiemCreateModal({
     open, onClose, onCreated,
-}: { open: boolean; onClose: () => void; onCreated?: (newId: number) => void }) {
+    mode = 'create',
+    initial,
+}: { 
+    open: boolean;
+    onClose: () => void; 
+    onCreated?: (newId: number) => void;
+    mode?: 'create' | 'edit';
+  initial?: {
+    TD_MA?: number;
+    TD_TEN?: string;
+    start?: string; // ISO hoặc yyyy-mm-dd
+    end?: string;
+    desc?: string | null;
+    type?: 'SPECIAL' | 'BASE';
+  };
+}) {
     const [ten, setTen] = useState('');
     const [start, setStart] = useState(''); // yyyy-MM-dd
     const [end, setEnd] = useState('');     // yyyy-MM-dd
     const [desc, setDesc] = useState('');
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState<string | null>(null);
+    const isSpecial = (initial?.type ?? 'SPECIAL') === 'SPECIAL';
+    useEffect(() => {
+        if (!open) return;
+        setTen(initial?.TD_TEN ?? '');
+        setStart(initial?.start ? initial.start.slice(0, 10) : '');
+        setEnd(initial?.end ? initial.end.slice(0, 10) : '');
+        setDesc(initial?.desc ?? '');
+    }, [open, initial]);
 
     const save = async () => {
         if (!ten.trim()) { setErr('Vui lòng nhập tên thời điểm'); return; }
         if (!start || !end) { setErr('Vui lòng chọn đủ Ngày bắt đầu & Ngày kết thúc'); return; }
         if (new Date(start) > new Date(end)) { setErr('Ngày bắt đầu phải ≤ ngày kết thúc'); return; }
-
+        const startIso = `${start}T00:00:00.000Z`;
+        const endIso = `${end}T00:00:00.000Z`;
         setSaving(true); setErr(null);
+        // try {
+        //     const startIso = `${start}T00:00:00.000Z`;
+        //     const endIso = `${end}T00:00:00.000Z`;
+
+        //     const res = await api.post('/thoi-diem', {
+        //         TD_TEN: ten.trim(),    
+        //         type: 'SPECIAL',
+        //         special: {
+        //             TD_NGAY_BAT_DAU: startIso,
+        //             TD_NGAY_KET_THUC: endIso,
+        //             TD_MOTA_CHIENDICH: desc.trim() || null,
+        //         },
+        //     });
+
+        //     onCreated?.(res.data?.TD_MA);
+        //     setStart(''); setEnd(''); setDesc('');
+        //     onClose();
+        // }
         try {
-            const startIso = `${start}T00:00:00.000Z`;
-            const endIso = `${end}T00:00:00.000Z`;
-
-            const res = await api.post('/thoi-diem', {
-                TD_TEN: ten.trim(),    
-                type: 'SPECIAL',
-                special: {
-                    TD_NGAY_BAT_DAU: startIso,
-                    TD_NGAY_KET_THUC: endIso,
-                    TD_MOTA_CHIENDICH: desc.trim() || null,
-                },
-            });
-
-            onCreated?.(res.data?.TD_MA);
-            setStart(''); setEnd(''); setDesc('');
+            if (mode === 'edit' && initial?.TD_MA) {
+                // EDIT
+                if (isSpecial) {
+                    await api.put(`/thoi-diem/${initial.TD_MA}`, {
+                        TD_TEN: ten.trim(),
+                        type: 'SPECIAL',
+                        special: {
+                            TD_NGAY_BAT_DAU: startIso,
+                            TD_NGAY_KET_THUC: endIso,
+                            TD_MOTA_CHIENDICH: desc.trim() || null,
+                        },
+                    });
+                } else {
+                    await api.put(`/thoi-diem/${initial.TD_MA}`, {
+                        TD_TEN: ten.trim(),
+                        type: 'BASE',
+                        base: { TD_MOTA_CHUNG: desc.trim() || null },
+                    });
+                }
+                onCreated?.(initial.TD_MA);
+            } else {
+                // CREATE (SPECIAL)
+                const res = await api.post('/thoi-diem', {
+                    TD_TEN: ten.trim(),
+                    type: 'SPECIAL',
+                    special: {
+                        TD_NGAY_BAT_DAU: startIso,
+                        TD_NGAY_KET_THUC: endIso,
+                        TD_MOTA_CHIENDICH: desc.trim() || null,
+                    },
+                });
+                onCreated?.(res.data?.TD_MA);
+            }
             onClose();
         } catch (e: any) {
             setErr(e?.response?.data?.message || 'Tạo thất bại');

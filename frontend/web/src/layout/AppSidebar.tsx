@@ -37,9 +37,21 @@ const navItems: NavItem[] = [
     icon: <Room />,
     name: "Phòng",
     subItems: [{ name: "Phòng & Loại phòng", path: "/admin/others-pages/phong", pro: false },
-      { name: "Thiết lập giá", path: "/admin/others-pages/gia-dat-biet", pro: false }
+      { name: "Thiết lập giá", path: "/admin/others-pages/gia-dat-biet", pro: false },
+      { name: "Quản lý thời điểm", path: "/admin/others-pages/gia-dat-biet/thoi-diem", pro: false }
     ],
   },
+  {
+    icon: <CalenderIcon />,
+    name: "Dịch vụ",
+    path: "/admin/others-pages/dich-vu",
+  },
+  {
+    icon: <UserCircleIcon />,
+    name: "Quản lý nhân viên",
+    path: "/admin/others-pages/nhan-vien",
+  },
+
   {
     icon: <CalenderIcon />,
     name: "Lịch đặt phòng",

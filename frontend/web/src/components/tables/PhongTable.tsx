@@ -1,6 +1,7 @@
 import React from "react";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "../ui/table";
 import Badge from "../ui/badge/Badge";
+import Button from "../ui/button/Button";
 
 export type PhongRow = {
     PHONG_MA: number;
@@ -51,15 +52,19 @@ export default function PhongTable({
     htList,               // danh sách hình thức thuê
     baseByLP_HT,          // map: LP_MA -> { [HT_MA]: DG_DONGIA }  (giá cơ bản)
     specialByLP_HT,       // map: LP_MA -> { [HT_MA]: DG_DONGIA }  (giá theo TD special đã chọn) (có thể rỗng)
-    specialLabel,  
-    onRowDoubleClick,       // nhãn hiển thị của TD special (vd: "Noel 2025")
+    specialLabel,
+    onRowDoubleClick,
+    onEdit,
+    onDelete,
 }: {
     rows: PhongRow[];
     htList: HT[];
     baseByLP_HT: Record<number, Record<number, number | string>>;
     specialByLP_HT?: Record<number, Record<number, number | string>>;
     specialLabel?: string;
-    onRowDoubleClick?: (row: PhongRow) => void; 
+    onRowDoubleClick?: (row: PhongRow) => void;
+    onEdit?: (row: PhongRow) => void;
+    onDelete?: (row: PhongRow) => void;
 }) {
     return (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
@@ -97,6 +102,9 @@ export default function PhongTable({
                                         Giá {specialLabel} — {ht.HT_TEN}
                                     </TableCell>
                                 ))}
+                                <TableCell isHeader className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                                    Thao tác
+                                </TableCell>
                             </TableRow>
                         </TableHeader>
 
@@ -139,13 +147,31 @@ export default function PhongTable({
                                             {vnd(specialByLP_HT?.[r.LP_MA]?.[ht.HT_MA])}
                                         </TableCell>
                                     ))}
+
+                                    <TableCell className="px-5 py-3 text-theme-sm text-right">
+                                        <div className="inline-flex items-center gap-2">
+                                            <Button size="sm" variant="outline"
+                                                // onClick={() => onEdit?.(r)}
+                                                onClick={(e?: any) => { e?.stopPropagation?.(); onEdit?.(r); }}
+                                            >
+                                                Sửa
+                                            </Button>
+
+                                            <Button size="sm" variant="danger"
+                                                // onClick={() => onDelete?.(r)}
+                                                onClick={(e?: any) => { e?.stopPropagation?.(); onDelete?.(r); }}
+                                            >
+                                                Xóa
+                                            </Button>
+                                        </div>
+                                    </TableCell>
                                 </TableRow>
                             ))}
 
                             {rows.length === 0 && (
                                 <TableRow>
                                     <td
-                                        colSpan={5 + htList.length * (specialByLP_HT && specialLabel ? 2 : 1)}
+                                        colSpan={5 + htList.length * (specialByLP_HT && specialLabel ? 2 : 1)+1}
                                         className="px-5 py-8 text-center text-gray-500 dark:text-gray-400"
                                     >
                                         Chưa có dữ liệu phòng

@@ -4,6 +4,9 @@ import { Modal } from "@/components/ui/modal"; // modal bạn đã có
 import Button from "@/components/ui/button/Button";
 import api from "@/lib/api";
 import { absUrl } from "@/lib/url";
+import LoaiPhongCreateModal from "./LoaiPhongCreateModal";
+import TangCreateModal from "./TangCreateModal";
+
 type Option = { value: number; label: string };
 const TD_BASE_MA = 1; // thời điểm cơ bản
 
@@ -31,7 +34,19 @@ export default function PhongCreateModal({
 
     const [lpOptions, setLpOptions] = useState<Option[]>([]);
     const [tangOptions, setTangOptions] = useState<Option[]>([]);
-
+    const [openCreateLoaiPhong, setOpenCreateLoaiPhong] = useState(false);
+    const [openCreateTang, setOpenCreateTang] = useState(false);
+    const reloadLoaiPhong = async () => {
+        const lpRes = await api.get("/loai-phong", { params: { take: 200 } });
+        setLpOptions((lpRes.data || []).map((x: any) => ({ value: x.LP_MA, label: x.LP_TEN })));
+    };
+    const reloadTang = async () => {
+        const tangRes = await api.get("/tang", { params: { take: 200 } });
+        setTangOptions((tangRes.data || []).map((x: any) => ({
+            value: x.TANG_MA,
+            label: x.TANG_TEN || `Tầng ${x.TANG_MA}`,
+        })));
+    };
     useEffect(() => {
         if (!open) return;
         (async () => {
@@ -117,26 +132,65 @@ export default function PhongCreateModal({
 
                 <div>
                     <label className="mb-1 block text-sm">Loại phòng *</label>
-                    <select
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                        value={lp}
-                        onChange={(e) => setLp(e.target.value ? Number(e.target.value) : "")}
-                    >
-                        <option value="">— Chọn loại phòng —</option>
-                        {lpOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
+                    <div className="flex items-stretch">
+                        <div className="relative grow">
+                            <select
+                                className="w-full rounded-l-lg border border-r-0 border-slate-300 px-3 pr-10 py-2 text-sm
+                 dark:border-slate-700 dark:bg-slate-800"
+                                value={lp}
+                                onChange={(e) => setLp(e.target.value ? Number(e.target.value) : "")}
+                            >
+                                <option value="">— Chọn loại phòng —</option>
+                                {lpOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                        </div>
+
+                        {/* Nút liền kề, bo tròn bên phải */}
+                        <button
+                            type="button"
+                            onClick={() => setOpenCreateLoaiPhong(true)}
+                            className="inline-flex h-[36px] items-center justify-center rounded-r-lg
+               border border-l-0 border-slate-300 bg-white px-3 text-slate-700 hover:bg-slate-50
+               dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            title="Thêm loại phòng"
+                            aria-label="Thêm loại phòng"
+                        >
+                            +
+                        </button>
+                    </div>
                 </div>
 
                 <div>
                     <label className="mb-1 block text-sm">Tầng *</label>
-                    <select
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                        value={tang}
-                        onChange={(e) => setTang(e.target.value ? Number(e.target.value) : "")}
-                    >
-                        <option value="">— Chọn tầng —</option>
-                        {tangOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
+                    <div className="flex items-stretch">
+                        <div className="relative grow">
+                            <select
+                                className="w-full rounded-l-lg border border-r-0 border-slate-300 px-3 pr-10 py-2 text-sm
+                 dark:border-slate-700 dark:bg-slate-800"
+                                value={tang}
+                                onChange={(e) => setTang(e.target.value ? Number(e.target.value) : '')}
+                            >
+                                <option value="">— Chọn tầng —</option>
+                                {tangOptions.map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Nút liền kề, bo tròn bên phải */}
+                        <button
+                            type="button"
+                            onClick={() => setOpenCreateTang(true)}
+                            className="inline-flex h-[36px] items-center justify-center rounded-r-lg
+               border border-l-0 border-slate-300 bg-white px-3 text-slate-700 hover:bg-slate-50
+               dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            title="Thêm tầng"
+                            aria-label="Thêm tầng"
+                        >
+                            +
+                        </button>
+                    </div>
+
                 </div>
 
                 <div>
@@ -219,6 +273,23 @@ export default function PhongCreateModal({
                     {saving ? "..." : "Lưu & Thêm mới"}
                 </Button>
             </div>
+            <LoaiPhongCreateModal
+                open={openCreateLoaiPhong}
+                onClose={() => setOpenCreateLoaiPhong(false)}
+                onCreated={async () => {
+                    await reloadLoaiPhong();
+                    setOpenCreateLoaiPhong(false);
+                }}
+            />
+
+            <TangCreateModal
+                open={openCreateTang}
+                onClose={() => setOpenCreateTang(false)}
+                onCreated={async () => {
+                    await reloadTang();
+                    setOpenCreateTang(false);
+                }}
+            />
         </Modal>
     );
 }

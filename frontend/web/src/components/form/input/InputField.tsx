@@ -5,6 +5,7 @@ interface InputProps {
   id?: string;
   name?: string;
   placeholder?: string;
+  value?: string | number;
   defaultValue?: string | number;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   className?: string;
@@ -15,6 +16,12 @@ interface InputProps {
   success?: boolean;
   error?: boolean;
   hint?: string; // Optional hint text
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;     // ✅ thêm
+  onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  autoComplete?: string;
+  maxLength?: number;
+  minLength?: number;
 }
 
 const Input: FC<InputProps> = ({
@@ -22,8 +29,11 @@ const Input: FC<InputProps> = ({
   id,
   name,
   placeholder,
+  value,
   defaultValue,
   onChange,
+  onBlur,      
+  onFocus,
   className = "",
   min,
   max,
@@ -32,6 +42,10 @@ const Input: FC<InputProps> = ({
   success = false,
   error = false,
   hint,
+  inputMode,
+  autoComplete,
+  maxLength,
+  minLength,
 }) => {
   // Determine input styles based on state (disabled, success, error)
   let inputClasses = `h-11 w-full rounded-lg border appearance-none px-4 py-2.5 text-sm shadow-theme-xs placeholder:text-gray-400 focus:outline-hidden focus:ring-3 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800 ${className}`;
@@ -54,13 +68,22 @@ const Input: FC<InputProps> = ({
         id={id}
         name={name}
         placeholder={placeholder}
+        {...(value !== undefined ? { value } : { defaultValue })}
         defaultValue={defaultValue}
         onChange={onChange}
+        onBlur={onBlur}                                            
+        onFocus={onFocus}
         min={min}
         max={max}
         step={step}
         disabled={disabled}
         className={inputClasses}
+        aria-invalid={!!error}
+        inputMode={inputMode}
+        autoComplete={autoComplete}
+        maxLength={maxLength}
+        minLength={minLength}
+        
       />
 
       {/* Optional Hint Text */}
