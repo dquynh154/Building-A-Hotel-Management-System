@@ -2,8 +2,13 @@
 const { prisma } = require('../db/prisma');
 
 // helper ép số
-const num = (v) => Number(v||0);
+const num = (v) => Number(v || 0);
+// const toNum = (v) => Number(v||0);
+const toMoneyStr = (n) => Number(n || 0).toFixed(2);
 const ACTIVE_STATES = ['ACTIVE', 'INVOICED'];
+
+async function getDiscountOfBooking(HDONG_MA) { return 0; }
+
 async function recalcBookingTotals(HDONG_MA) {
     HDONG_MA = Number(HDONG_MA);
 
@@ -12,7 +17,7 @@ async function recalcBookingTotals(HDONG_MA) {
         where: { HDONG_MA, CTSD_TRANGTHAI: { in: ACTIVE_STATES } },
         select: { CTSD_TONG_TIEN: true }
     });
-    const roomTotal = ctsdRows.reduce((sum, r) => sum + toNum(r.CTSD_TONG_TIEN), 0);
+    const roomTotal = ctsdRows.reduce((sum, r) => sum + num(r.CTSD_TONG_TIEN), 0);
 
     // 2) Tiền dịch vụ: sum(CTDV_SOLUONG * CTDV_DONGIA) cho các dòng ACTIVE/INVOICED
     const ctdvRows = await prisma.cHI_TIET_DICH_VU.findMany({
@@ -20,7 +25,7 @@ async function recalcBookingTotals(HDONG_MA) {
         select: { CTDV_SOLUONG: true, CTDV_DONGIA: true }
     });
     const serviceTotal = ctdvRows.reduce((sum, r) =>
-        sum + (Number(r.CTDV_SOLUONG || 0) * toNum(r.CTDV_DONGIA)), 0);
+        sum + (Number(r.CTDV_SOLUONG || 0) * num(r.CTDV_DONGIA)), 0);
 
     const gross = roomTotal + serviceTotal;
 
@@ -82,7 +87,6 @@ async function nextCTDV_STT(HDONG_MA, PHONG_MA, CTSD_STT) {
     });
     return (last?.CTDV_STT ?? 0) + 1;
 }
-
 // --- handlers ---
 // GET /bookings/:id/rooms/:phongMa/items/:stt/services
 async function list(req, res, next) {

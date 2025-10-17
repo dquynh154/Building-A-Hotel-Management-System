@@ -17,6 +17,8 @@ import {
   TableIcon,
   UserCircleIcon,
   Room,
+  Service,
+  Staff,
 } from "../icons/index";
 // import SidebarWidget from "./SidebarWidget";
 
@@ -42,12 +44,12 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    icon: <CalenderIcon />,
+    icon: <Service />,
     name: "Dịch vụ",
     path: "/admin/others-pages/dich-vu",
   },
   {
-    icon: <UserCircleIcon />,
+    icon: <Staff />,
     name: "Quản lý nhân viên",
     path: "/admin/others-pages/nhan-vien",
   },

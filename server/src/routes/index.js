@@ -4,11 +4,16 @@ r.get('/health', (req, res) => res.json({ ok: true }));
 
 r.use('/auth/guest', require('./auth_guest'));
 r.use('/auth/staff', require('./auth_staff'));
-r.use('/', require('./crud'));
 r.use('/', require('./booking'));
+r.use('/', require('./pricing'));
+    
+r.use('/', require('./crud'));
+// r.use('/', require('./booking'));
 r.use('/', require('./ctdv'));
-
 r.use('/', require('./hoadon'));
 r.use('/', require('./thanhtoan'));
 r.use('/', require('./hoadon_hopdong'));
+r.use('/', require('./hopdong'));    
+r.use('/', require('./ctsd'));
+
 module.exports = r;

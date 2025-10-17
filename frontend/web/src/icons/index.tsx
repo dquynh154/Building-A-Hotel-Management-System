@@ -53,6 +53,12 @@ import MoreDotIcon from "./more-dot.svg";
 import BellIcon from "./bell.svg";
 import Search from "./search.svg";
 import Room from "./room.svg";
+import Service from "./service.svg";
+import Staff from "./staff.svg";
+import LeTan from "./letan.svg";
+import Bang from "./bang.svg";
+import ListPhong from "./listphong.svg";
+import Lich from "./lich.svg";
 export {
   DownloadIcon,
   BellIcon,
@@ -109,4 +115,10 @@ export {
   ChatIcon,
   Search,
   Room,
+  Service,
+  Staff,
+  LeTan,
+  Bang,
+  ListPhong,
+  Lich,  
 };

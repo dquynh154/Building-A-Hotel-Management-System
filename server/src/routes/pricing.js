@@ -1,13 +1,11 @@
 const r = require('express').Router();
 const auth = require('../middlewares/auth');
 const permit = require('../middlewares/permit');
-const ctl = require('../controllers/booking_lite');
+const ctl = require('../controllers/pricing');
 
 const staffOrAdmin = permit('ADMIN', 'RECEPTIONIST');
 
 r.use(auth);
-
-// dữ liệu “lite” cho Board/List/Timeline
-r.get('/bookings/lite', staffOrAdmin, ctl.lite);
+r.get('/pricing/quote', staffOrAdmin, ctl.quote);
 
 module.exports = r;
