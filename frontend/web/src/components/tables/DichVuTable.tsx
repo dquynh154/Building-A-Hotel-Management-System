@@ -39,7 +39,7 @@ export default function DichVuTable({
                                 <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Tên dịch vụ</TableCell>
                                 <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Loại dịch vụ</TableCell>
                                 <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Đơn giá</TableCell>
-                                <TableCell isHeader className="px-5 py-3 text-end   text-theme-xs font-medium text-gray-500 dark:text-gray-400">Thao tác</TableCell>
+                                <TableCell isHeader className="px-5 py-3 text-medium   text-theme-xs font-medium text-gray-500 dark:text-gray-400">Thao tác</TableCell>
                             </TableRow>
                         </TableHeader>
 

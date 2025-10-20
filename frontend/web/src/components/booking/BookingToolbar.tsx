@@ -34,19 +34,6 @@ export default function BookingToolbar({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-                {/* <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={filters.statuses.prebook} onChange={() => toggle('prebook')} /> Đặt trước
-                </label>
-                <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={filters.statuses.inuse} onChange={() => toggle('inuse')} /> Đang sử dụng
-                </label>
-                <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={filters.statuses.checkout} onChange={() => toggle('checkout')} /> Đã trả
-                </label>
-                <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={filters.statuses.available} onChange={() => toggle('available')} /> Phòng trống
-                </label> */}
-
                 <div className="flex items-center gap-2">
                     <DatePicker
                         id="dp-from"

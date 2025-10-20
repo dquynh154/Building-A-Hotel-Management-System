@@ -9,24 +9,24 @@ export default function ListView({ bookings }: { bookings: BookingLite[]; filter
             <Table>
                 <TableHeader>
                     <TableRow>
-                        <TableCell isHeader>STT</TableCell>
-                        <TableCell isHeader>Mã đặt phòng</TableCell>
-                        <TableCell isHeader>Khách đặt</TableCell>
-                        <TableCell isHeader>Lưu trú</TableCell>
-                        <TableCell isHeader>Trạng thái</TableCell>
-                        <TableCell isHeader className="text-right">Thao tác</TableCell>
+                        <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">STT</TableCell>
+                        <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Mã đặt phòng</TableCell>
+                        <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Khách đặt</TableCell>
+                        <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Lưu trú</TableCell>
+                        <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Trạng thái</TableCell>
+                        <TableCell isHeader className="px-5 py-3 text-medium   text-theme-xs font-medium text-gray-500 dark:text-gray-400">Thao tác</TableCell>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {bookings.map((b, i) => (
                         <TableRow key={`${b.HDONG_MA}-${i}`}>
-                            <TableCell>{i + 1}</TableCell>
-                            <TableCell>DP{String(b.HDONG_MA).padStart(6, '0')}</TableCell>
-                            <TableCell>{b.KH_TEN || 'Khách lẻ'}</TableCell>
-                            <TableCell>{fmt(b.TU_LUC)} → {fmt(b.DEN_LUC)}</TableCell>
-                            <TableCell>{b.TRANG_THAI}</TableCell>
-                            <TableCell className="text-right">
-                                <div className="inline-flex gap-2">
+                            <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">{i + 1}</TableCell>
+                            <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">DP{String(b.HDONG_MA).padStart(6, '0')}</TableCell>
+                            <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">{b.KH_TEN || 'Khách lẻ'}</TableCell>
+                            <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">{fmt(b.TU_LUC)} → {fmt(b.DEN_LUC)}</TableCell>
+                            <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">{b.TRANG_THAI}</TableCell>
+                            <TableCell className="px-5 py-3 text-theme-sm text-right">
+                                <div className="inline-flex items-center gap-2">
                                     <Button size="sm" variant="outline">Chi tiết</Button>
                                     <Button size="sm" variant="danger">Huỷ</Button>
                                 </div>
