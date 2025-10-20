@@ -4,7 +4,7 @@ import Button from '@/components/ui/button/Button';
 import DatePicker from '@/components/form/date-picker'; // bạn đã có
 import { Bang, Lich, ListPhong, PlusIcon, Search } from '@/icons';
 import BookingCreateModal from '../ui/modal/BookingCreateModal';
-
+import BookingCreateToolBarModal from '@/components/ui/modal/BookingCreateToolBarModal';
 export type ViewMode = 'board' | 'list' | 'timeline';
 export type FilterState = {
     statuses: { prebook: boolean; inuse: boolean; checkout: boolean; available: boolean };
@@ -13,18 +13,27 @@ export type FilterState = {
 };
 
 export default function BookingToolbar({
-    mode, onModeChange, filters, onFiltersChange, onSearch, onCreated,
+    mode, onModeChange, filters, onFiltersChange, onSearch, onOpenBulk,onBooked
 }: {
     mode: ViewMode;
     onModeChange: (m: ViewMode) => void;
     filters: FilterState;
     onFiltersChange: (f: FilterState) => void;
     onSearch: () => void;
-    onCreated: () => void;
+    // onCreated: () => void;
+    onOpenBulk: () => void;
+    onBooked: () => void;
 }) {
     const toggle = (k: keyof FilterState['statuses']) =>
         onFiltersChange({ ...filters, statuses: { ...filters.statuses, [k]: !filters.statuses[k] } });
     const [openCreate, setOpenCreate] = useState(false);
+    const [openTool, setOpenTool] = useState(false);
+    const [prefillForCreate, setPrefillForCreate] = useState<null | {
+        ht: 'DAY' | 'HOUR',
+        fromDate: string, fromTime: string,
+        toDate: string, toTime: string,
+        selections: { LP_MA: number; LP_TEN: string; qty: number; price: number }[]
+    }>(null);
     return (
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-2">
@@ -56,11 +65,21 @@ export default function BookingToolbar({
                     className="w-56 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                 />
                 <Button size="sm" variant="primary" endIcon={<Search />} onClick={onSearch}>Tìm</Button>
-                <Button size="sm" variant="add" startIcon={<PlusIcon />} onClick={() => setOpenCreate(true)}>Đặt phòng</Button>
+                <Button size="sm" variant="add" startIcon={<PlusIcon />} onClick={() => setOpenTool(true)}>Đặt phòng</Button>
+                <BookingCreateToolBarModal
+                    open={openTool}
+                    onClose={() => setOpenTool(false)}
+                    onConfirm={(data) => {
+                        setOpenTool(false);
+                        setPrefillForCreate(data);     // lưu tạm payload
+                        setOpenCreate(true);           // mở BookingCreateModal ngay sau đó
+                    }}
+                />
                 <BookingCreateModal
                     open={openCreate}
-                    onClose={() => setOpenCreate(false)}
-                    onCreated={() => { setOpenCreate(false); onCreated?.(); }}
+                    onClose={() => { setOpenCreate(false); setPrefillForCreate(null); }}
+                    onCreated={() => { setOpenCreate(false); setPrefillForCreate(null); onBooked(); }}
+                    initialMulti={prefillForCreate ?? undefined}
                 />
             </div>
         </div>

@@ -1,9 +1,16 @@
+import { useState } from 'react';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
 import Button from '@/components/ui/button/Button';
 import { FilterState } from './BookingToolbar';
 import { BookingLite } from '@/app/admin/others-pages/dat-phong/page';
-
-export default function ListView({ bookings }: { bookings: BookingLite[]; filters: FilterState }) {
+import Link from 'next/link';
+export default function ListView({ 
+    bookings 
+}: {
+    bookings: BookingLite[]; 
+    filters: FilterState 
+}) {
+    const [openId, setOpenId] = useState<number | null>(null);
     return (
         <div className="overflow-auto rounded-xl border">
             <Table>
@@ -27,7 +34,9 @@ export default function ListView({ bookings }: { bookings: BookingLite[]; filter
                             <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">{b.TRANG_THAI}</TableCell>
                             <TableCell className="px-5 py-3 text-theme-sm text-right">
                                 <div className="inline-flex items-center gap-2">
-                                    <Button size="sm" variant="outline">Chi tiết</Button>
+                                    <Button size="sm" variant="outline">
+                                        <Link href={`/admin/others-pages/chi-tiet/${b.HDONG_MA}`}>Chi tiết</Link>
+                                    </Button>
                                     <Button size="sm" variant="danger">Huỷ</Button>
                                 </div>
                             </TableCell>

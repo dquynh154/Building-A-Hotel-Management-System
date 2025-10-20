@@ -11,7 +11,7 @@ import ListView from '@/components/booking/ListView';
 import TimelineView from '@/components/booking/TimelineView';
 import ComponentCard from '@/components/common/ComponentCard';
 import BookingCreateModal from '@/components/ui/modal/BookingCreateModal';
-
+import BookingCreateToolBarModal from '@/components/ui/modal/BookingCreateToolBarModal';
 export type Phong = {
     PHONG_MA: number;
     PHONG_TEN: string;
@@ -21,7 +21,6 @@ export type Phong = {
     LOAI_PHONG?: {
         LP_TEN?: string | null;
         LP_MA?: number | null;
-        
     } | null; // thêm LP_MA nếu BE trả
     PRICE_HOUR?: number | null;
     PRICE_DAY?: number | null;
@@ -50,12 +49,8 @@ export default function BookingPage() {
 
     // 👉 state cho “tạo nhanh”
     const [openCreate, setOpenCreate] = useState(false);
-    const [initialForCreate, setInitialForCreate] = useState<{
-        selectedLP?: number;
-        selectedRoomId?: number;
-        selectedRoomName?: string;
-        lockSelectedRoom?: boolean;
-    } | undefined>(undefined);
+    const [initialForCreate, setInitialForCreate] = useState<any>(undefined);
+    const [openBulk, setOpenBulk] = useState(false);
 
     const loadData = async () => {
         setLoading(true);
@@ -103,7 +98,11 @@ export default function BookingPage() {
         });
         setOpenCreate(true);
     };
-
+    const handleBooked = () => {
+        setOpenCreate(false);
+        setInitialForCreate(undefined);
+        loadData();                  
+    };
     return (
         <div>
             <PageBreadcrumb pageTitle="Đặt phòng" />
@@ -114,7 +113,8 @@ export default function BookingPage() {
                 filters={filters}
                 onFiltersChange={setFilters}
                 onSearch={() => loadData()}
-                onCreated={() => setOpenCreate(true)}
+                onOpenBulk={() => setOpenBulk(true)}
+                onBooked={handleBooked}
             />
 
             <ComponentCard title={
@@ -135,7 +135,28 @@ export default function BookingPage() {
                     <TimelineView rooms={rooms} bookings={bookings} filters={filters} />
                 )}
             </ComponentCard>
+            <BookingCreateToolBarModal
+                open={openBulk}
+                onClose={() => setOpenBulk(false)}
+                onConfirm={({ ht, fromDate, fromTime, toDate, toTime, selections }) => {
+                    setOpenBulk(false);
 
+                    // map ht text -> HT_MA (DB)
+                    const HT_MAP: Record<'DAY' | 'HOUR', number> = { DAY: 1, HOUR: 2 };
+                    const prefillHT = HT_MAP[ht];
+
+                    // build ISO
+                    const toIso = (d: string, t: string) => new Date(`${d}T${t}:00`).toISOString();
+
+                    setInitialForCreate({
+                        prefillHT,
+                        prefillFromISO: toIso(fromDate, fromTime),
+                        prefillToISO: toIso(toDate, toTime),
+                        bulkSelections: selections, // nếu muốn dùng ở Modal #2
+                    });
+                    setOpenCreate(true); // mở Modal #2
+                }}
+            />
             {/* Modal tạo HĐ (có prefill phòng) */}
             <BookingCreateModal
                 open={openCreate}

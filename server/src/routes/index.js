@@ -17,5 +17,5 @@ r.use('/', require('./hopdong'));
 r.use('/', require('./ctsd'));
 r.use('/bookings', require('./bookingguest'));
 r.use('/', require('./availability'));
-
+r.use('/', require('./booking_pos'));
 module.exports = r;

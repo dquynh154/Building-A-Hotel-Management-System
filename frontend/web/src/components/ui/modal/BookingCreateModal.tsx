@@ -5,13 +5,20 @@ import Button from '@/components/ui/button/Button';
 import api from '@/lib/api';
 import DatePicker from '@/components/form/date-picker';
 import Input from '@/components/form/input/InputField';
-import { PlusIcon, Search } from '@/icons';
+import { PlusIcon, Search, TrashBinIcon } from '@/icons';
 import type { Phong } from '@/app/admin/others-pages/dat-phong/page';
 import Flatpickr from 'react-flatpickr';
 import 'flatpickr/dist/flatpickr.css';
 import KhachHangCreateModal from '@/components/ui/modal/KhachHangCreateModal';
 import OccupantsModal, { Occupant } from '@/components/ui/modal/OccupantsModal';
-
+type Line = {
+    id: string;                 // để key
+    lp: number | '';            // LP_MA
+    lpLabel: string;            // LP_TEN (để hiển thị)
+    roomId: number | '';        // PHONG_MA chọn cho dòng này
+    price: number;              // tổng tiền đã quote cho dòng này
+    quoting?: boolean;          // đang quote
+};
 type Option = { value: number; label: string };
 type QuoteItem = { date: string; price: number };
 
@@ -29,7 +36,8 @@ function parseKHLabel(label: string) {
     return { name: (m ? m[1] : label || '').trim(), phone: (m ? m[2] : '').trim() };
 }
 
-
+const ymdLocal = (d: Date) =>
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const toNumber = (s: string) => {
     const n = Number((s || '').replace(/[^\d]/g, ''));
     return Number.isFinite(n) ? n : 0;
@@ -142,11 +150,17 @@ function SearchCombo({
 
 // ========== MAIN ==========
 export default function BookingCreateModal({
-    open, onClose, onCreated, initial, rooms,
+    open, onClose, onCreated, initial, rooms, initialMulti,
 }: {
     open: boolean; onClose: () => void; onCreated?: (bookingId?: number) => void;
     initial?: { selectedLP?: number; selectedRoomId?: number; selectedRoomName?: string };
     rooms?: Phong[];
+    initialMulti?: {
+        ht: 'DAY' | 'HOUR',
+        fromDate: string, fromTime: string,
+        toDate: string, toTime: string,
+        selections: { LP_MA: number; LP_TEN: string; qty: number; price: number }[]
+    };
 }) {
     // KH
     const [kh, setKh] = useState<Option | null>(null);
@@ -192,6 +206,8 @@ export default function BookingCreateModal({
         const t = timeStr && /^\d{2}:\d{2}$/.test(timeStr) ? timeStr : '00:00';
         return new Date(`${dateStr}T${t}:00`).toISOString();
     };
+
+    const [lines, setLines] = useState<Line[]>([]);
 
     // === helpers xác định hình thức & thời lượng ===
     function hoursBetween(dateStr1: string, timeStr1: string, dateStr2: string, timeStr2: string) {
@@ -324,13 +340,20 @@ export default function BookingCreateModal({
     };
 
     const canQuote = useMemo(() => {
-        if (!(roomId && ht && fromDate && toDate)) return false;
+        if (!(ht && fromDate && toDate)) return false;
+        // chỉ cần có ÍT NHẤT 1 dòng đã chọn phòng để quote
+        const hasRoom = lines.some(l => !!l.roomId);
+        if (!hasRoom) return false;
         const s = new Date(`${fromDate}T${fromTime || '00:00'}:00`);
         const e = new Date(`${toDate}T${toTime || '00:00'}:00`);
         return e.getTime() > s.getTime();
-    }, [roomId, ht, fromDate, toDate, fromTime, toTime]);
+    }, [lines.map(l => l.roomId).join(','), ht, fromDate, toDate, fromTime, toTime]);
 
-    const canSave = !!kh?.value && !!roomId && !!ht && !!fromDate && !!toDate && !saving;
+    const canSave = !!kh?.value
+        && !!ht && !!fromDate && !!toDate
+        && lines.every(l => !!l.roomId)   // tất cả dòng đều đã chọn phòng
+        && !saving;
+
 
     // báo giá (thành tiền)
     useEffect(() => {
@@ -373,7 +396,7 @@ export default function BookingCreateModal({
             } finally { setQuoting(false); }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, roomId, ht, fromDate, toDate, fromTime, toTime, canQuote]);
+    }, [open, roomId, ht, fromDate, toDate, fromTime, toTime, lines.map(l => l.roomId).join(',')]);
 
 
     // lưu
@@ -409,16 +432,17 @@ export default function BookingCreateModal({
             const isHourForm = /giờ/i.test(htLabel);
             const diffMs = (+new Date(toISO)) - (+new Date(fromISO));
             const hours = Math.ceil(diffMs / 3600000);
-
+            for (const ln of lines) {
+                if (!ln.roomId) continue;
             if (hourHTId && ht === hourHTId) {
                 // === THEO GIỜ ===
                 await api.post(`/bookings/${bookingId}/items`, {
-                    PHONG_MA: Number(roomId),
+                    PHONG_MA: Number(ln.roomId),
                     DONVI: 'HOUR',
                     TU_GIO: new Date(`${fromDate}T${fromTime}:00`).toISOString(),
                     DEN_GIO: new Date(`${toDate}T${toTime}:00`).toISOString(),
                     SO_LUONG: 1,
-                    DON_GIA: Number(quoteTotal || 0),
+                    DON_GIA: Number(ln.price || 0),
                 });
             } else {
                 // CTSD theo ĐÊM (mỗi ngày 1 dòng)
@@ -436,14 +460,14 @@ export default function BookingCreateModal({
                         for (let i = 0; i < days; i++) {
                             const d = new Date(fromDate + 'T00:00:00');
                             d.setDate(d.getDate() + i);
-                            arr.push({ date: d.toISOString().slice(0, 10), price: pricePerDay });
+                            arr.push({ date: ymdLocal(d), price: pricePerDay });
                         }
                         return arr;
                     })();
 
                 for (const it of daysItems) {
                     await api.post(`/bookings/${bookingId}/items`, {
-                        PHONG_MA: Number(roomId),
+                        PHONG_MA: Number(ln.roomId),
                         DONVI: 'NIGHT',
                         NGAY: toNoonISO(it.date),
                         SO_LUONG: 1,
@@ -451,6 +475,7 @@ export default function BookingCreateModal({
                     });
                 }
             }
+        }
 
             const guestsPayload = (occupants || [])
                 .filter(o => Number.isFinite(o.khId)) // bỏ trẻ em/dòng chưa có KH_MA
@@ -479,13 +504,127 @@ export default function BookingCreateModal({
     // Khi mở modal, nếu danh sách trống → mặc định 1 người lớn (placeholder)
     useEffect(() => {
         if (!open) return;
+        if ((initial as any)?.prefillFromISO && (initial as any)?.prefillToISO) {
+            const from = new Date((initial as any).prefillFromISO);
+            const to = new Date((initial as any).prefillToISO);
+            const pad2 = (n: number) => String(n).padStart(2, '0');
+            const ymd = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+            const hm = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+
+            setFromDate(ymd(from));
+            setToDate(ymd(to));
+            setFromTime(hm(from));
+            setToTime(hm(to));
+        }
+        if ((initial as any)?.prefillHT) {
+            setHt((initial as any).prefillHT);
+            setUserTouchedHT(true); // không auto-switch nữa
+        }
+        if (initialMulti) {
+            // set thời gian & hình thức từ modal chọn hạng
+            setFromDate(initialMulti.fromDate);
+            setFromTime(initialMulti.fromTime);
+            setToDate(initialMulti.toDate);
+            setToTime(initialMulti.toTime);
+
+            // convert 'DAY'/'HOUR' -> id thật đã load vào hireTypes
+            // nếu bạn đã map hourHTId/nightHTId, có thể dùng:
+            const htId = initialMulti.ht === 'HOUR' ? hourHTId : nightHTId;
+            if (htId) setHt(htId);
+
+            // nở selections thành nhiều dòng
+            const expanded: Line[] = [];
+            initialMulti.selections.forEach(s => {
+                for (let i = 0; i < s.qty; i++) {
+                    expanded.push({
+                        id: `${s.LP_MA}-${i}-${Date.now()}-${Math.random()}`,
+                        lp: s.LP_MA,
+                        lpLabel: s.LP_TEN,
+                        roomId: '',
+                        price: 0,
+                    });
+                }
+            });
+            setLines(expanded);
+        } else {
+            const initRoom = initial?.selectedRoomId || '';
+            const rec = (rooms ?? allRooms).find(x => x.PHONG_MA === Number(initRoom));
+            const lpma = initRoom ? ((rec as any)?.LP_MA ?? rec?.LOAI_PHONG?.LP_MA) : (initial?.selectedLP ?? '');
+            const lpten = initRoom ? (rec?.LOAI_PHONG?.LP_TEN ?? '') : '';
+
+            setLines([{
+                id: 'single',
+                lp: (lpma || '') as any,
+                lpLabel: lpten || (lpma ? `Loại #${lpma}` : '—'),
+                roomId: (initRoom || '') as any,
+                price: 0,
+            }]);
+
+        }
+
         setOccupants(prev => {
             if (prev && prev.length > 0) return prev;
             return [{ khId: null, fullName: '', phone: '', idNumber: '', address: '', isChild: false }];
         });
     }, [open]);
 
-    // const [fromTime, setFromTime] = useState('14:00');
+    const handleSelectRoom = (idx: number, val: number | '') => {
+        const chosenId = Number(val || 0);
+        if (chosenId && lines.some((l, i) => i !== idx && Number(l.roomId) === chosenId)) {
+            // không cho trùng
+            setDupMsg('Phòng này đã được chọn ở dòng khác. Mỗi dòng phải là một phòng khác nhau.');
+            return;
+        }
+        const r = allRooms.find(x => x.PHONG_MA === chosenId);
+        setLines(prev => {
+            const cp = [...prev];
+            cp[idx] = {
+                ...cp[idx],
+                roomId: (val || '') as any,
+                lp: ((r as any)?.LP_MA ?? r?.LOAI_PHONG?.LP_MA ?? cp[idx].lp) as any,
+                lpLabel: (r?.LOAI_PHONG?.LP_TEN ?? cp[idx].lpLabel) as any,
+            };
+            return cp;
+        });
+    };
+
+    useEffect(() => {
+        if (!open) return;
+        const isoFrom = fromDate && fromTime ? new Date(`${fromDate}T${fromTime}:00`).toISOString() : '';
+        const isoTo = toDate && toTime ? new Date(`${toDate}T${toTime}:00`).toISOString() : '';
+        if (!isoFrom || !isoTo || +new Date(isoTo) <= +new Date(isoFrom)) {
+            // reset giá
+            setLines(prev => prev.map(l => ({ ...l, price: 0, quoting: false })));
+            setQuoteTotal(0);
+            return;
+        }
+
+        // quote từng dòng có roomId
+        (async () => {
+            const results: number[] = [];
+            const updated = await Promise.all(lines.map(async (l) => {
+                if (!l.roomId || !ht) { results.push(0); return { ...l, price: 0, quoting: false }; }
+                try {
+                    const q = await api.get('/pricing/quote', {
+                        params: { PHONG_MA: Number(l.roomId), HT_MA: Number(ht), from: isoFrom, to: isoTo }
+                    });
+                    const total = Number(q.data?.total ?? q.data?.data?.total ?? q.data?.sum ?? 0);
+                    results.push(total);
+                    return { ...l, price: total, quoting: false };
+                } catch {
+                    results.push(0);
+                    return { ...l, price: 0, quoting: false };
+                }
+            }));
+            setLines(updated);
+            setQuoteTotal(results.reduce((s, n) => s + (Number(n) || 0), 0));
+        })();
+    }, [open, ht, fromDate, fromTime, toDate, toTime, JSON.stringify(lines.map(l => l.roomId))]);
+
+    useEffect(() => {
+        const sum = lines.reduce((s, l) => s + (Number(l.price) || 0), 0);
+        setQuoteTotal(sum);
+    }, [lines]);
 
     const timeOptsTo = useMemo(
         () => ({
@@ -521,6 +660,44 @@ export default function BookingCreateModal({
         address: rec?.KH_DIACHI ?? '',
         isChild: false,
     });
+
+    // BookingCreateModal.tsx (ở phần state)
+    const [dupMsg, setDupMsg] = useState<string | null>(null);
+    // Tạo 1 dòng trống
+    const makeBlankLine = (): Line => ({
+        id: (crypto as any)?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+        lp: '',
+        lpLabel: '',
+        roomId: '',
+        price: 0,
+    });
+
+    // ...
+    useEffect(() => {
+        // đếm số lần chọn của mỗi PHONG_MA
+        const counts: Record<number, number> = {};
+        (lines || []).forEach(l => {
+            if (!l.roomId) return;
+            const id = Number(l.roomId);
+            counts[id] = (counts[id] || 0) + 1;
+        });
+
+        // gom các phòng bị chọn >1 lần
+        const dups = Object.entries(counts)
+            .filter(([, c]) => c > 1)
+            .map(([id]) => Number(id));
+
+        if (dups.length > 0) {
+            const names = dups
+                .map(id => allRooms.find(r => r.PHONG_MA === id)?.PHONG_TEN || `#${id}`);
+            setDupMsg(
+                `Bạn đang chọn trùng phòng: ${names.join(', ')}. Vui lòng chọn phòng khác cho mỗi dòng.`
+            );
+        } else {
+            setDupMsg(null);
+        }
+    }, [lines, allRooms]);
+
     return (
         <Modal isOpen={open} onClose={onClose} className="w-full max-w-[1400px] p-4 sm:p-6">
             <h3 className="mb-3 text-base font-medium">Đặt/Nhận phòng nhanh</h3>
@@ -601,18 +778,14 @@ export default function BookingCreateModal({
             </div>
 
             {/* Bảng 7 cột */}
-            <div className="rounded-xl border p-3 dark:border-slate-700">
+            {/* <div className="rounded-xl border p-3 dark:border-slate-700">
                 <div className="mb-2 grid grid-cols-[1.4fr_1fr_1fr_1.2fr_1.2fr_.9fr_.9fr_auto] items-end gap-3">
-
-                    {/* Hạng phòng (chỉ hiển thị) */}
                     <div>
                         <div className="mb-1 text-xs text-gray-500">Hạng phòng</div>
                         <div className="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
                             {lpLabel || (lp ? `Loại #${lp}` : '—')}
                         </div>
                     </div>
-
-                    {/* Phòng (select theo hạng phòng) */}
                     <div>
                         <div className="mb-1 text-xs text-gray-500">Phòng</div>
                         <select
@@ -624,8 +797,6 @@ export default function BookingCreateModal({
                             {roomOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                     </div>
-
-                    {/* Hình thức (trong bảng) */}
                     <div>
                         <div className="mb-1 text-xs text-gray-500">Hình thức</div>
                         <select
@@ -637,8 +808,6 @@ export default function BookingCreateModal({
                             {hireTypes.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                     </div>
-
-                    {/* Nhận */}
                     <div>
                         <div className="mb-1 text-xs text-gray-500">Nhận *</div>
                         <div className="grid grid-cols-[170px_110px] gap-2">
@@ -667,7 +836,6 @@ export default function BookingCreateModal({
                         </div>
                     </div>
 
-                    {/* Trả phòng */}
                     <div>
                         <div className="mb-1 text-xs text-gray-500">Trả phòng *</div>
                         <div className="grid grid-cols-[170px_110px] gap-2">
@@ -695,9 +863,6 @@ export default function BookingCreateModal({
                         </div>
                     </div>
 
-
-
-                    {/* Dự kiến */}
                     <div className="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
                         {(hourHTId && ht === hourHTId)
                             ? `${hoursBetween(fromDate, fromTime, toDate, toTime)} giờ`
@@ -705,18 +870,111 @@ export default function BookingCreateModal({
                         }
                     </div>
 
-
-                    {/* Thành tiền */}
                     <div>
                         <div className="mb-1 text-xs text-gray-500">Thành tiền</div>
                         <div className="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
                             {quoting ? '...' : quoteTotal.toLocaleString('vi-VN')}
                         </div>
                     </div>
-
-
                 </div>
+            </div> */}
+
+            <div className="rounded-xl border p-3 dark:border-slate-700">
+                <div className="mb-2 grid grid-cols-[1.4fr_1fr_1fr_1.2fr_1.2fr_.9fr_.9fr_auto] items-end gap-3">
+                    {/* Header */}
+                    <div className="mb-1 text-xs text-gray-500">Hạng phòng</div>
+                    <div className="mb-1 text-xs text-gray-500">Phòng</div>
+                    <div className="mb-1 text-xs text-gray-500">Hình thức</div>
+                    <div className="mb-1 text-xs text-gray-500">Nhận *</div>
+                    <div className="mb-1 text-xs text-gray-500">Trả phòng *</div>
+                    <div className="mb-1 text-xs text-gray-500">Thời gian</div>
+                    <div className="mb-1 text-xs text-gray-500">Thành tiền</div>
+                    <div></div>
+                </div>
+
+                {lines.map((ln, idx) => (
+                    <div key={ln.id} className="mb-2 grid grid-cols-[1.4fr_1fr_1fr_1.2fr_1.2fr_.9fr_.9fr_auto] items-end gap-3">
+                        {/* Hạng phòng (chỉ hiển thị theo selection / auto khi chọn phòng) */}
+                        <div className="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
+                            {ln.lpLabel || (ln.lp ? `Loại #${ln.lp}` : '—')}
+                        </div>
+
+                        {/* Phòng */}
+                        <div>
+                            <select
+                                className="w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                                value={ln.roomId}
+                                onChange={(e) => handleSelectRoom(idx, e.target.value ? Number(e.target.value) : '')}
+                            >
+                                <option value="">— Chọn phòng —</option>
+                                {(ln.lp
+                                    ? allRooms.filter((r: any) => (r?.LP_MA === ln.lp) || (r?.LOAI_PHONG?.LP_MA === ln.lp))
+                                    : allRooms
+                                ).map(r => (
+                                    <option key={r.PHONG_MA} value={r.PHONG_MA}>{r.PHONG_TEN}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Hình thức: dùng 1 state chung cho tất cả dòng */}
+                        <div>
+                            <select
+                                className="w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                                value={ht}
+                                onChange={(e) => { setHt(e.target.value ? Number(e.target.value) : ''); setUserTouchedHT(true); }}
+                            >
+                                <option value="">— Chọn hình thức —</option>
+                                {hireTypes.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                        </div>
+
+                        {/* Nhận / Trả: dùng chung cho tất cả dòng (như Figma bạn gửi) */}
+                        <div className="grid grid-cols-[170px_110px] gap-2">
+                            <Flatpickr value={fromDate} options={{ dateFormat: 'Y-m-d' }} onChange={(d: any, s: string) => setFromDate(s)} className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                            <Flatpickr value={fromTime} options={{ enableTime: true, noCalendar: true, dateFormat: 'H:i', time_24hr: true, minuteIncrement: 5 }} onChange={(_, s) => setFromTime(s || '14:00')} className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        </div>
+                        <div className="grid grid-cols-[170px_110px] gap-2">
+                            <Flatpickr value={toDate} options={{ dateFormat: 'Y-m-d' }} onChange={(d: any, s: string) => setToDate(s)} className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                            <Flatpickr value={toTime} options={{ enableTime: true, noCalendar: true, dateFormat: 'H:i', time_24hr: true, minuteIncrement: 5 }} onChange={(_, s) => setToTime(s || '12:00')} className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        </div>
+
+                        {/* Thời gian */}
+                        <div className="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
+                            {(hourHTId && ht === hourHTId)
+                                ? `${hoursBetween(fromDate, fromTime, toDate, toTime)} giờ`
+                                : `${nights} đêm`
+                            }
+                        </div>
+
+                        {/* Thành tiền của dòng */}
+                        <div className="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
+                            {ln.quoting ? '...' : (ln.price || 0).toLocaleString('vi-VN')}
+                        </div>
+
+                        {/* (tuỳ) xoá dòng */}
+                        <div className="text-right">
+                            {/* <button className="rounded-md border px-2 py-1 text-xs dark:border-slate-700"
+                                onClick={() => setLines(prev => prev.filter((_, i) => i !== idx))}
+                            >🗑</button> */}
+                            
+                            <Button size="sm" variant="light" startIcon={<TrashBinIcon />} onClick={() => setLines(prev => prev.filter((_, i) => i !== idx))}> </Button>
+                            
+                        </div>
+                    </div>
+                ))}
+                <div id="booking-lines-end" />
             </div>
+            {dupMsg && (
+                <div className="mt-3 rounded-md bg-red-50 p-2 text-sm text-red-600 dark:bg-red-900/30">
+                    {dupMsg}
+                </div>
+            )}
+            {err && (
+                <div className="mt-3 rounded-md bg-red-50 p-2 text-sm text-red-600 dark:bg-red-900/30">
+                    {err}
+                </div>
+            )}
+
 
             {err && <div className="mt-3 rounded-md bg-red-50 p-2 text-sm text-red-600 dark:bg-red-900/30">{err}</div>}
 
@@ -730,9 +988,9 @@ export default function BookingCreateModal({
                         type="button"
                         className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
                         onClick={() => {
-                            // TODO: mở modal chọn thêm phòng/ hoặc gọi callback
-                            // tạm thời chỉ log:
-                            console.log('Chọn thêm phòng');
+                            setLines(prev => [...prev, makeBlankLine()]);
+                            setTimeout(() => document.querySelector('#booking-lines-end')?.scrollIntoView({ behavior: 'smooth' }), 0);
+                            
                         }}
                     >
                         <span className="text-emerald-600">＋</span> Chọn thêm phòng
@@ -827,7 +1085,7 @@ export default function BookingCreateModal({
             <KhachHangCreateModal
                 open={openCreateKH}
                 onClose={() => setOpenCreateKH(false)}
-                onCreated={async (id, label,rec) => {
+                onCreated={async (id, label, rec) => {
                     setOpenCreateKH(false);
                     // gán lại chọn khách cho SearchCombo
                     setKh({ value: id, label });
@@ -837,7 +1095,7 @@ export default function BookingCreateModal({
                             ? [toOccupant(full)]
                             : prev
                     );
-                    
+
                 }}
             />
 

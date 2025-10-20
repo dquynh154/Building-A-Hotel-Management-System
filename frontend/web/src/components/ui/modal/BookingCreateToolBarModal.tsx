@@ -8,6 +8,10 @@ import api from '@/lib/api';
 
 type Row = { LP_MA: number; LP_TEN: string; freeRooms: number; totalRooms: number; price: number };
 type Selection = { LP_MA: number; qty: number; price: number; LP_TEN: string };
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const ymdLocal = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 
 export default function BookingCreateToolBarModal({
     open, onClose, onConfirm,
@@ -39,6 +43,10 @@ export default function BookingCreateToolBarModal({
     // load availability khi đổi thời gian / hình thức
     useEffect(() => {
         if (!open) return;
+        const today = startOfToday();
+        const tomorrow = addDays(today, 1);
+        setFromDate(prev => prev || ymdLocal(today));
+        setToDate(prev => prev || ymdLocal(tomorrow));
         setQtyMap({});
         if (!(fromDate && toDate)) return;
         const fromISO = toISO(fromDate, fromTime);
@@ -63,7 +71,7 @@ export default function BookingCreateToolBarModal({
     const canConfirm = Object.values(qtyMap).some(v => v > 0) && fromDate && toDate;
 
     return (
-        <Modal isOpen={open} onClose={onClose} className="max-w-3xl p-5 sm:p-6">
+        <Modal isOpen={open} onClose={onClose} className="max-w-5xl p-5 sm:p-6">
             <h3 className="mb-3 text-base font-medium">Chọn phòng</h3>
 
             {/* Dòng chọn hình thức & thời gian */}
@@ -76,17 +84,25 @@ export default function BookingCreateToolBarModal({
                     <option value="HOUR">Theo giờ</option>
                 </select>
 
-                <Flatpickr value={fromDate} options={{ dateFormat: 'Y-m-d' }} onChange={(d: any) => setFromDate(d[0]?.toISOString?.().slice(0, 10) || '')}
-                    className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                <Flatpickr
+                    value={fromDate}
+                    options={{ dateFormat: 'Y-m-d' }}
+                    onChange={(_selected: Date[], dateStr: string) => setFromDate(dateStr || '')}
+                    className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                />
                 <Flatpickr value={fromTime} options={{ enableTime: true, noCalendar: true, dateFormat: 'H:i', time_24hr: true }}
                     onChange={(_, s) => setFromTime(s || '00:00')} className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
 
-                <Flatpickr value={toDate} options={{ dateFormat: 'Y-m-d' }} onChange={(d: any) => setToDate(d[0]?.toISOString?.().slice(0, 10) || '')}
-                    className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                <Flatpickr
+                    value={toDate}
+                    options={{ dateFormat: 'Y-m-d' }}
+                    onChange={(_selected: Date[], dateStr: string) => setToDate(dateStr || '')}
+                    className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                />
                 <Flatpickr value={toTime} options={{ enableTime: true, noCalendar: true, dateFormat: 'H:i', time_24hr: true }}
                     onChange={(_, s) => setToTime(s || '00:00')} className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
 
-                <div className="text-right text-sm text-gray-500">
+                <div className="text-sm text-green-500">
                     {ht === 'DAY' ? `${nights} ngày` : ''}
                 </div>
             </div>
