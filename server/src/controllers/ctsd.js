@@ -3,6 +3,20 @@ const { prisma } = require('../db/prisma');
 
 const money = (n) => Number(n || 0).toFixed(2);
 const ACTIVE_STATES = ['ACTIVE', 'INVOICED'];
+
+// helpers
+const toDate = (v) => {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const addDays = (d, n) => {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+};
+
 async function recalcBookingTotals(HDONG_MA) {
     HDONG_MA = Number(HDONG_MA);
     const ctsdRows = await prisma.cHI_TIET_SU_DUNG.findMany({
@@ -52,93 +66,258 @@ async function list(req, res, next) {
 // body (2 mode):
 // - NIGHT: { PHONG_MA, DONVI:'NIGHT', NGAY: '2025-10-14', SO_LUONG, DON_GIA }
 // - HOUR : { PHONG_MA, DONVI:'HOUR',  TU_GIO:'2025-10-14T13:00', DEN_GIO:'2025-10-14T17:00', SO_LUONG, DON_GIA }
+// async function create(req, res, next) {
+//     try {
+//         const HDONG_MA = Number(req.params.id);
+//         const { PHONG_MA, DONVI, NGAY, TU_GIO, DEN_GIO, SO_LUONG, DON_GIA } = req.body || {};
+
+//         await ensureBookingEditable(HDONG_MA);
+
+//         // --- VALIDATE cơ bản ---
+//         if (!PHONG_MA || !DONVI || !SO_LUONG || DON_GIA == null) {
+//             const e = new Error('Thiếu PHONG_MA / DONVI / SO_LUONG / DON_GIA'); e.status = 400; throw e;
+//         }
+//         const roomId = Number(PHONG_MA);
+//         if (!Number.isInteger(roomId) || roomId <= 0) {
+//             const e = new Error('PHONG_MA không hợp lệ'); e.status = 400; throw e;
+//         }
+
+//         // Chuẩn hóa input theo DONVI
+//         let ngay = null, tu = null, den = null;
+//         if (DONVI === 'NIGHT') {
+//             if (!NGAY) { const e = new Error('Thiếu NGAY cho đơn vị NIGHT'); e.status = 400; throw e; }
+//             ngay = new Date(NGAY);
+//             if (isNaN(ngay.getTime())) { const e = new Error('NGAY không hợp lệ'); e.status = 400; throw e; }
+//             // (khuyến nghị) ép về 00:00 để đồng nhất
+//             ngay.setHours(0, 0, 0, 0);
+//         } else if (DONVI === 'HOUR') {
+//             if (!(TU_GIO && DEN_GIO)) { const e = new Error('Thiếu TU_GIO / DEN_GIO cho đơn vị HOUR'); e.status = 400; throw e; }
+//             tu = new Date(TU_GIO); den = new Date(DEN_GIO);
+//             if (isNaN(tu.getTime()) || isNaN(den.getTime())) { const e = new Error('TU_GIO/DEN_GIO không hợp lệ'); e.status = 400; throw e; }
+//             if (!(tu < den)) { const e = new Error('TU_GIO phải nhỏ hơn DEN_GIO'); e.status = 400; throw e; }
+//         } else {
+//             const e = new Error('DONVI không hợp lệ (NIGHT|HOUR)'); e.status = 400; throw e;
+//         }
+
+//         // --- CHỐNG TRÙNG LỊCH (đẩy xuống SQL) ---
+//         if (DONVI === 'NIGHT') {
+//             // Cùng phòng, cùng ngày (và ACTIVE/INVOICED), bất kể thuộc HĐ nào → trùng
+//             const dup = await prisma.cHI_TIET_SU_DUNG.findFirst({
+//                 where: {
+//                     PHONG_MA: roomId,
+//                     CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+//                     // lưu ý: so sánh đúng ngày — giả định bạn luôn lưu 00:00
+//                     CTSD_NGAY_DA_O: ngay
+//                 },
+//                 select: { HDONG_MA: true, CTSD_STT: true }
+//             });
+//             if (dup) { const e = new Error('Phòng đã có người đặt trong ngày này'); e.status = 409; throw e; }
+//         } else {
+//             // HOUR: [tu, den) trùng nếu: existing.CTSD_O_TU_GIO < den && existing.CTSD_O_DEN_GIO > tu
+//             const conflict = await prisma.cHI_TIET_SU_DUNG.findFirst({
+//                 where: {
+//                     PHONG_MA: roomId,
+//                     CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+//                     CTSD_O_TU_GIO: { lt: den },
+//                     CTSD_O_DEN_GIO: { gt: tu }
+//                 },
+//                 select: { HDONG_MA: true, CTSD_STT: true }
+//             });
+//             if (conflict) { const e = new Error('Phòng đã được đặt trong khoảng thời gian này'); e.status = 409; throw e; }
+//         }
+
+//         // --- Tạo dữ liệu ---
+//         const stt = await nextCTSD_STT(HDONG_MA, roomId);
+//         const data = {
+//             HDONG_MA,
+//             PHONG_MA: roomId,
+//             CTSD_STT: stt,
+//             CTSD_SO_LUONG: Number(SO_LUONG),
+//             CTSD_DON_GIA: money(DON_GIA),
+//             CTSD_TONG_TIEN: money(Number(SO_LUONG) * Number(DON_GIA)),
+//             CTSD_TRANGTHAI: 'ACTIVE',
+//             CTSD_NGAY_DA_O: null,
+//             CTSD_O_TU_GIO: null,
+//             CTSD_O_DEN_GIO: null,
+//         };
+
+//         if (DONVI === 'NIGHT') {
+//             data.CTSD_NGAY_DA_O = ngay;
+//         } else {
+//             data.CTSD_O_TU_GIO = tu;
+//             data.CTSD_O_DEN_GIO = den;
+//         }
+
+//         const row = await prisma.cHI_TIET_SU_DUNG.create({ data, include: { PHONG: true } });
+//         await recalcBookingTotals(HDONG_MA);
+//         res.status(201).json(row);
+//     } catch (e) { next(e); }
+// }
+
 async function create(req, res, next) {
     try {
-        const HDONG_MA = Number(req.params.id);
-        const { PHONG_MA, DONVI, NGAY, TU_GIO, DEN_GIO, SO_LUONG, DON_GIA } = req.body || {};
+        const bookingId = Number(req.params.id);
+        const {
+            PHONG_MA,
+            // Với HOUR: TU_GIO, DEN_GIO (ISO)
+            TU_GIO, DEN_GIO,
+            // Với NIGHT: NGAY (ISO lúc 12:00)
+            NGAY,
+            // Tên FE có thể là SO_LUONG/DON_GIA; map sang tên cột đúng bên dưới
+            SO_LUONG,
+            DON_GIA,
+            // Nếu FE đã gửi đúng tên cột thì ưu tiên cái đúng:
+            CTSD_SO_LUONG: CTSD_SO_LUONG_FE,
+            CTSD_DON_GIA: CTSD_DON_GIA_FE,
+        } = req.body || {};
 
-        await ensureBookingEditable(HDONG_MA);
-
-        // --- VALIDATE cơ bản ---
-        if (!PHONG_MA || !DONVI || !SO_LUONG || DON_GIA == null) {
-            const e = new Error('Thiếu PHONG_MA / DONVI / SO_LUONG / DON_GIA'); e.status = 400; throw e;
+        if (!bookingId || !PHONG_MA) {
+            const e = new Error('Thiếu dữ liệu tạo chi tiết sử dụng'); e.status = 400; throw e;
         }
-        const roomId = Number(PHONG_MA);
-        if (!Number.isInteger(roomId) || roomId <= 0) {
-            const e = new Error('PHONG_MA không hợp lệ'); e.status = 400; throw e;
+
+        // Xác định chế độ HOUR/NIGHT dựa theo input có TU_GIO/DEN_GIO hay NGAY
+        const isHour = !!(TU_GIO && DEN_GIO);
+        const isNight = !!NGAY;
+
+        if (!isHour && !isNight) {
+            const e = new Error('Thiếu thời gian: cần TU_GIO & DEN_GIO (HOUR) hoặc NGAY (NIGHT)'); e.status = 400; throw e;
         }
 
-        // Chuẩn hóa input theo DONVI
-        let ngay = null, tu = null, den = null;
-        if (DONVI === 'NIGHT') {
-            if (!NGAY) { const e = new Error('Thiếu NGAY cho đơn vị NIGHT'); e.status = 400; throw e; }
-            ngay = new Date(NGAY);
-            if (isNaN(ngay.getTime())) { const e = new Error('NGAY không hợp lệ'); e.status = 400; throw e; }
-            // (khuyến nghị) ép về 00:00 để đồng nhất
-            ngay.setHours(0, 0, 0, 0);
-        } else if (DONVI === 'HOUR') {
-            if (!(TU_GIO && DEN_GIO)) { const e = new Error('Thiếu TU_GIO / DEN_GIO cho đơn vị HOUR'); e.status = 400; throw e; }
-            tu = new Date(TU_GIO); den = new Date(DEN_GIO);
-            if (isNaN(tu.getTime()) || isNaN(den.getTime())) { const e = new Error('TU_GIO/DEN_GIO không hợp lệ'); e.status = 400; throw e; }
-            if (!(tu < den)) { const e = new Error('TU_GIO phải nhỏ hơn DEN_GIO'); e.status = 400; throw e; }
+        // Parse khoảng thời gian để check overlap
+        let start = null, end = null;
+        if (isHour) {
+            start = toDate(TU_GIO);
+            end = toDate(DEN_GIO);
         } else {
-            const e = new Error('DONVI không hợp lệ (NIGHT|HOUR)'); e.status = 400; throw e;
+            // NIGHT: 1 đêm = [NGAY(12:00), NGAY(12:00)+1d)
+            start = toDate(NGAY);
+            end = addDays(start, 1);
+        }
+        if (!(start && end) || end <= start) {
+            const e = new Error('Khoảng thời gian không hợp lệ'); e.status = 400; throw e;
         }
 
-        // --- CHỐNG TRÙNG LỊCH (đẩy xuống SQL) ---
-        if (DONVI === 'NIGHT') {
-            // Cùng phòng, cùng ngày (và ACTIVE/INVOICED), bất kể thuộc HĐ nào → trùng
-            const dup = await prisma.cHI_TIET_SU_DUNG.findFirst({
-                where: {
-                    PHONG_MA: roomId,
-                    CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
-                    // lưu ý: so sánh đúng ngày — giả định bạn luôn lưu 00:00
-                    CTSD_NGAY_DA_O: ngay
-                },
-                select: { HDONG_MA: true, CTSD_STT: true }
-            });
-            if (dup) { const e = new Error('Phòng đã có người đặt trong ngày này'); e.status = 409; throw e; }
-        } else {
-            // HOUR: [tu, den) trùng nếu: existing.CTSD_O_TU_GIO < den && existing.CTSD_O_DEN_GIO > tu
-            const conflict = await prisma.cHI_TIET_SU_DUNG.findFirst({
-                where: {
-                    PHONG_MA: roomId,
-                    CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
-                    CTSD_O_TU_GIO: { lt: den },
-                    CTSD_O_DEN_GIO: { gt: tu }
-                },
-                select: { HDONG_MA: true, CTSD_STT: true }
-            });
-            if (conflict) { const e = new Error('Phòng đã được đặt trong khoảng thời gian này'); e.status = 409; throw e; }
-        }
+        // Giá & số lượng
+        const soLuong = Number(CTSD_SO_LUONG_FE ?? SO_LUONG ?? 1);
+        const donGia = Number(CTSD_DON_GIA_FE ?? DON_GIA ?? 0);
+        const tongTien = soLuong * donGia;
 
-        // --- Tạo dữ liệu ---
-        const stt = await nextCTSD_STT(HDONG_MA, roomId);
-        const data = {
-            HDONG_MA,
-            PHONG_MA: roomId,
-            CTSD_STT: stt,
-            CTSD_SO_LUONG: Number(SO_LUONG),
-            CTSD_DON_GIA: money(DON_GIA),
-            CTSD_TONG_TIEN: money(Number(SO_LUONG) * Number(DON_GIA)),
-            CTSD_TRANGTHAI: 'ACTIVE',
-            CTSD_NGAY_DA_O: null,
-            CTSD_O_TU_GIO: null,
-            CTSD_O_DEN_GIO: null,
+        // 1) CHECK CONFLICT RÕ RÀNG THEO HOUR/NIGHT
+        const activeWhere = {
+            PHONG_MA: Number(PHONG_MA),
+            CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
         };
 
-        if (DONVI === 'NIGHT') {
-            data.CTSD_NGAY_DA_O = ngay;
-        } else {
-            data.CTSD_O_TU_GIO = tu;
-            data.CTSD_O_DEN_GIO = den;
+        let conflict = null;
+
+        if (isNight) {
+            // Khoảng đêm: [start, end) = [NGAY(12:00), +1d)
+            // 1a) Giờ giao đêm
+            const hourClash = await prisma.cHI_TIET_SU_DUNG.findFirst({
+                where: {
+                    ...activeWhere,
+                    // chỉ bắt những bản ghi có giờ
+                    CTSD_O_TU_GIO: { not: null, lt: end },
+                    CTSD_O_DEN_GIO: { not: null, gt: start },
+                },
+                select: { HDONG_MA: true, PHONG_MA: true, CTSD_STT: true },
+            });
+
+            // 1b) Đêm trùng NGAY đúng ngày (chính xác, lợi dụng uniq_ctsd_night)
+            const nightSame = await prisma.cHI_TIET_SU_DUNG.findFirst({
+                where: {
+                    ...activeWhere,
+                    CTSD_NGAY_DA_O: start, // đúng ngày trưa đó
+                },
+                select: { HDONG_MA: true, PHONG_MA: true, CTSD_STT: true },
+            });
+
+            conflict = hourClash || nightSame;
+
+        } else { // isHour
+            // Khoảng giờ: [start, end)
+            // 2a) Giờ giao giờ
+            const hourClash = await prisma.cHI_TIET_SU_DUNG.findFirst({
+                where: {
+                    ...activeWhere,
+                    CTSD_O_TU_GIO: { not: null, lt: end },
+                    CTSD_O_DEN_GIO: { not: null, gt: start },
+                },
+                select: { HDONG_MA: true, PHONG_MA: true, CTSD_STT: true },
+            });
+
+            // 2b) Đêm giao giờ: ta lấy về vài đêm trong dải hẹp rồi lọc chính xác bằng JS
+            const approxNights = await prisma.cHI_TIET_SU_DUNG.findMany({
+                where: {
+                    ...activeWhere,
+                    CTSD_NGAY_DA_O: {
+                        // đêm có noon nằm trước 'end' và không quá xa về trước 'start'
+                        lt: end,
+                        gte: new Date(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()), // ~ từ 00:00 ngày start theo local
+                    },
+                },
+                select: { CTSD_NGAY_DA_O: true, HDONG_MA: true, PHONG_MA: true, CTSD_STT: true },
+            });
+
+            const nightClash = approxNights.find(n => {
+                const ns = n.CTSD_NGAY_DA_O;               // noon
+                if (!ns) return false;
+                const ne = new Date(ns.getTime() + 24 * 3600 * 1000); // noon+1d
+                // giao nhau chuẩn: [ns, ne) ∩ [start, end)
+                return ns < end && ne > start;
+            });
+
+            conflict = hourClash || nightClash;
         }
 
-        const row = await prisma.cHI_TIET_SU_DUNG.create({ data, include: { PHONG: true } });
-        await recalcBookingTotals(HDONG_MA);
-        res.status(201).json(row);
-    } catch (e) { next(e); }
+        if (conflict) {
+            // XOÁ HĐ vừa tạo để không sinh rác rồi trả 409
+            await prisma.hOP_DONG_DAT_PHONG.delete({ where: { HDONG_MA: bookingId } }).catch(() => { });
+            const e = new Error('Phòng đã có người đặt trong khoảng thời gian này');
+            e.status = 409;
+            throw e;
+        }
+
+        // 3) Lấy CTSD_STT kế tiếp trong phạm vi (HDONG_MA, PHONG_MA)
+        const last = await prisma.cHI_TIET_SU_DUNG.findFirst({
+            where: { HDONG_MA: bookingId, PHONG_MA: Number(PHONG_MA) },
+            orderBy: { CTSD_STT: 'desc' },
+            select: { CTSD_STT: true },
+        });
+        const nextStt = (last?.CTSD_STT ?? 0) + 1;
+
+        // 4) Tạo CTSD (dùng đúng tên cột theo schema)
+        const baseData = {
+            HDONG_MA: bookingId,
+            PHONG_MA: Number(PHONG_MA),
+            CTSD_STT: nextStt,
+
+            CTSD_SO_LUONG: soLuong,
+            CTSD_DON_GIA: donGia,
+            CTSD_TONG_TIEN: tongTien,
+
+            CTSD_TRANGTHAI: 'ACTIVE',
+        };
+
+        const created = await prisma.cHI_TIET_SU_DUNG.create({
+            data: isHour
+                ? {
+                    ...baseData,
+                    CTSD_O_TU_GIO: start,
+                    CTSD_O_DEN_GIO: end,
+                    // KHÔNG gửi CTSD_NGAY_DA_O
+                }
+                : {
+                    ...baseData,
+                    CTSD_NGAY_DA_O: start,
+                    // KHÔNG gửi CTSD_O_TU_GIO / CTSD_O_DEN_GIO
+                },
+        });
+
+        res.status(201).json(created);
+    } catch (err) { next(err); }
 }
+
 
 // PUT /bookings/:id/items/:phongMa/:stt
 // body: { SO_LUONG?, DON_GIA?, NGAY? | (TU_GIO?, DEN_GIO?) }

@@ -7,6 +7,22 @@ const statusColor: Record<string, any> = {
     AVAILABLE: 'success', OCCUPIED: 'warning', MAINTENANCE: 'dark', CHUA_DON: 'error'
 };
 
+// const fmt = (iso: string) => {
+//     const d = new Date(iso); return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+// };
+
+const vnd = (n?: number | null) => (Number(n || 0)).toLocaleString('vi-VN');
+
+const fmt = (iso: string) => {
+    const d = new Date(iso);
+    return new Intl.DateTimeFormat('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        day: '2-digit', month: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+        hour12: false,
+    }).format(d);
+};
+
 export default function BoardView({
     floors, bookings, filters, onQuickBook
 }: {
@@ -46,11 +62,19 @@ export default function BoardView({
                                         </Badge>
                                     </div>
                                     <div className="text-xs text-gray-500">{r.LOAI_PHONG?.LP_TEN ?? '—'}</div>
-
+                                    {(r.PRICE_HOUR != null || r.PRICE_DAY != null) && (
+                                        <div className="mt-1 text-xs text-gray-600">
+                                            {r.PRICE_HOUR != null ? `${r.PRICE_HOUR.toLocaleString('vi-VN')}/Giờ` : '—/Giờ'}
+                                            {'  ·  '}
+                                            {r.PRICE_DAY != null ? `${r.PRICE_DAY.toLocaleString('vi-VN')}/Ngày` : '—/Ngày'}
+                                        </div>
+                                    )}
+                                    
+                                    
                                     {/* hiện booking active trong ô */}
                                     <div className="mt-3 space-y-2">
                                         {bs.map(b => (
-                                            <div key={`${b.HDONG_MA}-${b.TU_LUC}`} className="rounded-lg border bg-gray-50 px-3 py-2 text-xs dark:bg-white/5">
+                                            <div key={`${b.HDONG_MA}-${b.PHONG_MA}`} className="rounded-lg border bg-gray-50 px-3 py-2 text-xs dark:bg-white/5">
                                                 <div className="font-medium">{b.KH_TEN || 'Khách lẻ'}</div>
                                                 <div>{fmt(b.TU_LUC)} → {fmt(b.DEN_LUC)}</div>
                                                 <div className="mt-1 text-[11px] text-gray-500">{b.TRANG_THAI}</div>
@@ -68,7 +92,7 @@ export default function BoardView({
                                             disabled={r.PHONG_TRANGTHAI !== 'AVAILABLE' && (bs?.length ?? 0) > 0}
                                             // title={r.PHONG_TRANGTHAI === 'AVAILABLE' ? 'Đặt phòng này' : 'Phòng đang bận'}
                                         >
-                                            Đặt nhanh phòng này
+                                            Đặt nhanh
                                         </Button>
                                     </div>
                                 </div>
@@ -81,6 +105,3 @@ export default function BoardView({
     );
 }
 
-const fmt = (iso: string) => {
-    const d = new Date(iso); return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-};

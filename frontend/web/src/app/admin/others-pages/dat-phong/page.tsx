@@ -18,7 +18,13 @@ export type Phong = {
     PHONG_TRANGTHAI: 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE' | 'CHUA_DON';
     TANG_MA: number;
     TANG?: { TANG_TEN?: string | null; TANG_SO?: number | null } | null;
-    LOAI_PHONG?: { LP_TEN?: string | null; LP_MA?: number | null } | null; // thêm LP_MA nếu BE trả
+    LOAI_PHONG?: {
+        LP_TEN?: string | null;
+        LP_MA?: number | null;
+        
+    } | null; // thêm LP_MA nếu BE trả
+    PRICE_HOUR?: number | null;
+    PRICE_DAY?: number | null;
 };
 
 export type BookingLite = {

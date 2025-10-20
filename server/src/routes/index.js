@@ -15,5 +15,5 @@ r.use('/', require('./thanhtoan'));
 r.use('/', require('./hoadon_hopdong'));
 r.use('/', require('./hopdong'));    
 r.use('/', require('./ctsd'));
-
+r.use('/bookings', require('./bookingguest'));
 module.exports = r;

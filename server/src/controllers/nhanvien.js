@@ -42,7 +42,7 @@ const nhanVien = crud('nHAN_VIEN', {
             err.status = 400; throw err;
         }
         if (!data.NV_CHUCVU || !ROLES.includes(String(data.NV_CHUCVU))) {
-            const e = new Error('NV_CHUCVU không hợp lệ (chỉ Admin hoặc Lễ Tân)'); e.status = 400; throw e;
+            const e = new Error('Chức vụ không hợp lệ (chỉ Admin hoặc Lễ Tân)'); e.status = 400; throw e;
         }
 
         // email

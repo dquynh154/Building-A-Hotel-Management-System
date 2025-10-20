@@ -10,6 +10,11 @@ const toDate = (v) => {
     const d = new Date(v);
     return isNaN(d.getTime()) ? null : d;
 };
+
+const clampPct = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 10;
+};
 // (tuỳ) tổng hợp nhanh để FE hiển thị
 async function summarizeBooking(HDONG_MA) {
     HDONG_MA = Number(HDONG_MA);
@@ -118,7 +123,10 @@ async function create(req, res, next) {
             HT_MA, HDONG_NGAYDAT, HDONG_NGAYTRA,
             KH_MA, NV_MA,
             HDONG_TIENCOCYEUCAU, HDONG_GHICHU,
-            HDONG_TRANG_THAI
+            HDONG_TRANG_THAI,
+            HDONG_TONGTIENDUKIEN,
+            HDONG_TILECOCAPDUNG,
+            
         } = req.body || {};
 
         // 1) Validate bắt buộc theo schema
@@ -157,6 +165,9 @@ async function create(req, res, next) {
                 NV_MA: req.user?.id || (NV_MA ? Number(NV_MA) : null),
 
                 HDONG_TIENCOCYEUCAU: HDONG_TIENCOCYEUCAU != null ? money(HDONG_TIENCOCYEUCAU) : '0.00',
+                HDONG_TONGTIENDUKIEN: money(toNum(HDONG_TONGTIENDUKIEN || 0)),
+                HDONG_TILECOCAPDUNG: clampPct(HDONG_TILECOCAPDUNG ?? 10), // 👈 THÊM DÒNG NÀY
+                HDONG_TIENCOCYEUCAU: money(toNum(HDONG_TIENCOCYEUCAU || 0)),
                 HDONG_GHICHU: HDONG_GHICHU ?? null,
                 HDONG_TRANG_THAI: status,
             }

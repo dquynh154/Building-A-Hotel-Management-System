@@ -117,4 +117,54 @@ phong.countByLoaiPhong = async (req, res, next) => {
         next(err);
     }
 };
-module.exports = phong;
+
+// ==== THÊM MỚI Ở CUỐI FILE controllers/phong.js ====
+const TD_BASE = 1;                 // thời điểm base
+const HT_ID = { DAY: 1, HOUR: 2 }; // 1=Ngày, 2=Giờ
+const toNumber = (v) => Number(v || 0);
+
+// Ghi đè list: trả kèm PRICE_DAY/PRICE_HOUR
+async function listPhongWithBase(req, res, next) {
+    try {
+        const take = Number(req.query.take || 50);
+        const skip = Number(req.query.skip || 0);
+        const withTotal = String(req.query.withTotal || '0') === '1';
+
+        const [items, total] = await Promise.all([
+            prisma.pHONG.findMany({
+                take, skip,
+                orderBy: [{ TANG_MA: 'asc' }, { PHONG_TEN: 'asc' }],
+                include: {
+                    TANG: true,
+                    LOAI_PHONG: {
+                        include: {
+                            DON_GIA: {
+                                where: { TD_MA: TD_BASE, HT_MA: { in: [HT_ID.DAY, HT_ID.HOUR] } },
+                                select: { HT_MA: true, DG_DONGIA: true },
+                            },
+                        },
+                    },
+                },
+            }),
+            withTotal ? prisma.pHONG.count() : Promise.resolve(0),
+        ]);
+
+        const mapped = items.map((r) => {
+            let PRICE_DAY = null, PRICE_HOUR = null;
+            const list = r.LOAI_PHONG?.DON_GIA || [];
+            for (const dg of list) {
+                if (dg.HT_MA === HT_ID.DAY) PRICE_DAY = toNumber(dg.DG_DONGIA);
+                if (dg.HT_MA === HT_ID.HOUR) PRICE_HOUR = toNumber(dg.DG_DONGIA);
+            }
+            return { ...r, PRICE_DAY, PRICE_HOUR };
+        });
+
+        res.json(withTotal ? { items: mapped, total } : mapped);
+    } catch (e) { next(e); }
+}
+
+// === Thay vì export mặc định CRUD, ta ghi đè phương thức list ===
+module.exports = {
+    ...phong,           // create/get/update/remove/... giữ nguyên
+    list: listPhongWithBase, // 👈 GHI ĐÈ HÀM LIST
+};

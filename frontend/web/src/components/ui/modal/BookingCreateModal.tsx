@@ -30,6 +30,12 @@ function parseKHLabel(label: string) {
 }
 
 
+const toNumber = (s: string) => {
+    const n = Number((s || '').replace(/[^\d]/g, ''));
+    return Number.isFinite(n) ? n : 0;
+};
+const formatVND = (n: number) => (Number(n) || 0).toLocaleString('vi-VN');
+
 
 // ========== SearchCombo (typeahead) KH ==========
 function SearchCombo({
@@ -169,8 +175,8 @@ export default function BookingCreateModal({
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState<string | null>(null);
     const [fromTime, setFromTime] = useState<string>('14:00'); // mặc định 14:00
-    const [toTime, setToTime] = useState<string>('12:00'); 
-    const [note, setNote] = useState<string>('');  
+    const [toTime, setToTime] = useState<string>('12:00');
+    const [note, setNote] = useState<string>('');
     const [occOpen, setOccOpen] = useState(false);
     const [occupants, setOccupants] = useState<Occupant[]>([]);
     const occAdults = Math.max(1, occupants.filter(o => !o.isChild).length);
@@ -210,11 +216,23 @@ export default function BookingCreateModal({
     // cache id HT theo giờ/đêm sau khi load
     const [hourHTId, setHourHTId] = useState<number | undefined>(undefined);
     const [nightHTId, setNightHTId] = useState<number | undefined>(undefined);
+    const [depositPercent, setDepositPercent] = useState<number>(10); // % cọc, mặc định 10
+    const depositRequired = useMemo(() => {
+        const p = Math.max(0, Math.min(100, depositPercent || 0));
+        return Math.round((quoteTotal * p) / 100);
+    }, [quoteTotal, depositPercent]);
+    const remain = Math.max(0, quoteTotal - toNumber(payInput));
+
+    // const payAmount = depositRequired;
+    // const remain1 = Math.max(0, quoteTotal - payAmount);
+    // useEffect(() => {
+    //     setPayInput(prev => (toNumber(prev) > 0 ? prev : String(depositRequired)));
+    // }, [depositRequired]);
 
     // Load lists + default dates mỗi lần mở
     useEffect(() => {
         if (!open) return;
-        setErr(null); setSaving(false); setPayInput('0');
+        setErr(null); setSaving(false); setPayInput('');
 
         // auto set from=today, to=tomorrow
         const today = startOfToday(); const tomorrow = addDays(today, 1);
@@ -369,13 +387,17 @@ export default function BookingCreateModal({
                 setErr('Khoảng thời gian nhận/trả không hợp lệ'); setSaving(false); return;
             }
             // 1) hợp đồng
+            const safePay = Math.min(Math.max(toNumber(payInput), 0), Number(quoteTotal || 0));
             const hd = await api.post('/bookings', {
                 KH_MA: Number(kh!.value),
                 HT_MA: Number(ht),
                 HDONG_TRANG_THAI: action === 'nhan_phong' ? 'CHECKED_IN' : 'CONFIRMED',
                 HDONG_NGAYDAT: fromISO,
                 HDONG_NGAYTRA: toISO,
-                ...(note.trim() ? { HDONG_GHICHU: note.trim() } : {}), 
+                ...(note.trim() ? { HDONG_GHICHU: note.trim() } : {}),
+                HDONG_TONGTIENDUKIEN: Number(quoteTotal || 0),
+                HDONG_TILECOCAPDUNG: Number(depositPercent ?? 10),
+                HDONG_TIENCOCYEUCAU: safePay,
             });
             const toNoonISO = (ymd: string) => {
                 const [y, m, d] = ymd.split('-').map(Number);
@@ -437,7 +459,7 @@ export default function BookingCreateModal({
                     LA_KHACH_CHINH: idx === 0 && !o.isChild,        // người lớn đầu tiên làm khách chính
                     // GHI_CHU: o.note ?? null,                        // nếu bạn có field note; không có thì bỏ
                 }));
-
+            console.log('GUESTS PAYLOAD =', guestsPayload, 'KHACH_DAT_ID =', Number(kh?.value));
             try {
                 await api.put(`/bookings/${bookingId}/guests`, {
                     guests: guestsPayload,
@@ -454,7 +476,6 @@ export default function BookingCreateModal({
         } finally { setSaving(false); }
     };
 
-    const remain = Math.max(0, quoteTotal - Number(payInput || 0));
     // Khi mở modal, nếu danh sách trống → mặc định 1 người lớn (placeholder)
     useEffect(() => {
         if (!open) return;
@@ -464,6 +485,42 @@ export default function BookingCreateModal({
         });
     }, [open]);
 
+    // const [fromTime, setFromTime] = useState('14:00');
+
+    const timeOptsTo = useMemo(
+        () => ({
+            enableTime: true,
+            noCalendar: true,
+            dateFormat: 'H:i',
+            time_24hr: true,
+            minuteIncrement: 5,
+            // defaultDate: fromTime, // KHÔNG dùng khi đã có value
+            //allowInput: true,      // (tuỳ chọn) cho phép gõ tay
+        }),
+        []
+    );
+
+    const timeOptsFrom = useMemo(
+        () => ({
+            enableTime: true,
+            noCalendar: true,
+            dateFormat: 'H:i',
+            time_24hr: true,
+            minuteIncrement: 5,
+            // defaultDate: fromTime, // KHÔNG dùng khi đã có value
+            //allowInput: true,      // (tuỳ chọn) cho phép gõ tay
+        }),
+        []
+    );
+
+    const toOccupant = (rec: any): Occupant => ({
+        khId: rec?.KH_MA ?? null,
+        fullName: rec?.KH_HOTEN ?? '',
+        phone: rec?.KH_SDT ?? '',
+        idNumber: rec?.KH_CCCD ?? '',
+        address: rec?.KH_DIACHI ?? '',
+        isChild: false,
+    });
     return (
         <Modal isOpen={open} onClose={onClose} className="w-full max-w-[1400px] p-4 sm:p-6">
             <h3 className="mb-3 text-base font-medium">Đặt/Nhận phòng nhanh</h3>
@@ -484,34 +541,22 @@ export default function BookingCreateModal({
                                 const khRow = r.data || {};
                                 setOccupants(prev => {
                                     const cp = [...(prev || [])];
+                                    const occ = toOccupant(khRow); // <-- gồm: khId, fullName, phone, idNumber, address
                                     if (cp.length === 0) {
-                                        cp.push({
-                                            khId: o.value,
-                                            fullName: khRow.KH_HOTEN || o.label,
-                                            phone: khRow.KH_SDT || '',
-                                            idNumber: khRow.KH_CMND || khRow.KH_CCCD || '',
-                                            isChild: false,
-                                        });
+                                        cp.push(occ);
                                     } else {
-                                        // ghi đè người lớn đầu tiên
                                         const idx = cp.findIndex(x => !x.isChild);
                                         const i = idx >= 0 ? idx : 0;
-                                        cp[i] = {
-                                            khId: o.value,
-                                            fullName: khRow.KH_HOTEN || o.label,
-                                            phone: khRow.KH_SDT || '',
-                                            idNumber: khRow.KH_CMND || khRow.KH_CCCD || '',
-                                            isChild: false,
-                                        };
+                                        cp[i] = occ;
                                     }
                                     return cp;
                                 });
                             } catch {
-                                // fallback: vẫn set tên từ label
+                                // fallback: không có rec đầy đủ thì ít nhất vẫn set tên
                                 setOccupants(prev => {
                                     const cp = [...(prev || [])];
                                     if (cp.length === 0) {
-                                        cp.push({ khId: o.value, fullName: o.label, isChild: false });
+                                        cp.push({ khId: o.value, fullName: o.label, phone: '', idNumber: '', address: '', isChild: false });
                                     } else {
                                         const idx = cp.findIndex(x => !x.isChild);
                                         const i = idx >= 0 ? idx : 0;
@@ -586,7 +631,7 @@ export default function BookingCreateModal({
                         <select
                             className="w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                             value={ht}
-                            onChange={(e) => { setHt(e.target.value ? Number(e.target.value) : ''); setUserTouchedHT(true); } }
+                            onChange={(e) => { setHt(e.target.value ? Number(e.target.value) : ''); setUserTouchedHT(true); }}
                         >
                             <option value="">— Chọn hình thức —</option>
                             {hireTypes.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -597,7 +642,7 @@ export default function BookingCreateModal({
                     <div>
                         <div className="mb-1 text-xs text-gray-500">Nhận *</div>
                         <div className="grid grid-cols-[170px_110px] gap-2">
-                            
+
                             <Flatpickr
                                 value={fromDate}                                // ✅ luôn là string
                                 options={{ dateFormat: 'Y-m-d', allowInput: false }}
@@ -607,14 +652,15 @@ export default function BookingCreateModal({
 
                             <Flatpickr
                                 value={fromTime} // '14:00'
-                                options={{
-                                    enableTime: true,
-                                    noCalendar: true,
-                                    dateFormat: 'H:i',    // HH:mm
-                                    time_24hr: true,
-                                    minuteIncrement: 5,
-                                    // defaultDate: fromTime, // không bắt buộc vì đã có value
-                                }}
+                                // options={{
+                                //     enableTime: true,
+                                //     noCalendar: true,
+                                //     dateFormat: 'H:i',    // HH:mm
+                                //     time_24hr: true,
+                                //     minuteIncrement: 5,
+                                //     // defaultDate: fromTime, // không bắt buộc vì đã có value
+                                // }}
+                                options={timeOptsFrom}
                                 onChange={(_, str) => setFromTime(str || '14:00')}
                                 className="h-[40px] w-[110px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                             />
@@ -625,7 +671,7 @@ export default function BookingCreateModal({
                     <div>
                         <div className="mb-1 text-xs text-gray-500">Trả phòng *</div>
                         <div className="grid grid-cols-[170px_110px] gap-2">
-                            
+
                             <Flatpickr
                                 value={toDate}                                  // ✅ luôn là string
                                 options={{ dateFormat: 'Y-m-d', allowInput: false }}
@@ -635,13 +681,14 @@ export default function BookingCreateModal({
 
                             <Flatpickr
                                 value={toTime} // '12:00'
-                                options={{
-                                    enableTime: true,
-                                    noCalendar: true,
-                                    dateFormat: 'H:i',
-                                    time_24hr: true,
-                                    minuteIncrement: 5,
-                                }}
+                                // options={{
+                                //     enableTime: true,
+                                //     noCalendar: true,
+                                //     dateFormat: 'H:i',
+                                //     time_24hr: true,
+                                //     minuteIncrement: 5,
+                                // }}
+                                options={timeOptsTo}
                                 onChange={(_, str) => setToTime(str || '12:00')}
                                 className="h-[40px] w-[110px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                             />
@@ -667,28 +714,12 @@ export default function BookingCreateModal({
                         </div>
                     </div>
 
-                    
+
                 </div>
             </div>
 
             {err && <div className="mt-3 rounded-md bg-red-50 p-2 text-sm text-red-600 dark:bg-red-900/30">{err}</div>}
 
-            {/* Thẻ thanh toán bên phải */}
-            {/* <div className="mt-4 justify-self-end">
-                <div className="w-[240px] rounded-xl border bg-gray-50 p-3 text-sm dark:border-slate-700 dark:bg-white/5">
-                    <div className="mb-2 flex items-center justify-between">
-                        <span className="text-gray-600">Khách cần trả</span>
-                        <b>{quoteTotal.toLocaleString('vi-VN')}</b>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-gray-600">Khách thanh toán</span>
-                        <input type="number" min="0"
-                            className="w-[110px] rounded-md border px-2 py-1 text-right dark:border-slate-700 dark:bg-slate-800"
-                            value={payInput} onChange={(e) => setPayInput(e.target.value)} />
-                    </div>
-                    <div className="mt-2 text-right text-xs text-gray-500">Còn lại: <b>{Math.max(0, remain).toLocaleString('vi-VN')}</b></div>
-                </div>
-            </div> */}
 
 
             <div className="mt-4 grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-start">
@@ -721,7 +752,7 @@ export default function BookingCreateModal({
 
                 {/* RIGHT: Thẻ thanh toán */}
                 <div className="mt-4 justify-self-end">
-                    <div className="w-[340px] rounded-xl border bg-gray-50 p-3 text-sm dark:border-slate-700 dark:bg-white/5">
+                    {/* <div className="w-[340px] rounded-xl border bg-gray-50 p-3 text-sm dark:border-slate-700 dark:bg-white/5">
                         <div className="mb-2 flex items-center justify-between">
                             <span className="text-gray-600">Khách cần trả</span>
                             <b>{quoteTotal.toLocaleString('vi-VN')}</b>
@@ -733,7 +764,52 @@ export default function BookingCreateModal({
                                 value={payInput} onChange={(e) => setPayInput(e.target.value)} />
                         </div>
                         <div className="mt-2 text-right text-xs text-gray-500">Còn lại: <b>{Math.max(0, remain).toLocaleString('vi-VN')}</b></div>
+                    </div> */}
+
+                    <div className="w-[340px] rounded-xl border bg-gray-50 p-3 text-sm dark:border-slate-700 dark:bg-white/5">
+                        <div className="mb-2 flex items-center justify-between">
+                            <span className="text-gray-600">Khách cần trả</span>
+                            <b>{formatVND(quoteTotal)}</b>
+                        </div>
+
+                        <div className="mb-2 flex items-center justify-between">
+                            <span className="text-gray-600">
+                                Cọc áp dụng
+                                <span className="ml-2 inline-flex items-center gap-1">
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        className="w-[60px] rounded-md border px-2 py-1 text-right dark:border-slate-700 dark:bg-slate-800"
+                                        value={depositPercent}
+                                        onChange={(e) => setDepositPercent(Number(e.target.value) || 0)}
+                                        title="Tỉ lệ cọc (%)"
+                                    />
+                                    <span>%</span>
+                                </span>
+                            </span>
+                            <b>{formatVND(depositRequired)}</b>
+                        </div>
+
+                        <div className="mb-2 flex items-center justify-between">
+                            <span className="text-gray-600">Khách thanh toán</span>
+                            <input
+                                inputMode="numeric"
+                                className="w-[110px] rounded-md border px-2 py-1 text-right dark:border-slate-700 dark:bg-slate-800"
+                                value={payInput}
+                                onChange={(e) => setPayInput(e.target.value)}
+                                onBlur={(e) => {
+                                    const n = toNumber(e.target.value);
+                                    setPayInput(n ? formatVND(n) : '');
+                                }}
+                            />
+                        </div>
+
+                        <div className="mt-2 text-right text-xs text-gray-500">
+                            Còn lại: <b>{formatVND(remain)}</b>
+                        </div>
                     </div>
+
                 </div>
             </div>
 
@@ -751,14 +827,21 @@ export default function BookingCreateModal({
             <KhachHangCreateModal
                 open={openCreateKH}
                 onClose={() => setOpenCreateKH(false)}
-                onCreated={(id, label) => {
+                onCreated={async (id, label,rec) => {
                     setOpenCreateKH(false);
                     // gán lại chọn khách cho SearchCombo
                     setKh({ value: id, label });
+                    const full = rec ?? (await api.get(`/khach-hang/${id}`)).data;
+                    setOccupants(prev =>
+                        (prev.length === 0 || prev.every(x => x.isChild))
+                            ? [toOccupant(full)]
+                            : prev
+                    );
+                    
                 }}
             />
 
-            
+
             <OccupantsModal
                 open={occOpen}
                 onClose={() => setOccOpen(false)}
@@ -774,23 +857,13 @@ export default function BookingCreateModal({
             <KhachHangCreateModal
                 open={occCreateOpen}
                 onClose={() => setOccCreateOpen(false)}
-                onCreated={(id, label) => {
+                onCreated={(id, label, rec) => {
                     setOccCreateOpen(false);
-                    // Đẩy 1 người lớn mới sang bảng lưu trú
-                    const { name, phone } = parseKHLabel(label);
-                    const newAdult: Occupant = {
-                        khId: id,
-                        fullName: name,
-                        phone: phone,
-                        idNumber: '',
-                        address: '',
-                        isChild: false,
-                    };
+                    const newAdult = toOccupant(rec); // có idNumber & address
                     if (occAppendRef.current) {
                         occAppendRef.current(newAdult);
                         occAppendRef.current = null;
                     } else {
-                        // fallback: nếu vì lý do gì không có callback thì vẫn tự thêm vào state
                         setOccupants(prev => [...prev, newAdult]);
                     }
                 }}

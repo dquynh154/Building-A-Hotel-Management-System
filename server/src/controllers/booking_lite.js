@@ -1,6 +1,9 @@
-// booking_lite.js
+// server/src/controllers/booking_lite.js
+// Phương án B: mỗi (HĐ × Phòng) chỉ 1 block, TU_LUC/DEN_LUC luôn lấy từ HỢP ĐỒNG
+
 const { prisma } = require('../db/prisma');
 
+// helper
 const toDate = (v) => (v ? new Date(v) : null);
 
 // overlap check: [a1,a2) với [b1,b2)
@@ -9,72 +12,105 @@ function overlap(a1, a2, b1, b2) {
 }
 
 // GET /bookings/lite?from=ISO&to=ISO&search=...
-// Trả về mảng item cấp CTSD (1 CTSD = 1 block trên timeline)
+// Trả về mảng item đã GOM theo (HDONG_MA, PHONG_MA)
+// - Thời gian block luôn lấy từ HỢP ĐỒNG: HDONG_NGAYDAT -> HDONG_NGAYTRA
+// - Không hiển thị nhiều block cho các CTSD theo đêm nữa
 async function lite(req, res, next) {
     try {
         const from = toDate(req.query.from);
         const to = toDate(req.query.to);
-        const q = (req.query.search || '').toString().trim();
+        const q = (req.query.search || '').toString().trim().toLowerCase();
 
-        // Lấy CTSD (ACTIVE/INVOICED) + join HĐ + KH + Phòng
+        // Lấy CTSD thuộc các HĐ còn hiệu lực hiển thị (ACTIVE/INVOICED),
+        // kèm header HĐ để lấy HDONG_NGAYDAT/HDONG_NGAYTRA và tên KH
         const ctsd = await prisma.cHI_TIET_SU_DUNG.findMany({
             where: {
                 CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
-                // lọc thô theo khoảng nếu có (đẩy vào SQL cho nhanh)
+                // (tuỳ chọn) lọc thô theo khoảng thời gian để giảm tải DB
                 OR: from && to ? [
+                    // theo giờ (nếu có)
                     { AND: [{ CTSD_O_TU_GIO: { lte: to } }, { CTSD_O_DEN_GIO: { gte: from } }] },
+                    // theo đêm (lọc theo ngày đã ở)
                     { AND: [{ CTSD_NGAY_DA_O: { gte: from } }, { CTSD_NGAY_DA_O: { lte: to } }] },
                 ] : undefined,
             },
-            include: {
+            select: {
+                HDONG_MA: true,
+                PHONG_MA: true,
+                CTSD_STT: true, // không bắt buộc dùng trong phương án B, nhưng giữ để debug
+                PHONG: { select: { PHONG_TEN: true } },
                 HOP_DONG_DAT_PHONG: {
                     select: {
                         HDONG_MA: true,
-                        KHACH_HANG: { select: { KH_HOTEN: true } },
                         HT_MA: true,
                         HDONG_TRANG_THAI: true,
+                        HDONG_NGAYDAT: true,  // 👈 lấy giờ bắt đầu từ HĐ
+                        HDONG_NGAYTRA: true,  // 👈 lấy giờ kết thúc từ HĐ
+                        KHACH_HANG: { select: { KH_HOTEN: true } },
                     }
                 },
-                PHONG: { select: { PHONG_MA: true, PHONG_TEN: true } },
             },
-            orderBy: [{ HDONG_MA: 'desc' }, { PHONG_MA: 'asc' }, { CTSD_STT: 'asc' }]
+            orderBy: [
+                { HDONG_MA: 'desc' },
+                { PHONG_MA: 'asc' },
+                { CTSD_STT: 'asc' },
+            ],
         });
 
-        // Map về dạng gọn cho FE
+        // Map sang dạng "thô": mỗi CTSD → 1 row, nhưng thời gian lấy TỪ HỢP ĐỒNG
         let rows = ctsd.map(r => {
-            // Tính TU_LUC/DEN_LUC: ưu tiên giờ; nếu theo đêm thì dùng CTSD_NGAY_DA_O → +1 ngày (đơn giản)
-            const tu = r.CTSD_O_TU_GIO || r.CTSD_NGAY_DA_O;
-            const den = r.CTSD_O_DEN_GIO || (r.CTSD_NGAY_DA_O ? new Date(new Date(r.CTSD_NGAY_DA_O).getTime() + 24 * 3600 * 1000) : null);
+            const hd = r.HOP_DONG_DAT_PHONG;
+            const tu = hd?.HDONG_NGAYDAT ? new Date(hd.HDONG_NGAYDAT) : null;
+            const den = hd?.HDONG_NGAYTRA ? new Date(hd.HDONG_NGAYTRA) : null;
 
             return {
                 HDONG_MA: r.HDONG_MA,
                 PHONG_MA: r.PHONG_MA,
                 PHONG_TEN: r.PHONG?.PHONG_TEN ?? '',
-                KH_TEN: r.HOP_DONG_DAT_PHONG?.KHACH_HANG?.KH_HOTEN ?? null,
-                HT_MA: r.HOP_DONG_DAT_PHONG?.HT_MA ?? 0,
-                TRANG_THAI: r.HOP_DONG_DAT_PHONG?.HDONG_TRANG_THAI ?? 'PENDING',
-                TU_LUC: tu ? new Date(tu).toISOString() : null,
-                DEN_LUC: den ? new Date(den).toISOString() : null,
+                KH_TEN: hd?.KHACH_HANG?.KH_HOTEN ?? null,
+                HT_MA: hd?.HT_MA ?? 0,
+                TRANG_THAI: hd?.HDONG_TRANG_THAI ?? 'PENDING',
+                TU_LUC: tu ? tu.toISOString() : null,
+                DEN_LUC: den ? den.toISOString() : null,
             };
         });
 
-        // Lọc overlap chuẩn xác lần cuối (trường hợp theo đêm sinh DEN_LUC +1d)
+        // 👉 GOM về 1 block cho mỗi (HDONG_MA × PHONG_MA)
+        // Nếu nhiều CTSD cùng hợp đồng/phòng xuất hiện, chỉ giữ 1,
+        // TU_LUC/DEN_LUC đều lấy từ header HĐ nên thường giống nhau
+        const byKey = new Map();
+        for (const r of rows) {
+            const k = `${r.HDONG_MA}:${r.PHONG_MA}`;
+            const ex = byKey.get(k);
+            if (!ex) {
+                byKey.set(k, r);
+            } else {
+                // (tuỳ chọn) gộp min/max đề phòng dữ liệu lệch
+                const tuMin = new Date(ex.TU_LUC) < new Date(r.TU_LUC) ? ex.TU_LUC : r.TU_LUC;
+                const denMax = new Date(ex.DEN_LUC) > new Date(r.DEN_LUC) ? ex.DEN_LUC : r.DEN_LUC;
+                byKey.set(k, { ...ex, TU_LUC: tuMin, DEN_LUC: denMax });
+            }
+        }
+        rows = Array.from(byKey.values());
+
+        // Lọc overlap chuẩn xác lần cuối theo khoảng from/to (nếu client truyền)
         if (from && to) {
             rows = rows.filter(r => overlap(new Date(r.TU_LUC), new Date(r.DEN_LUC), from, to));
         }
 
-        // Lọc search: theo tên KH / tên phòng / mã HĐ
+        // Lọc search: theo mã HĐ / tên KH / tên phòng
         if (q) {
-            const ql = q.toLowerCase();
             rows = rows.filter(r =>
                 String(r.HDONG_MA).includes(q) ||
-                (r.KH_TEN && r.KH_TEN.toLowerCase().includes(ql)) ||
-                (r.PHONG_TEN && r.PHONG_TEN.toLowerCase().includes(ql))
+                (r.KH_TEN && r.KH_TEN.toLowerCase().includes(q)) ||
+                (r.PHONG_TEN && r.PHONG_TEN.toLowerCase().includes(q))
             );
         }
 
         res.json(rows);
-    } catch (e) { next(e); }
+    } catch (e) {
+        next(e);
+    }
 }
 
 module.exports = { lite };
