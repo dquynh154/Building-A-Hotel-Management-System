@@ -57,7 +57,7 @@ const navItems: NavItem[] = [
   {
     icon: <CalenderIcon />,
     name: "Lịch đặt phòng",
-    path: "/admin/others-pages/calendar",
+    path: "/admin/others-pages/dat-phong",
   },
   {
     icon: <UserCircleIcon />,

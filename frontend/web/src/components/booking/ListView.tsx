@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
 import Button from '@/components/ui/button/Button';
 import { FilterState } from './BookingToolbar';
-import { BookingLite } from '@/app/admin/others-pages/dat-phong/page';
+import { BookingLite } from '@/app/admin/(noSidebar)/others-pages/dat-phong/page';
 import Link from 'next/link';
-export default function ListView({ 
-    bookings 
+export default function ListView({
+    bookings
 }: {
-    bookings: BookingLite[]; 
-    filters: FilterState 
+    bookings: BookingLite[];
+    filters: FilterState
 }) {
     const [openId, setOpenId] = useState<number | null>(null);
     return (

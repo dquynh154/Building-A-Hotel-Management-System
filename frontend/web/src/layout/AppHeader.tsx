@@ -9,7 +9,14 @@ import Image from "next/image";
 import Link from "next/link";
 import React, { useState ,useEffect,useRef} from "react";
 
-const AppHeader: React.FC = () => {
+type AppHeaderProps = {
+  /** "toggle" = nút mở/đóng sidebar (mặc định), "back" = nút quay về */
+  leftMode?: "toggle" | "back";
+  /** URL để quay về khi leftMode="back" */
+  backHref?: string;
+};
+
+const AppHeader: React.FC<AppHeaderProps> = ({ leftMode = "toggle", backHref = "/admin" }) => {
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
 
   const { isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();
@@ -46,6 +53,8 @@ const AppHeader: React.FC = () => {
     <header className="sticky top-0 flex w-full bg-white border-gray-200 z-99999 dark:border-gray-800 dark:bg-gray-900 lg:border-b">
       <div className="flex flex-col items-center justify-between grow lg:flex-row lg:px-6">
         <div className="flex items-center justify-between w-full gap-2 px-3 py-3 border-b border-gray-200 dark:border-gray-800 sm:gap-4 lg:justify-normal lg:border-b-0 lg:px-0 lg:py-4">
+          
+          {leftMode === "toggle" ? (
           <button
             className="items-center justify-center w-10 h-10 text-gray-500 border-gray-200 rounded-lg z-99999 dark:border-gray-800 lg:flex dark:text-gray-400 lg:h-11 lg:w-11 lg:border"
             onClick={handleToggle}
@@ -84,6 +93,18 @@ const AppHeader: React.FC = () => {
             )}
             {/* Cross Icon */}
           </button>
+          ):(
+              <Link
+                href={backHref}
+                aria-label="Quay về trang chủ"
+                className="items-center justify-center w-10 h-10 text-gray-700 rounded-lg z-99999 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 lg:flex lg:h-11 lg:w-11"
+              >
+                {/* Icon mũi tên trái */}
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </Link>
+          )}
 
           <Link href="/" className="lg:hidden">
             <Image

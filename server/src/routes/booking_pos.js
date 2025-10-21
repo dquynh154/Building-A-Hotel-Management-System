@@ -12,7 +12,7 @@ r.get('/products', searchProducts);
 
 // Thao tác giỏ dịch vụ (giống POS)
 r.post('/bookings/:id/services', addService);
-r.patch('/bookings/:id/services/:ctdvId', updateService);
-r.delete('/bookings/:id/services/:ctdvId', removeService);
+r.patch('/bookings/:id/services/:ctdvStt', updateService);
+r.delete('/bookings/:id/services/:ctdvStt', removeService);
 
 module.exports = r;
