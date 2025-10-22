@@ -168,15 +168,15 @@ async function getBookingFull(req, res, next) {
  * ======================= */
 async function searchProducts(req, res, next) {
     try {
-        const q = (req.query.search || '').toString().trim();
-        const where = q
-            ? {
-                OR: [
-                    { DV_TEN: { contains: q, mode: 'insensitive' } },
-                    { DV_MA: Number.isFinite(+q) ? +q : -1 },
-                ],
-            }
-            : {};
+        const q = String(req.query.search ?? '').trim();
+        // MySQL: KHÔNG dùng mode:'insensitive'
+        // Nếu DB bạn đang dùng collation CI (utf8mb4_unicode_ci, …) thì contains đã mặc định không phân biệt hoa-thường.
+        const or = [];
+        if (q.length > 0) {
+            or.push({ DV_TEN: { contains: q } });
+            if (/^\d+$/.test(q)) or.push({ DV_MA: Number(q) });
+        }
+        const where = or.length ? { OR: or } : {};
         const items = await prisma.dICH_VU.findMany({
             where,
             select: { DV_MA: true, DV_TEN: true, DV_DONGIA: true, LOAI_DICH_VU: { select: { LDV_TEN: true } } },

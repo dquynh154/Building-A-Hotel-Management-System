@@ -1,6 +1,6 @@
 import Badge from '@/components/ui/badge/Badge';
 import { FilterState } from './BookingToolbar';
-import type { Phong, BookingLite } from '@/app/admin/others-pages/dat-phong/page';
+import type { Phong, BookingLite } from '@/app/admin/(noSidebar)/others-pages/dat-phong/page';
 import Button from '@/components/ui/button/Button';
 
 const statusColor: Record<string, any> = {

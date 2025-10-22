@@ -34,6 +34,9 @@ export default function BookingToolbar({
         toDate: string, toTime: string,
         selections: { LP_MA: number; LP_TEN: string; qty: number; price: number }[]
     }>(null);
+
+    const [createSeed, setCreateSeed] = useState(0);
+
     return (
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-2">
@@ -72,10 +75,12 @@ export default function BookingToolbar({
                     onConfirm={(data) => {
                         setOpenTool(false);
                         setPrefillForCreate(data);     // lưu tạm payload
+                        setCreateSeed(Date.now()); 
                         setOpenCreate(true);           // mở BookingCreateModal ngay sau đó
                     }}
                 />
                 <BookingCreateModal
+                    key={createSeed}    
                     open={openCreate}
                     onClose={() => { setOpenCreate(false); setPrefillForCreate(null); }}
                     onCreated={() => { setOpenCreate(false); setPrefillForCreate(null); onBooked(); }}

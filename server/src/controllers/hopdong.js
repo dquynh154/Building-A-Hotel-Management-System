@@ -215,16 +215,41 @@ async function remove(req, res, next) {
 }
 
 // POST /bookings/:id/checkin
+// POST /bookings/:id/checkin
 async function checkin(req, res, next) {
     try {
         const id = Number(req.params.id);
-        const hd = await prisma.hOP_DONG_DAT_PHONG.update({
-            where: { HDONG_MA: id },
-            data: { HDONG_TRANG_THAI: 'CHECKED_IN', HDONG_NGAYTHUCNHAN: new Date() }
+
+        const result = await prisma.$transaction(async (tx) => {
+            // 1) Đổi trạng thái HĐ + ghi thời điểm nhận thực tế
+            const hd = await tx.hOP_DONG_DAT_PHONG.update({
+                where: { HDONG_MA: id },
+                data: { HDONG_TRANG_THAI: 'CHECKED_IN', HDONG_NGAYTHUCNHAN: new Date() },
+                select: { HDONG_MA: true }
+            });
+
+            // 2) Lấy danh sách phòng thuộc HĐ (từ CTSD)
+            const items = await tx.cHI_TIET_SU_DUNG.findMany({
+                where: { HDONG_MA: id },
+                select: { PHONG_MA: true }
+            });
+            const roomIds = [...new Set(items.map(i => i.PHONG_MA).filter(Boolean))];
+
+            // 3) Đổi trạng thái phòng -> OCCUPIED
+            if (roomIds.length) {
+                await tx.pHONG.updateMany({
+                    where: { PHONG_MA: { in: roomIds } },
+                    data: { PHONG_TRANGTHAI: 'OCCUPIED' }   // 👈 tên cột trạng thái phòng của bạn
+                });
+            }
+
+            return { hd, roomIds };
         });
-        res.json(hd);
+
+        res.json({ ok: true, ...result });
     } catch (e) { next(e); }
 }
+
 
 // POST /bookings/:id/checkout
 async function checkout(req, res, next) {

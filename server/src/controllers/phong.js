@@ -162,9 +162,60 @@ async function listPhongWithBase(req, res, next) {
         res.json(withTotal ? { items: mapped, total } : mapped);
     } catch (e) { next(e); }
 }
+// GET /rooms/availability?from=ISO&to=ISO&lp=123
+async function availability(req, res, next) {
+    try {
+        const from = new Date(req.query.from);
+        const to = new Date(req.query.to);
+        const lp = req.query.lp ? Number(req.query.lp) : null;
+
+        if (!(from instanceof Date && !isNaN(+from) && to instanceof Date && !isNaN(+to) && +to > +from)) {
+            return res.status(400).json({ message: 'from/to không hợp lệ' });
+        }
+
+        // Các trạng thái HĐ đang giữ phòng
+        const HOLD_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN'];
+
+        // 1) Lấy các PHÒNG đang bận bởi bất kỳ HĐ nào overlap với [from, to)
+        const busyByBooking = await prisma.cHI_TIET_SU_DUNG.findMany({
+            where: {
+                // join qua HĐ để check khoảng thời gian
+                HOP_DONG_DAT_PHONG: {
+                    HDONG_TRANG_THAI: { in: HOLD_STATUSES },
+                    // overlap: (ngayDat < to) && (ngayTra > from)
+                    HDONG_NGAYDAT: { lt: to },
+                    HDONG_NGAYTRA: { gt: from },
+                },
+                // filter theo loại phòng nếu có
+                ...(lp ? { PHONG: { OR: [{ LP_MA: lp }, { LOAI_PHONG: { LP_MA: lp } }] } } : {}),
+            },
+            select: { PHONG_MA: true },
+            distinct: ['PHONG_MA'], // lấy unique phòng
+        });
+
+        const busyIds = new Set(busyByBooking.map(x => x.PHONG_MA));
+
+        // 2) Lấy tất cả phòng (theo LP nếu có), rồi trừ đi bận → available
+        const allRooms = await prisma.pHONG.findMany({
+            where: lp ? { OR: [{ LP_MA: lp }, { LOAI_PHONG: { LP_MA: lp } }] } : {},
+            select: { PHONG_MA: true, PHONG_TEN: true },
+            orderBy: { PHONG_TEN: 'asc' },
+        });
+
+        const available = allRooms
+            .filter(r => !busyIds.has(r.PHONG_MA))
+            .map(r => ({ id: r.PHONG_MA, name: r.PHONG_TEN }));
+
+        res.json({ available, total: available.length });
+    } catch (e) { next(e); }
+}
+
+
+
 
 // === Thay vì export mặc định CRUD, ta ghi đè phương thức list ===
 module.exports = {
     ...phong,           // create/get/update/remove/... giữ nguyên
     list: listPhongWithBase, // 👈 GHI ĐÈ HÀM LIST
+    availability,
 };

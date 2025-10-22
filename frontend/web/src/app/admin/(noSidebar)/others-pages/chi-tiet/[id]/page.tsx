@@ -1,12 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import api from '@/lib/api';
 import Button from '@/components/ui/button/Button';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
 import router from 'next/router';
 import { useParams } from 'next/navigation';
+import PageBreadcrumb from '@/components/common/PageBreadCrumb';
+import ComponentCard from '@/components/common/ComponentCard';
+import Input from '@/components/form/input/InputField';
+import Select from '@/components/form/Select';
+import { PlusIcon, Search } from '@/icons';
+import OccupantsModal, { Occupant } from '@/components/ui/modal/OccupantsModal';
 
 type BookingHeader = {
     id: number;
@@ -59,10 +65,113 @@ const fmt = (iso?: string | null) =>
 const fmtDate = (iso?: string | null) =>
     iso ? new Date(iso).toLocaleDateString('vi-VN') : '—';
 
+
+type Option = { value: number; label: string };
+function SearchCombo({
+    placeholder, value, onChange, fetcher, rightAddon, className
+}: {
+    placeholder: string; value: Option | null; onChange: (v: Option | null) => void;
+    fetcher: (q: string) => Promise<Option[]>; rightAddon?: React.ReactNode; className?: string;
+}) {
+    const [open, setOpen] = useState(false);
+    const [q, setQ] = useState('');
+    const [opts, setOpts] = useState<Option[]>([]);
+    const [loading, setLoading] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    const deb = useRef<any>(null);
+
+    // Đóng khi click/touch ra ngoài (dùng mousedown để chạy sớm)
+    useEffect(() => {
+        const onDown = (e: MouseEvent | TouchEvent) => {
+            const el = ref.current;
+            if (!el) return;
+            const target = e.target as Node | null;
+            if (target && !el.contains(target)) setOpen(false);
+        };
+        document.addEventListener('mousedown', onDown);
+        document.addEventListener('touchstart', onDown);
+        return () => {
+            document.removeEventListener('mousedown', onDown);
+            document.removeEventListener('touchstart', onDown);
+        };
+    }, []);
+
+    // Đóng khi nhấn ESC
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setOpen(false);
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, []);
+
+    // Load options có debounce
+    useEffect(() => {
+        if (!open) return;
+        clearTimeout(deb.current);
+        deb.current = setTimeout(async () => {
+            setLoading(true);
+            try { setOpts(await fetcher(q.trim())); } finally { setLoading(false); }
+        }, 220);
+    }, [q, open, fetcher]);
+
+    const displayText = value ? value.label : q;
+
+    return (
+        <div ref={ref} className={`relative ${className || ''}`}>
+            <div className="flex">
+                <div className="inline-flex w-full items-center rounded-l-lg border px-2 dark:border-slate-700 dark:bg-slate-800">
+                    <Search className="mr-2 size-4 opacity-60" />
+                    <input
+                        className="h-[36px] w-full bg-transparent text-sm outline-none"
+                        placeholder={placeholder}
+                        value={displayText}
+                        onChange={(e) => { onChange(null); setQ(e.target.value); }}
+                        onFocus={() => setOpen(true)}
+                        aria-expanded={open}
+                    />
+                </div>
+                {rightAddon ? (
+                    <div className="rounded-r-lg border border-l-0 dark:border-slate-700">{rightAddon}</div>
+                ) : (
+                    <button
+                        type="button"
+                        className="rounded-r-lg border border-l-0 px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+                        onClick={() => setOpen(v => !v)}
+                    >
+                        ▼
+                    </button>
+                )}
+            </div>
+
+            {open && (
+                <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-lg border bg-white p-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                    {loading ? (
+                        <div className="px-3 py-2 text-gray-500">Đang tải…</div>
+                    ) : (
+                        (opts.length === 0
+                            ? <div className="px-3 py-2 text-gray-500">Không có kết quả</div>
+                            : opts.map(o => (
+                                <div
+                                    key={o.value}
+                                    className="cursor-pointer rounded-md px-3 py-2 hover:bg-slate-100 dark:hover:bg-white/10"
+                                    onClick={() => { onChange(o); setQ(''); setOpen(false); }}
+                                >
+                                    {o.label}
+                                </div>
+                            ))
+                        )
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function BookingDetailPage() {
     const params = useParams();                 // ✅ lấy params trong client
     const idParam = (params?.id ?? '') as string;
-    const bookingId = Number(idParam);  
+    const bookingId = Number(idParam);
 
     const [loading, setLoading] = useState(true);
     const [booking, setBooking] = useState<BookingHeader | null>(null);
@@ -149,6 +258,14 @@ export default function BookingDetailPage() {
         // reload
         await loadFull();
     }
+    // group services theo phòng + dòng phòng
+    const groups = useMemo(() => {
+        return rooms.map(r => ({
+            key: `${r.PHONG_MA}#${r.lineId}`,
+            room: r,
+            services: services.filter(s => s.PHONG_MA === r.PHONG_MA && s.ctsdLineId === r.lineId),
+        }));
+    }, [rooms, services]);
 
     async function updateServiceLine(s: ServiceLine, patch: Partial<ServiceLine>) {
         // cần đủ khoá: PHONG_MA, CTSD_STT, DV_MA, :ctdvStt
@@ -169,280 +286,377 @@ export default function BookingDetailPage() {
         });
         await loadFull();
     }
+    const [kh, setKh] = useState<Option | null>(null);
+    const [occupants, setOccupants] = useState<Occupant[]>([]);
+    const toOccupant = (rec: any): Occupant => ({
+        khId: rec?.KH_MA ?? null,
+        fullName: rec?.KH_HOTEN ?? '',
+        phone: rec?.KH_SDT ?? '',
+        idNumber: rec?.KH_CCCD ?? '',
+        address: rec?.KH_DIACHI ?? '',
+        isChild: false,
+    });
+    const fetchCustomers = async (search: string): Promise<Option[]> => {
+        const r = await api.get('/khach-hang', { params: { take: 20, withTotal: 0, search } });
+        return (r.data?.items ?? r.data ?? []).map((x: any) => ({ value: x.KH_MA, label: `${x.KH_HOTEN}${x.KH_SDT ? ` (${x.KH_SDT})` : ''}` }));
+    };
 
+    const [openCreateKH, setOpenCreateKH] = useState(false);
+
+    const [occOpen, setOccOpen] = useState(false);
+    const occAdults = Math.max(1, occupants.filter(o => !o.isChild).length);
+    const occChildren = occupants.filter(o => o.isChild).length;
+    const occDocs = occupants.filter(o => (o.idNumber || '').trim()).length;
+    const occAppendRef = useRef<null | ((o: Occupant) => void)>(null);
+    const [occCreateOpen, setOccCreateOpen] = useState(false);
     return (
-        <div className="space-y-4">
-            {/* breadcrumb + tiêu đề */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <div className="text-xs text-gray-500">
+        <div className="min-h-screen">
+            <PageBreadcrumb pageTitle={`Hợp đồng DP${String(bookingId).padStart(6, '0')}`} />
+            <div className="mx-auto w-full max-w-screen-2xl rounded-2xl border border-gray-200 bg-white px-5 py-7 dark:border-gray-800 dark:bg-white/[0.03] xl:px-10 xl:py-12">
+                {/* breadcrumb + tiêu đề
+                <div className="mb-4 flex items-center justify-between">
+                    <div className="text-sm text-gray-500">
                         <Link href="/admin/others-pages/dat-phong" className="hover:underline">Đặt phòng</Link>
                         <span className="mx-2">/</span>
                         <span>Chi tiết</span>
                     </div>
-                    <h1 className="mt-1 text-xl font-semibold">
-                        Hợp đồng #{String(bookingId).padStart(6, '0')}
-                    </h1>
-                </div>
-                <Link href="/admin/others-pages/dat-phong">
-                    <Button variant="outline" size="sm">← Quay lại</Button>
-                </Link>
-            </div>
+                    <Button variant="outline" size="sm">
+                        <Link href="/admin/others-pages/dat-phong">← Quay lại</Link>
+                    </Button>
+                </div> */}
 
-            {/* Header booking */}
-            <div className="rounded-xl border p-4 dark:border-slate-700">
-                {loading || !booking ? (
-                    <div className="text-gray-500">Đang tải chi tiết…</div>
-                ) : (
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                        <div>
-                            <div className="text-xs text-gray-500">Khách đặt</div>
-                            <div className="text-sm font-medium">{booking.khach.ten || '—'}</div>
-                            <div className="text-sm text-gray-500">{booking.khach.sdt || ''}</div>
+                {/* Header booking */}
+
+
+                {/* 2 cột: danh mục DV | chi tiết HĐ gộp */}
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[340px_1fr]">
+
+                    {/* LEFT: Danh mục dịch vụ (giữ nguyên phần bạn đang dùng) */}
+                    <ComponentCard title="Danh mục dịch vụ">
+                        {/* Search */}
+                        <Input
+                            placeholder="Tìm theo tên/mã dịch vụ…"
+                            value={pSearch}
+                            onChange={(e: any) => setPSearch(e.target.value)}
+                            className=""
+                        />
+
+                        {/* List */}
+                        <div className="max-h-[300px] overflow-auto rounded-lg border dark:border-slate-700">
+                            {pLoading ? (
+                                <div className="p-3 text-sm text-gray-500">Đang tải…</div>
+                            ) : products.length === 0 ? (
+                                <div className="p-3 text-sm text-gray-500">Không có dịch vụ.</div>
+                            ) : (
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableCell isHeader className="px-3 py-2 text-xs text-gray-500">Tên</TableCell>
+                                            <TableCell isHeader className="px-3 py-2 text-xs text-gray-500">Giá</TableCell>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {products.map((p) => (
+                                            <TableRow
+                                                key={p.DV_MA}
+                                                className={`cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 ${selectedProd?.DV_MA === p.DV_MA ? "bg-slate-50 dark:bg-white/5" : ""
+                                                    }`}
+                                                onClick={() => setSelectedProd(p)}
+                                            >
+                                                <TableCell className="px-3 py-2">
+                                                    <div className="text-sm font-medium">{p.DV_TEN}</div>
+                                                    <div className="text-xs text-gray-500">{p.LDV_TEN || "—"}</div>
+                                                </TableCell>
+                                                <TableCell className="w-24 px-3 py-2 text-center text-sm">{vnd(p.PRICE)}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            )}
                         </div>
-                        <div>
-                            <div className="text-xs text-gray-500">Thời gian</div>
-                            <div className="text-sm">{fmt(booking.from)} → {fmt(booking.to)}</div>
-                        </div>
-                        <div>
-                            <div className="text-xs text-gray-500">Trạng thái / Hình thức</div>
-                            <div className="text-sm">{booking.trang_thai} • {booking.htLabel}</div>
-                        </div>
-                        {!!booking.ghi_chu && (
-                            <div className="md:col-span-3">
+
+                        {/* form thêm DV */}
+                        <div className="mt-3 rounded-lg border p-3 dark:border-slate-700">
+                            <div className="mb-2">
+                                <div className="text-xs text-gray-500">Dòng phòng nhận</div>
+                                <select
+                                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                                    value={targetRoomKey}
+                                    onChange={(e) => setTargetRoomKey(e.target.value)}
+                                >
+                                    {rooms.map((r) => (
+                                        <option key={`${r.PHONG_MA}-${r.lineId}`} value={`${r.PHONG_MA}#${r.lineId}`}>
+                                            {r.roomName} • {r.donvi === "NIGHT" ? fmtDate(r.ngay) : `${fmt(r.tu_gio)} → ${fmt(r.den_gio)}`}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="mb-2">
+                                <div className="text-xs text-gray-500">Dịch vụ</div>
+                                <div className="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
+                                    {selectedProd ? `${selectedProd.DV_TEN} • ${vnd(price)}` : "— Chưa chọn —"}
+                                </div>
+                            </div>
+
+                            <div className="mb-2 grid grid-cols-2 gap-2">
+                                <div>
+                                    <div className="text-xs text-gray-500">Số lượng</div>
+                                    <Input type="number" min="1" value={qty} onChange={(e: any) => setQty(Math.max(1, Number(e.target.value || 1)))} />
+                                </div>
+                                <div>
+                                    <div className="text-xs text-gray-500">Đơn giá</div>
+                                    <Input type="number" min="0" value={price} onChange={(e: any) => setPrice(Math.max(0, Number(e.target.value || 0)))} />
+                                </div>
+                            </div>
+
+                            <div className="mb-2">
                                 <div className="text-xs text-gray-500">Ghi chú</div>
-                                <div className="text-sm">{booking.ghi_chu}</div>
+                                <textarea
+                                    rows={2}
+                                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                                    value={note}
+                                    onChange={(e) => setNote(e.target.value)}
+                                />
+                            </div>
+
+                            <Button size="sm" variant="primary" disabled={!canAdd} onClick={addService}>
+                                Thêm vào HĐ
+                            </Button>
+                        </div>
+                    </ComponentCard>
+
+                    {/* RIGHT: Chi tiết HĐ (gộp Phòng + Dịch vụ) */}
+                    <ComponentCard title="Chi tiết hợp đồng">
+                        <div className="mb-3 flex items-center gap-2">
+                            <SearchCombo
+                                className="w-80"
+                                placeholder="Tìm khách hàng…"
+                                value={kh}
+                                onChange={async (o) => {
+                                    setKh(o);
+
+                                    // nếu chọn KH → load chi tiết (nếu muốn đầy đủ)
+                                    if (o?.value) {
+                                        try {
+                                            const r = await api.get(`/khach-hang/${o.value}`);
+                                            const khRow = r.data || {};
+                                            setOccupants(prev => {
+                                                const cp = [...(prev || [])];
+                                                const occ = toOccupant(khRow); // <-- gồm: khId, fullName, phone, idNumber, address
+                                                if (cp.length === 0) {
+                                                    cp.push(occ);
+                                                } else {
+                                                    const idx = cp.findIndex(x => !x.isChild);
+                                                    const i = idx >= 0 ? idx : 0;
+                                                    cp[i] = occ;
+                                                }
+                                                return cp;
+                                            });
+                                        } catch {
+                                            // fallback: không có rec đầy đủ thì ít nhất vẫn set tên
+                                            setOccupants(prev => {
+                                                const cp = [...(prev || [])];
+                                                if (cp.length === 0) {
+                                                    cp.push({ khId: o.value, fullName: o.label, phone: '', idNumber: '', address: '', isChild: false });
+                                                } else {
+                                                    const idx = cp.findIndex(x => !x.isChild);
+                                                    const i = idx >= 0 ? idx : 0;
+                                                    cp[i] = { ...(cp[i] || {}), khId: o.value, fullName: o.label, isChild: false };
+                                                }
+                                                return cp;
+                                            });
+                                        }
+                                    }
+                                }}
+                                fetcher={fetchCustomers}
+                                rightAddon={
+                                    <button
+                                        type="button"
+                                        className="inline-flex h-[36px] items-center justify-center px-3 text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10"
+                                        title="Thêm khách hàng"
+                                        onClick={() => setOpenCreateKH(true)}
+                                    >
+                                        <PlusIcon className="size-4" />
+                                    </button>
+                                }
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setOccOpen(true)}
+                                className="inline-flex h-[36px] items-center gap-3 rounded-lg border px-3 text-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
+                                title="Khách lưu trú"
+                            >
+                                <span className="inline-flex items-center gap-1">
+                                    <span>👤</span><b>{occAdults}</b>
+                                </span>
+                                <span className="opacity-40">|</span>
+                                <span className="inline-flex items-center gap-1">
+                                    <span>🧒</span><b>{occChildren}</b>
+                                </span>
+                                <span className="opacity-40">|</span>
+                                <span className="inline-flex items-center gap-1">
+                                    <span>🪪</span><b>{occDocs}</b>
+                                </span>
+                            </button>
+
+                        </div>
+                        {/* danh sách theo phòng */}
+                        <div className="space-y-3">
+                            {groups.map((g, idx) => (
+                                <div key={g.key} className="rounded-xl border p-3 dark:border-slate-700">
+                                    {/* Header phòng */}
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3">
+                                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border text-xs font-medium dark:border-slate-700">
+                                                {idx + 1}
+                                            </span>
+                                            <div>
+                                                <div className="text-sm font-semibold">{g.room.roomName}</div>
+                                                <div className="text-xs text-gray-500">
+                                                    {g.room.roomType || "—"} • {g.room.donvi === "NIGHT" ? fmtDate(g.room.ngay) : `${fmt(g.room.tu_gio)} → ${fmt(g.room.den_gio)}`}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="text-right">
+                                            <div className="text-xs text-gray-500">Tiền phòng</div>
+                                            <div className="text-sm font-medium">{vnd(g.room.tong_tien)}</div>
+                                        </div>
+                                    </div>
+
+                                    {/* Dịch vụ của phòng */}
+                                    <div className="mt-3 space-y-2">
+                                        {g.services.map((s) => (
+                                            <div
+                                                key={`${s.PHONG_MA}-${s.ctsdLineId}-${s.DV_MA}-${s.lineStt}`}
+                                                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-2 dark:border-slate-700"
+                                            >
+                                                {/* tên + ghi chú */}
+                                                <div className="min-w-[180px] flex-1">
+                                                    <div className="text-sm font-medium">{s.dvTen}</div>
+                                                    <div className="text-xs text-gray-500">{s.ghi_chu || ""}</div>
+                                                </div>
+
+                                                {/* ngày */}
+                                                <div className="text-xs text-gray-500">{fmtDate(s.ngay)}</div>
+
+                                                {/* SL */}
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-xs text-gray-500">SL</span>
+                                                    <Input
+                                                        type="number"
+                                                        min="1"
+                                                        className="w-16 text-right"
+                                                        value={s.so_luong}
+                                                        onBlur={(e: any) => updateServiceLine(s, { so_luong: Math.max(1, Number(e.target.value || 1)) })}
+                                                        onChange={() => { }}
+                                                    />
+                                                </div>
+
+                                                {/* Đơn giá */}
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-xs text-gray-500">ĐG</span>
+                                                    <Input
+                                                        type="number"
+                                                        min="0"
+                                                        className="w-24 text-right"
+                                                        value={s.don_gia}
+                                                        onBlur={(e: any) => updateServiceLine(s, { don_gia: Math.max(0, Number(e.target.value || 0)) })}
+                                                        onChange={() => { }}
+                                                    />
+                                                </div>
+
+                                                {/* Thành tiền */}
+                                                <div className="text-right min-w-[80px] font-medium">{vnd(s.thanh_tien)}</div>
+
+                                                {/* Xoá */}
+                                                <div>
+                                                    <Button size="sm" variant="danger" onClick={() => removeServiceLine(s)}>
+                                                        Xoá
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        ))}
+
+                                        {g.services.length === 0 && (
+                                            <div className="rounded-md border p-2 text-xs text-gray-500 dark:border-slate-700">
+                                                Chưa có dịch vụ cho phòng này.
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* chọn dòng phòng để thêm DV nhanh */}
+                                    <div className="mt-3">
+                                        <Button
+                                            size="sm"
+                                            variant={targetRoomKey === g.key ? "primary" : "outline"}
+                                            onClick={() => setTargetRoomKey(g.key)}
+                                        >
+                                            {targetRoomKey === g.key ? "Đang thêm vào phòng này" : "Chọn để thêm dịch vụ"}
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+
+                            {groups.length === 0 && (
+                                <div className="rounded-xl border p-6 text-center text-gray-500 dark:border-slate-700">
+                                    Chưa có phòng trong HĐ.
+                                </div>
+                            )}
+                        </div>
+
+                        {/* tổng tiền gọn gàng */}
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+                            <div>Phòng: <b>{vnd(totals.rooms)}</b></div>
+                            <div>Dịch vụ: <b>{vnd(totals.services)}</b></div>
+                            <div className="text-gray-700">Tổng cộng: <b>{vnd(totals.grand)}</b></div>
+                        </div>
+
+                        {loading || !booking ? (
+                            <div className="text-gray-500">Đang tải chi tiết…</div>
+                        ) : (
+                            <div>
+                                <div className="grid grid-cols-1 gap-3 md:grid-cols-3 mb-4">
+                                    <ComponentCard title="Khách đặt">
+                                        <div className="text-sm font-medium">{booking?.khach.ten || '—'}</div>
+                                        <div className="text-sm text-gray-500">{booking?.khach.sdt || ''}</div>
+                                    </ComponentCard>
+
+                                    <ComponentCard title="Thời gian">
+                                        <div className="text-sm">{fmt(booking?.from)} → {fmt(booking?.to)}</div>
+                                    </ComponentCard>
+
+                                    <ComponentCard title="Tổng cộng">
+                                        <div className="text-lg font-semibold">{vnd(totals.grand)}</div>
+                                        <div className="text-xs text-gray-500">
+                                            Phòng: <b>{vnd(totals.rooms)}</b> • DV: <b>{vnd(totals.services)}</b>
+                                        </div>
+                                    </ComponentCard>
+                                </div>
+                                {!!booking?.ghi_chu && (
+                                    <ComponentCard title="Ghi chú">
+                                        <div className="text-sm">{booking.ghi_chu}</div>
+                                    </ComponentCard>
+                                )}
                             </div>
                         )}
-                    </div>
-                )}
-            </div>
-
-            {/* 3 cột: danh mục DV | dòng phòng | dịch vụ đã chọn */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr_1.1fr]">
-                {/* LEFT: danh mục sản phẩm/dịch vụ */}
-                <div className="rounded-xl border p-3 dark:border-slate-700">
-                    <div className="mb-2 text-sm font-medium">Danh mục dịch vụ</div>
-                    <input
-                        className="mb-2 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                        placeholder="Tìm theo tên/mã dịch vụ…"
-                        value={pSearch}
-                        onChange={(e) => setPSearch(e.target.value)}
-                    />
-                    <div className="max-h-[540px] overflow-auto rounded-lg border dark:border-slate-700">
-                        {pLoading ? (
-                            <div className="p-3 text-sm text-gray-500">Đang tải…</div>
-                        ) : (products.length === 0 ? (
-                            <div className="p-3 text-sm text-gray-500">Không có dịch vụ.</div>
-                        ) : (
-                            <Table>
-                                <TableBody>
-                                    {products.map(p => (
-                                        <TableRow
-                                            key={p.DV_MA}
-                                            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5"
-                                            onClick={() => setSelectedProd(p)}
-                                        >
-                                            <TableCell className="px-3 py-2">
-                                                <div className="text-sm font-medium">{p.DV_TEN}</div>
-                                                <div className="text-xs text-gray-500">{p.LDV_TEN || '—'}</div>
-                                            </TableCell>
-                                            <TableCell className="w-24 px-3 py-2 text-right text-sm">{vnd(p.PRICE)}</TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        ))}
-                    </div>
-
-                    {/* form thêm DV */}
-                    <div className="mt-3 rounded-lg border p-3 text-sm dark:border-slate-700">
-                        <div className="mb-2">
-                            <div className="text-xs text-gray-500">Dòng phòng nhận</div>
-                            <select
-                                className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                                value={targetRoomKey}
-                                onChange={(e) => setTargetRoomKey(e.target.value)}
-                            >
-                                {rooms.map(r => (
-                                    <option
-                                        key={`${r.PHONG_MA}-${r.lineId}`}
-                                        value={`${r.PHONG_MA}#${r.lineId}`}
-                                    >
-                                        {r.roomName} • {r.donvi === 'NIGHT' ? fmtDate(r.ngay) : `${fmt(r.tu_gio)} → ${fmt(r.den_gio)}`}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div className="mb-2">
-                            <div className="text-xs text-gray-500">Dịch vụ</div>
-                            <div className="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
-                                {selectedProd ? `${selectedProd.DV_TEN} • ${vnd(price)}` : '— Chưa chọn —'}
-                            </div>
-                        </div>
-
-                        <div className="mb-2 grid grid-cols-2 gap-2">
-                            <div>
-                                <div className="text-xs text-gray-500">Số lượng</div>
-                                <input
-                                    type="number" min={1}
-                                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                                    value={qty}
-                                    onChange={(e) => setQty(Math.max(1, Number(e.target.value || 1)))}
-                                />
-                            </div>
-                            <div>
-                                <div className="text-xs text-gray-500">Đơn giá</div>
-                                <input
-                                    type="number" min={0}
-                                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                                    value={price}
-                                    onChange={(e) => setPrice(Math.max(0, Number(e.target.value || 0)))}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="mb-2">
-                            <div className="text-xs text-gray-500">Ghi chú</div>
-                            <textarea
-                                rows={2}
-                                className="mt-1 w-full rounded-lg border px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                                value={note}
-                                onChange={(e) => setNote(e.target.value)}
-                            />
-                        </div>
-
-                        <Button size="sm" variant="primary" disabled={!canAdd} onClick={addService}>
-                            Thêm vào HĐ
-                        </Button>
-                    </div>
+                    </ComponentCard>
                 </div>
+                <OccupantsModal
+                    open={occOpen}
+                    onClose={() => setOccOpen(false)}
+                    value={occupants}
+                    onChange={(list) => setOccupants(list)}
+                    onAddAdultViaCreate={(append) => {
+                        // nhận callback append từ modal con và mở modal tạo KH
+                        occAppendRef.current = append;
+                        setOccCreateOpen(true);
+                    }}
+                />
 
-                {/* MIDDLE: các dòng PHÒNG (CTSD) */}
-                <div className="rounded-xl border p-3 dark:border-slate-700">
-                    <div className="mb-2 flex items-center justify-between">
-                        <div className="text-sm font-medium">Phòng trong HĐ</div>
-                        <div className="text-xs text-gray-500">
-                            Tổng tiền phòng: <b>{vnd(totals.rooms)}</b>
-                        </div>
-                    </div>
-                    <div className="overflow-auto rounded-lg border dark:border-slate-700">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500">Chọn</TableCell>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500">Phòng</TableCell>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500">Loại</TableCell>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500">Khoảng</TableCell>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500 text-right">Đơn giá</TableCell>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500 text-right">Thành tiền</TableCell>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {rooms.map(r => (
-                                    <TableRow key={`${r.PHONG_MA}-${r.lineId}`}>
-                                        <TableCell className="px-3 py-2">
-                                            <input
-                                                type="radio"
-                                                name="target-room"
-                                                checked={targetRoomKey === `${r.PHONG_MA}#${r.lineId}`}
-                                                onChange={() => setTargetRoomKey(`${r.PHONG_MA}#${r.lineId}`)}
-                                            />
-                                        </TableCell>
-                                        <TableCell className="px-3 py-2">{r.roomName}</TableCell>
-                                        <TableCell className="px-3 py-2">{r.roomType || '—'}</TableCell>
-                                        <TableCell className="px-3 py-2 text-sm">
-                                            {r.donvi === 'NIGHT'
-                                                ? fmtDate(r.ngay)
-                                                : `${fmt(r.tu_gio)} → ${fmt(r.den_gio)}`
-                                            }
-                                        </TableCell>
-                                        <TableCell className="px-3 py-2 text-right">{vnd(r.don_gia)}</TableCell>
-                                        <TableCell className="px-3 py-2 text-right">{vnd(r.tong_tien)}</TableCell>
-                                    </TableRow>
-                                ))}
-                                {rooms.length === 0 && (
-                                    <TableRow><TableCell colSpan={6} className="px-3 py-6 text-center text-gray-500">Không có phòng.</TableCell></TableRow>
-                                )}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </div>
-
-                {/* RIGHT: dịch vụ đã chọn (CTDV) */}
-                <div className="rounded-xl border p-3 dark:border-slate-700">
-                    <div className="mb-2 flex items-center justify-between">
-                        <div className="text-sm font-medium">Dịch vụ trong HĐ</div>
-                        <div className="text-xs text-gray-500">
-                            Tổng dịch vụ: <b>{vnd(totals.services)}</b> • Tổng cộng: <b>{vnd(totals.grand)}</b>
-                        </div>
-                    </div>
-
-                    <div className="overflow-auto rounded-lg border dark:border-slate-700">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500">Phòng</TableCell>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500">Dịch vụ</TableCell>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500">Ngày</TableCell>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500 text-right">SL</TableCell>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500 text-right">Đơn giá</TableCell>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500 text-right">Thành tiền</TableCell>
-                                    <TableCell isHeader className="px-3 py-2 text-xs text-gray-500 text-right">Hành động</TableCell>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {services.map(s => (
-                                    <TableRow
-                                        key={`${s.PHONG_MA}-${s.ctsdLineId}-${s.DV_MA}-${s.lineStt}`}
-                                    >
-                                        <TableCell className="px-3 py-2">{s.roomName}</TableCell>
-                                        <TableCell className="px-3 py-2">
-                                            <div className="text-sm font-medium">{s.dvTen}</div>
-                                            <div className="text-xs text-gray-500">{s.ghi_chu || ''}</div>
-                                        </TableCell>
-                                        <TableCell className="px-3 py-2">{fmtDate(s.ngay)}</TableCell>
-                                        <TableCell className="px-3 py-2 text-right">
-                                            <input
-                                                type="number" min={0}
-                                                className="w-16 rounded-md border px-2 py-1 text-right text-sm dark:border-slate-700 dark:bg-slate-800"
-                                                value={s.so_luong}
-                                                onChange={(e) =>
-                                                    updateServiceLine(s, { so_luong: Math.max(0, Number(e.target.value || 0)) })
-                                                }
-                                            />
-                                        </TableCell>
-                                        <TableCell className="px-3 py-2 text-right">
-                                            <input
-                                                type="number" min={0}
-                                                className="w-24 rounded-md border px-2 py-1 text-right text-sm dark:border-slate-700 dark:bg-slate-800"
-                                                value={s.don_gia}
-                                                onChange={(e) =>
-                                                    updateServiceLine(s, { don_gia: Math.max(0, Number(e.target.value || 0)) })
-                                                }
-                                            />
-                                        </TableCell>
-                                        <TableCell className="px-3 py-2 text-right">{vnd(s.thanh_tien)}</TableCell>
-                                        <TableCell className="px-3 py-2 text-right">
-                                            <Button
-                                                size="sm"
-                                                variant="danger"
-                                                onClick={() => removeServiceLine(s)}
-                                            >
-                                                Xoá
-                                            </Button>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                                {services.length === 0 && (
-                                    <TableRow><TableCell colSpan={7} className="px-3 py-6 text-center text-gray-500">Chưa có dịch vụ.</TableCell></TableRow>
-                                )}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </div>
             </div>
         </div>
+
     );
 }
