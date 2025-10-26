@@ -24,6 +24,29 @@ async function getNextServiceStt(hdId, phongId, ctsdStt) {
     const curMax = rows?.[0]?.CTDV_STT || 0;
     return curMax + 1;
 }
+const VN_OFFSET_MIN = 7 * 60; // Asia/Ho_Chi_Minh = UTC+7 (không DST)
+const addMinutes = (date, mins) => new Date(date.getTime() + mins * 60000);
+
+/** Trả về [prevNoonUTC, nextNoonUTC] cho khung 12:00-12:00 GIỜ VN, nhưng ở dạng UTC */
+function vnNoonWindowUTC(nowUtc) {
+    // đổi now UTC -> giờ VN
+    const vnNow = addMinutes(nowUtc, VN_OFFSET_MIN);
+    const y = vnNow.getFullYear();
+    const m = vnNow.getMonth();
+    const d = vnNow.getDate();
+
+    // 12:00 giờ VN của hôm nay -> UTC = 05:00Z
+    const todayNoonUtc = new Date(Date.UTC(y, m, d, 5, 0, 0));
+
+    // nếu đang trước 12:00 VN: đêm là [hôm qua 12:00 VN, hôm nay 12:00 VN)
+    if (vnNow.getHours() < 12) {
+        const prevNoonUtc = new Date(todayNoonUtc.getTime() - 24 * 3600 * 1000);
+        return [prevNoonUtc, todayNoonUtc];
+    }
+    // sau 12:00 VN: đêm là [hôm nay 12:00 VN, ngày mai 12:00 VN)
+    const nextNoonUtc = new Date(todayNoonUtc.getTime() + 24 * 3600 * 1000);
+    return [todayNoonUtc, nextNoonUtc];
+}
 
 /** =========================
  *  GET /bookings/:id/full
@@ -47,6 +70,9 @@ async function getBookingFull(req, res, next) {
                 HDONG_GHICHU: true,
                 KHACH_HANG: { select: { KH_HOTEN: true, KH_SDT: true } },
                 HINH_THUC_THUE: { select: { HT_TEN: true } },
+                HDONG_TIENCOCYEUCAU: true,
+                HDONG_NGAYTHUCNHAN :true,
+                HDONG_NGAYTHUCTRA : true,
             },
         });
         if (!hd) return res.status(404).json({ message: 'Không tìm thấy hợp đồng' });
@@ -148,6 +174,9 @@ async function getBookingFull(req, res, next) {
                 to: hd.HDONG_NGAYTRA,
                 trang_thai: hd.HDONG_TRANG_THAI,
                 ghi_chu: hd.HDONG_GHICHU || null,
+                tien_coc: hd.HDONG_TIENCOCYEUCAU|| null,
+                thuc_nhan: hd.HDONG_NGAYTHUCNHAN ||null,
+                thuc_tra: hd.HDONG_NGAYTHUCTRA||null,
             },
             rooms,
             services,
@@ -203,65 +232,157 @@ async function searchProducts(req, res, next) {
  *  - Đơn giá: nếu không gửi -> lấy DV_DONGIA từ DICH_VU
  *  - CTDV_STT: tự tăng theo (HDONG_MA, PHONG_MA, CTSD_STT)
  * ======================= */
+/** =========================
+ *  POST /bookings/:id/services
+ *  Body (tối thiểu): { DV_MA, PHONG_MA, CTDV_SOLUONG?, CTDV_DONGIA?, CTDV_NGAY?, CTDV_GHICHU? }
+ *  - KHÔNG cần FE gửi CTSD_STT. BE tự suy theo "now" + PHONG_MA + HT_MA.
+ *  - Chỉ cho thêm khi HĐ đang CHECKED_IN và chưa quá hạn trả phòng.
+ * ======================= */
 async function addService(req, res, next) {
     try {
-        const hdId = toNumber(req.params.id);
+        const hdId = Number(req.params.id) || 0;
         const {
             DV_MA,
             PHONG_MA,
-            CTSD_STT,
             CTDV_SOLUONG = 1,
             CTDV_DONGIA,
-            CTDV_NGAY,
+            CTDV_NGAY,          // nếu không gửi -> dùng thời điểm hiện tại
             CTDV_GHICHU = null,
+            // KHÔNG nhận CTSD_STT từ FE – BE sẽ tự xác định dòng phòng phủ thời điểm
         } = req.body || {};
 
-        if (!hdId || !DV_MA || !PHONG_MA || !CTSD_STT) {
-            return res
-                .status(400)
-                .json({ message: 'Thiếu DV_MA / PHONG_MA / CTSD_STT / hoặc HDONG_MA không hợp lệ' });
+        if (!hdId || !DV_MA || !PHONG_MA) {
+            return res.status(400).json({ message: 'Thiếu DV_MA / PHONG_MA / hoặc HDONG_MA không hợp lệ' });
         }
 
-        // Kiểm tra dòng phòng tồn tại (đảm bảo gắn đúng CTSD)
-        const ctsd = await prisma.cHI_TIET_SU_DUNG.findUnique({
-            where: {
-                HDONG_MA_PHONG_MA_CTSD_STT: {
-                    HDONG_MA: Number(hdId),
-                    PHONG_MA: Number(PHONG_MA),
-                    CTSD_STT: Number(CTSD_STT),
-                },
-            },
-            select: { HDONG_MA: true },
+        // ========== 1) Kiểm tra HĐ ==========
+        const hd = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+            where: { HDONG_MA: hdId },
+            select: {
+                HT_MA: true,
+                HDONG_TRANG_THAI: true,
+                HDONG_NGAYDAT: true,
+                HDONG_NGAYTRA: true,
+                HDONG_NGAYTHUCNHAN: true,
+                HDONG_NGAYTHUCTRA: true,
+            }
         });
-        if (!ctsd) {
-            return res.status(404).json({ message: 'Không tìm thấy dòng phòng (CTSD) để gắn dịch vụ' });
+        if (!hd) return res.status(404).json({ message: 'Không tìm thấy hợp đồng' });
+        // const instant = req.body?.at ? new Date(req.body.at) : new Date();
+        // Thời điểm dịch vụ (instant) – mặc định là "ngay bây giờ"
+        const instant = CTDV_NGAY ? new Date(CTDV_NGAY) : new Date();
+        if (Number.isNaN(+instant)) {
+            return res.status(400).json({ message: 'Thời điểm thêm dịch vụ (at) không hợp lệ' });
         }
 
-        // Lấy đơn giá mặc định nếu không gửi
-        let unitPrice = toNumber(CTDV_DONGIA, NaN);
+        // CỬA SỔ HIỆU LỰC: ưu tiên mốc "THỰC", fallback sang "DỰ KIẾN"
+        const windowStart = hd.HDONG_NGAYTHUCNHAN ?? hd.HDONG_NGAYDAT;
+        const windowEnd = hd.HDONG_NGAYTHUCTRA ?? hd.HDONG_NGAYTRA;
+
+        if (!windowStart || !windowEnd) {
+            return res.status(409).json({ message: 'Khoảng hiệu lực hợp đồng chưa đầy đủ' });
+        }
+
+        // Quy ước [start, end): cho phép =start, chặn =end
+        const start = new Date(windowStart);
+        const end = new Date(windowEnd);
+
+        if (!(instant >= start && instant < end)) {
+            return res.status(409).json({
+                message:
+                    'Thời điểm thêm dịch vụ nằm ngoài khoảng hiệu lực của hợp đồng (đã quá hạn hoặc chưa tới thời gian nhận).',
+                detail: {
+                    instant: instant.toISOString(),
+                    windowStart: start.toISOString(),
+                    windowEnd: end.toISOString(),
+                },
+            });
+        }
+
+        // (tuỳ chính sách) Nếu muốn CHỈ cho thêm dịch vụ khi đã nhận phòng:
+        if (hd.HDONG_TRANG_THAI !== 'CHECKED_IN') {
+            return res.status(409).json({ message: 'Chỉ thêm dịch vụ sau khi đã nhận phòng (CHECKED_IN).' });
+        }
+
+       
+
+        // ========== 2) Xác định CTSD_STT của phòng bao phủ "instant" ==========
+        let ctsdRow = null;
+        const now = new Date();
+        if (Number(hd.HT_MA) === 1) {
+            // THEO NGÀY/ĐÊM: match theo khung 12:00–12:00 GIỜ VN (so sánh ở UTC)
+            const [prevNoonUtc, nextNoonUtc] = vnNoonWindowUTC(now);
+            ctsdRow = await prisma.cHI_TIET_SU_DUNG.findFirst({
+                where: {
+                    HDONG_MA: hdId,
+                    PHONG_MA: Number(PHONG_MA),
+                    CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+                    // CTSD_NGAY_DA_O lưu mốc 12:00 VN của mỗi đêm (lưu dạng UTC: 05:00Z)
+                    CTSD_NGAY_DA_O: { gte: prevNoonUtc, lt: nextNoonUtc },
+                },
+                select: { CTSD_STT: true },
+            });
+        } else if (Number(hd.HT_MA) === 2) {
+            // THEO GIỜ: giữ nguyên như cũ
+            ctsdRow = await prisma.cHI_TIET_SU_DUNG.findFirst({
+                where: {
+                    HDONG_MA: hdId,
+                    PHONG_MA: Number(PHONG_MA),
+                    CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+                    CTSD_O_TU_GIO: { lte: now },
+                    CTSD_O_DEN_GIO: { gte: now },
+                },
+                select: { CTSD_STT: true },
+            });
+        } else {
+            return res.status(400).json({ message: 'HT_MA không hợp lệ trên hợp đồng' });
+        }
+
+
+        if (!ctsdRow) {
+            return res.status(409).json({
+                message: 'Không tìm thấy dòng phòng (CTSD) bao phủ thời điểm hiện tại để gắn dịch vụ. Kiểm tra phòng/giờ/ngày hoặc trạng thái dòng phòng.'
+            });
+        }
+
+        const resolvedCtsdStt = ctsdRow.CTSD_STT;
+
+        // ========== 3) Lấy đơn giá mặc định nếu không gửi ==========
+        let unitPrice = Number(CTDV_DONGIA);
         if (!Number.isFinite(unitPrice)) {
             const dv = await prisma.dICH_VU.findUnique({
                 where: { DV_MA: Number(DV_MA) },
-                select: { DV_DONGIA: true },
+                select: { DV_DONGIA: true }
             });
             unitPrice = Number(dv?.DV_DONGIA || 0);
         }
+        const qty = Math.max(1, Number(CTDV_SOLUONG) || 1);
 
-        const qty = Math.max(1, toNumber(CTDV_SOLUONG, 1));
-        const stt = await getNextServiceStt(Number(hdId), Number(PHONG_MA), Number(CTSD_STT));
+        // ========== 4) Lấy CTDV_STT kế tiếp cho (HDONG_MA, PHONG_MA, CTSD_STT) ==========
+        const last = await prisma.cHI_TIET_DICH_VU.findFirst({
+            where: {
+                HDONG_MA: hdId,
+                PHONG_MA: Number(PHONG_MA),
+                CTSD_STT: Number(resolvedCtsdStt)
+            },
+            select: { CTDV_STT: true },
+            orderBy: { CTDV_STT: 'desc' }
+        });
+        const nextStt = (last?.CTDV_STT || 0) + 1;
 
+        // ========== 5) Tạo dòng dịch vụ ==========
         const created = await prisma.cHI_TIET_DICH_VU.create({
             data: {
-                HDONG_MA: Number(hdId),
+                HDONG_MA: hdId,
                 PHONG_MA: Number(PHONG_MA),
-                CTSD_STT: Number(CTSD_STT),
+                CTSD_STT: Number(resolvedCtsdStt),
                 DV_MA: Number(DV_MA),
-                CTDV_STT: Number(stt),
+                CTDV_STT: Number(nextStt),
 
-                CTDV_NGAY: CTDV_NGAY ? new Date(CTDV_NGAY) : new Date(),
+                CTDV_NGAY: instant,
                 CTDV_SOLUONG: qty,
                 CTDV_DONGIA: unitPrice,
-                CTDV_GHICHU: CTDV_GHICHU ? String(CTDV_GHICHU).trim() : null,
+                CTDV_GHICHU: CTDV_GHICHU ? String(CTDV_GHICHU).trim() : null
             },
             select: {
                 CTDV_STT: true,
@@ -273,10 +394,11 @@ async function addService(req, res, next) {
                 PHONG_MA: true,
                 CTSD_STT: true,
                 DICH_VU: { select: { DV_TEN: true } },
-                PHONG: { select: { PHONG_TEN: true } },
-            },
+                PHONG: { select: { PHONG_TEN: true } }
+            }
         });
 
+        // ========== 6) Trả về shape FE ==========
         res.status(201).json({
             lineStt: created.CTDV_STT,
             PHONG_MA: created.PHONG_MA,
@@ -288,12 +410,14 @@ async function addService(req, res, next) {
             so_luong: created.CTDV_SOLUONG,
             don_gia: Number(created.CTDV_DONGIA),
             ghi_chu: created.CTDV_GHICHU || null,
-            thanh_tien: Number(created.CTDV_DONGIA) * created.CTDV_SOLUONG,
+            thanh_tien: Number(created.CTDV_DONGIA) * created.CTDV_SOLUONG
         });
     } catch (e) {
         next(e);
     }
 }
+
+
 
 /** =========================
  *  PATCH /bookings/:id/services/:ctdvStt

@@ -47,6 +47,8 @@ async function lite(req, res, next) {
                         HDONG_NGAYDAT: true,  // 👈 lấy giờ bắt đầu từ HĐ
                         HDONG_NGAYTRA: true,  // 👈 lấy giờ kết thúc từ HĐ
                         KHACH_HANG: { select: { KH_HOTEN: true } },
+                        HDONG_NGAYTHUCNHAN: true,
+                        HDONG_NGAYTHUCTRA: true,
                     }
                 },
             },
@@ -72,6 +74,11 @@ async function lite(req, res, next) {
                 TRANG_THAI: hd?.HDONG_TRANG_THAI ?? 'PENDING',
                 TU_LUC: tu ? tu.toISOString() : null,
                 DEN_LUC: den ? den.toISOString() : null,
+
+                HDONG_NGAYDAT: hd?.HDONG_NGAYDAT ? new Date(hd.HDONG_NGAYDAT).toISOString() : null,
+                HDONG_NGAYTRA: hd?.HDONG_NGAYTRA ? new Date(hd.HDONG_NGAYTRA).toISOString() : null,
+                HDONG_NGAYTHUCNHAN: hd?.HDONG_NGAYTHUCNHAN ? new Date(hd.HDONG_NGAYTHUCNHAN).toISOString() : null,
+                HDONG_NGAYTHUCTRA: hd?.HDONG_NGAYTHUCTRA ? new Date(hd.HDONG_NGAYTHUCTRA).toISOString() : null,
             };
         });
 

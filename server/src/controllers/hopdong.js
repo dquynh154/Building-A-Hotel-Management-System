@@ -216,38 +216,126 @@ async function remove(req, res, next) {
 
 // POST /bookings/:id/checkin
 // POST /bookings/:id/checkin
+// async function checkin(req, res, next) {
+//     try {
+//         const id = Number(req.params.id);
+
+//         const result = await prisma.$transaction(async (tx) => {
+//             // 1) Đổi trạng thái HĐ + ghi thời điểm nhận thực tế
+//             const hd = await tx.hOP_DONG_DAT_PHONG.update({
+//                 where: { HDONG_MA: id },
+//                 data: { HDONG_TRANG_THAI: 'CHECKED_IN', HDONG_NGAYTHUCNHAN: new Date() },
+//                 select: { HDONG_MA: true }
+//             });
+
+//             // 2) Lấy danh sách phòng thuộc HĐ (từ CTSD)
+//             const items = await tx.cHI_TIET_SU_DUNG.findMany({
+//                 where: { HDONG_MA: id },
+//                 select: { PHONG_MA: true }
+//             });
+//             const roomIds = [...new Set(items.map(i => i.PHONG_MA).filter(Boolean))];
+
+//             // 3) Đổi trạng thái phòng -> OCCUPIED
+//             if (roomIds.length) {
+//                 await tx.pHONG.updateMany({
+//                     where: { PHONG_MA: { in: roomIds } },
+//                     data: { PHONG_TRANGTHAI: 'OCCUPIED' }   // 👈 tên cột trạng thái phòng của bạn
+//                 });
+//             }
+
+//             return { hd, roomIds };
+//         });
+
+//         res.json({ ok: true, ...result });
+//     } catch (e) { next(e); }
+// }
+// POST /bookings/:id/checkin
 async function checkin(req, res, next) {
     try {
         const id = Number(req.params.id);
+        if (!id) return res.status(400).json({ message: 'ID không hợp lệ' });
 
-        const result = await prisma.$transaction(async (tx) => {
-            // 1) Đổi trạng thái HĐ + ghi thời điểm nhận thực tế
-            const hd = await tx.hOP_DONG_DAT_PHONG.update({
-                where: { HDONG_MA: id },
-                data: { HDONG_TRANG_THAI: 'CHECKED_IN', HDONG_NGAYTHUCNHAN: new Date() },
-                select: { HDONG_MA: true }
+        // 1) Load header HĐ + validate trạng thái
+        const hd = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+            where: { HDONG_MA: id },
+            select: {
+                HDONG_MA: true,
+                HDONG_TRANG_THAI: true,
+                HDONG_NGAYDAT: true,
+                HDONG_NGAYTRA: true,
+            },
+        });
+        if (!hd) return res.status(404).json({ message: 'Không tìm thấy hợp đồng' });
+        if (hd.HDONG_TRANG_THAI !== 'CONFIRMED') {
+            return res.status(409).json({ message: 'Chỉ hợp đồng CONFIRMED mới được nhận phòng' });
+        }
+
+        // 2) Thời điểm nhận phòng (FE có thể gửi { at: ISO } hoặc để trống => now)
+        const at = req.body?.at ? new Date(req.body.at) : new Date();
+        if (isNaN(+at)) return res.status(400).json({ message: 'Thời điểm nhận phòng (at) không hợp lệ' });
+
+        // CHÚ Ý: cho phép nhận sớm hơn HDONG_NGAYDAT nếu phòng trống.
+        // Nếu muốn cứng rắn: kiểm tra at >= HDONG_NGAYDAT và at < HDONG_NGAYTRA.
+
+        // 3) Lấy danh sách phòng thuộc HĐ
+        const ctsd = await prisma.cHI_TIET_SU_DUNG.findMany({
+            where: { HDONG_MA: id, CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] } },
+            select: { PHONG_MA: true },
+        });
+        const roomIds = [...new Set(ctsd.map(r => r.PHONG_MA).filter(Boolean))];
+        if (roomIds.length === 0) {
+            return res.status(409).json({ message: 'Hợp đồng chưa gán phòng, không thể nhận phòng' });
+        }
+
+        // 4) Kiểm tra từng phòng có bị hợp đồng khác chồng lấn tại thời điểm "at" hay không
+        const BLOCKING_STATUSES = ['CONFIRMED', 'CHECKED_IN'];
+        for (const pid of roomIds) {
+            const conflict = await prisma.cHI_TIET_SU_DUNG.findFirst({
+                where: {
+                    PHONG_MA: pid,
+                    HDONG_MA: { not: id }, // loại trừ chính HĐ hiện tại
+                    HOP_DONG_DAT_PHONG: {
+                        HDONG_TRANG_THAI: { in: BLOCKING_STATUSES },
+                        AND: [{ HDONG_NGAYDAT: { lt: at } }, { HDONG_NGAYTRA: { gt: at } }],
+                    },
+                },
+                select: {
+                    HDONG_MA: true,
+                    HOP_DONG_DAT_PHONG: { select: { HDONG_NGAYDAT: true, HDONG_NGAYTRA: true } },
+                    PHONG_MA: true,
+                },
             });
 
-            // 2) Lấy danh sách phòng thuộc HĐ (từ CTSD)
-            const items = await tx.cHI_TIET_SU_DUNG.findMany({
-                where: { HDONG_MA: id },
-                select: { PHONG_MA: true }
-            });
-            const roomIds = [...new Set(items.map(i => i.PHONG_MA).filter(Boolean))];
-
-            // 3) Đổi trạng thái phòng -> OCCUPIED
-            if (roomIds.length) {
-                await tx.pHONG.updateMany({
-                    where: { PHONG_MA: { in: roomIds } },
-                    data: { PHONG_TRANGTHAI: 'OCCUPIED' }   // 👈 tên cột trạng thái phòng của bạn
+            if (conflict) {
+                const rn = pid;
+                const cFrom = conflict.HOP_DONG_DAT_PHONG.HDONG_NGAYDAT?.toISOString();
+                const cTo = conflict.HOP_DONG_DAT_PHONG.HDONG_NGAYTRA?.toISOString();
+                return res.status(409).json({
+                    message: `Phòng ${rn} đang bận bởi HĐ ${conflict.HDONG_MA} trong khoảng ${cFrom} → ${cTo}. Không thể nhận phòng tại thời điểm này.`,
                 });
             }
+        }
 
-            return { hd, roomIds };
+        // 5) Không có xung đột → nhận phòng
+        const result = await prisma.$transaction(async (tx) => {
+            const updated = await tx.hOP_DONG_DAT_PHONG.update({
+                where: { HDONG_MA: id },
+                data: { HDONG_TRANG_THAI: 'CHECKED_IN', HDONG_NGAYTHUCNHAN: at },
+                select: { HDONG_MA: true, HDONG_TRANG_THAI: true, HDONG_NGAYTHUCNHAN: true },
+            });
+
+            await tx.pHONG.updateMany({
+                where: { PHONG_MA: { in: roomIds } },
+                data: { PHONG_TRANGTHAI: 'OCCUPIED' }, // đúng code trạng thái phòng của bạn
+            });
+
+            return updated;
         });
 
-        res.json({ ok: true, ...result });
-    } catch (e) { next(e); }
+        return res.json({ ok: true, booking: result });
+    } catch (e) {
+        next(e);
+    }
 }
 
 

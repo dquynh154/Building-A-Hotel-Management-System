@@ -62,14 +62,36 @@ exports.changePassword = async (req, res, next) => {
         return ok(res, { message: 'Đổi mật khẩu thành công' });
     } catch (e) { next(e); }
 };
+// exports.me = async (req, res, next) => {
+//     try {
+//         if (!req.user?.sub) return unauth(res);
+//         const nv = await prisma.nHAN_VIEN.findUnique({
+//             where: { NV_MA: req.user.sub },
+//             select: { NV_MA: true, NV_HOTEN: true, NV_CHUCVU: true },
+//         });
+//         if (!nv) return unauth(res);
+//         return ok(res, { staff: nv });
+//     } catch (e) { next(e); }
+// };
+
+
 exports.me = async (req, res, next) => {
     try {
-        if (!req.user?.sub) return unauth(res);
+        const sub = req.user?.sub;
+        if (sub == null) return unauth(res);
+
+        // Prisma cần đúng kiểu; NV_MA là Int thì ép số
+        const NV_MA = typeof sub === 'number' ? sub : Number(sub);
+        if (!Number.isInteger(NV_MA)) return unauth(res);
+
         const nv = await prisma.nHAN_VIEN.findUnique({
-            where: { NV_MA: req.user.sub },
-            select: { NV_MA: true, NV_HOTEN: true, NV_CHUCVU: true },
+            where: { NV_MA },
+            select: { NV_MA: true, NV_HOTEN: true, NV_CHUCVU: true }, // không trả info nhạy cảm
         });
+
         if (!nv) return unauth(res);
-        return ok(res, { staff: nv });
-    } catch (e) { next(e); }
+        return ok(res, { staff: nv }); // { staff: { NV_MA, NV_HOTEN, NV_CHUCVU } }
+    } catch (e) {
+        next(e);
+    }
 };

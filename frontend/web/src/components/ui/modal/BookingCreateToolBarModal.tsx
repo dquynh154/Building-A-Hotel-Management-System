@@ -289,52 +289,52 @@ export default function BookingCreateToolBarModal({
                     options={timeOptsFrom}
                     onChange={(_, s) => setFromTime(s || '14:00')}
                     // Chỉ làm tròn hiển thị, KHÔNG tự kéo về NOW ở onOpen
-                    // onOpen={(_sel, dateStr, inst: any) => {
-                    //     const cur = inst.input?.value || dateStr || "00:00";
-                    //     const rounded = roundUpHHMM(cur, 30);
-                    //     if (rounded !== cur) {
-                    //         inst.setDate(rounded, false, "H:i");
-                    //         setFromTime(rounded);
-                    //     }
-                    //     // reset “làm tròn lần tăng đầu tiên” cho phiên chỉnh này
-                    //     fromTimeRoundedOnce.current = false;
-                    // }}
-                    // onValueUpdate={(_sel, s: string) => {
-                    //     // Cho tăng thoải mái; chỉ clamp nếu < hiện tại
-                    //     let next = s || fromTime;
+                    onOpen={(_sel, dateStr, inst: any) => {
+                        const cur = inst.input?.value || dateStr || "00:00";
+                        const rounded = roundUpHHMM(cur, 30);
+                        if (rounded !== cur) {
+                            inst.setDate(rounded, false, "H:i");
+                            setFromTime(rounded);
+                        }
+                        // reset “làm tròn lần tăng đầu tiên” cho phiên chỉnh này
+                        fromTimeRoundedOnce.current = false;
+                    }}
+                    onValueUpdate={(_sel, s: string) => {
+                        // Cho tăng thoải mái; chỉ clamp nếu < hiện tại
+                        let next = s || fromTime;
 
-                    //     if (ht === 'HOUR') {
-                    //         const proposed = toDateObj(fromDate, next);
-                    //         const now = new Date();
+                        if (ht === 'HOUR') {
+                            const proposed = toDateObj(fromDate, next);
+                            const now = new Date();
 
-                    //         // Nếu fromDate là hôm nay hoặc quá khứ và giờ chọn < now ⇒ clamp về NOW
-                    //         const fromDate00 = new Date(`${fromDate || ''}T00:00:00`);
-                    //         const today00 = startOfToday();
-                    //         const isTodayOrPast = fromDate && (+fromDate00 <= +today00);
+                            // Nếu fromDate là hôm nay hoặc quá khứ và giờ chọn < now ⇒ clamp về NOW
+                            const fromDate00 = new Date(`${fromDate || ''}T00:00:00`);
+                            const today00 = startOfToday();
+                            const isTodayOrPast = fromDate && (+fromDate00 <= +today00);
 
-                    //         if (isTodayOrPast && proposed < now) {
-                    //             next = fmtHm(now);
-                    //         } else {
-                    //             // CHỈ ở lần tăng đầu tiên mới làm tròn lên 30'
-                    //             const prevMin = minutesOf(fromTime);
-                    //             const nextMin = minutesOf(next);
-                    //             if (!fromTimeRoundedOnce.current && nextMin > prevMin) {
-                    //                 next = roundUpHHMM(next, STEP_MIN);
-                    //                 fromTimeRoundedOnce.current = true;
-                    //             }
-                    //         }
+                            if (isTodayOrPast && proposed < now) {
+                                next = fmtHm(now);
+                            } else {
+                                // CHỈ ở lần tăng đầu tiên mới làm tròn lên 30'
+                                const prevMin = minutesOf(fromTime);
+                                const nextMin = minutesOf(next);
+                                if (!fromTimeRoundedOnce.current && nextMin > prevMin) {
+                                    next = roundUpHHMM(next, STEP_MIN);
+                                    fromTimeRoundedOnce.current = true;
+                                }
+                            }
 
-                    //         setFromTime(next);
+                            setFromTime(next);
 
-                    //         // Ép to >= from + 60'
-                    //         const fixedTo = ensureToAtLeast1h(fromDate, next, toDate, toTime);
-                    //         if (fixedTo.toDate !== toDate) setToDate(fixedTo.toDate);
-                    //         if (fixedTo.toTime !== toTime) setToTime(fixedTo.toTime);
-                    //     } else {
-                    //         // THEO NGÀY: giữ nguyên người dùng chọn
-                    //         setFromTime(next);
-                    //     }
-                    // }}
+                            // Ép to >= from + 60'
+                            const fixedTo = ensureToAtLeast1h(fromDate, next, toDate, toTime);
+                            if (fixedTo.toDate !== toDate) setToDate(fixedTo.toDate);
+                            if (fixedTo.toTime !== toTime) setToTime(fixedTo.toTime);
+                        } else {
+                            // THEO NGÀY: giữ nguyên người dùng chọn
+                            setFromTime(next);
+                        }
+                    }}
                     className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                 />
 
@@ -355,28 +355,28 @@ export default function BookingCreateToolBarModal({
                     value={toTime}
                     options={timeOptsTo}
                     onChange={(_, s) => setToTime(s || '12:00')}
-                    // onOpen={(_sel, _s, inst: any) => {
-                    //     if (!isHourMode) {
-                    //         // vẫn làm tròn hiển thị cho đẹp
-                    //         const cur = inst.input?.value || toTime || "00:00";
-                    //         const rounded = roundUpHHMM(cur, 30);
-                    //         if (rounded !== cur) { inst.setDate(rounded, false, "H:i"); setToTime(rounded); }
-                    //         return;
-                    //     }
-                    //     // theo giờ: ép to >= from + 1h
-                    //     const minTo = new Date(toDateObj(fromDate, fromTime).getTime() + 60 * 60_000);
-                    //     const curStr = inst.input?.value || toTime || "00:00";
-                    //     const cur = toDateObj(toDate, curStr);
-                    //     const safe = cur < minTo ? minTo : cur;
-                    //     const hmSafe = fmtHm(safe);
-                    //     if (hmSafe !== curStr) { inst.setDate(hmSafe, false, "H:i"); setToTime(hmSafe); }
-                    // }}
-                    // onValueUpdate={(_sel, s: string) => {
-                    //     if (!isHourMode) { setToTime(s || toTime); return; }
-                    //     const fixed = ensureToAtLeast1h(fromDate, fromTime, toDate, s || toTime);
-                    //     if (fixed.toDate !== toDate) setToDate(fixed.toDate);
-                    //     if (fixed.toTime !== toTime) setToTime(fixed.toTime);
-                    // }}
+                    onOpen={(_sel, _s, inst: any) => {
+                        if (!isHourMode) {
+                            // vẫn làm tròn hiển thị cho đẹp
+                            const cur = inst.input?.value || toTime || "00:00";
+                            const rounded = roundUpHHMM(cur, 30);
+                            if (rounded !== cur) { inst.setDate(rounded, false, "H:i"); setToTime(rounded); }
+                            return;
+                        }
+                        // theo giờ: ép to >= from + 1h
+                        const minTo = new Date(toDateObj(fromDate, fromTime).getTime() + 60 * 60_000);
+                        const curStr = inst.input?.value || toTime || "00:00";
+                        const cur = toDateObj(toDate, curStr);
+                        const safe = cur < minTo ? minTo : cur;
+                        const hmSafe = fmtHm(safe);
+                        if (hmSafe !== curStr) { inst.setDate(hmSafe, false, "H:i"); setToTime(hmSafe); }
+                    }}
+                    onValueUpdate={(_sel, s: string) => {
+                        if (!isHourMode) { setToTime(s || toTime); return; }
+                        const fixed = ensureToAtLeast1h(fromDate, fromTime, toDate, s || toTime);
+                        if (fixed.toDate !== toDate) setToDate(fixed.toDate);
+                        if (fixed.toTime !== toTime) setToTime(fixed.toTime);
+                    }}
                     className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                 />
 
