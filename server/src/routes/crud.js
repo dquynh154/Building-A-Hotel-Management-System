@@ -194,7 +194,8 @@ r.put('/phong/:id', onlyAdmin, phong.update);
 r.delete('/phong/:id', onlyAdmin, phong.remove);
 r.get('/phong/count-by-loaiphong', staffOrAdmin, phong.countByLoaiPhong);
 r.get('/rooms/availability', staffOrAdmin, phong.availability);
-
+r.get('/rooms/available-by-booking/:id', staffOrAdmin, phong.availableRoomsByBooking);
+r.post('/rooms/:id/set-clean', staffOrAdmin,phong.setClean);
 const loaidv = crud('lOAI_DICH_VU', {
     pk: 'LDV_MA',
     beforeCreate: async (data) => {

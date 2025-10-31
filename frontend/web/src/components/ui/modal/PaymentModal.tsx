@@ -23,7 +23,7 @@ export default function PaymentModal({
     currentStaff,
     onSubmit,
     deposit = 0,
-    paid = 0,        
+    paid = 0,
     due = 0,
 }: {
     open: boolean;
@@ -34,9 +34,9 @@ export default function PaymentModal({
     details?: React.ReactNode;
     currentStaff: { id: string | number; name: string };
     onSubmit: (p: PaymentPayload) => Promise<void> | void;
-        deposit?: number;
-        paid?: number;
-        due?: number;
+    deposit?: number;
+    paid?: number;
+    due?: number;
 }) {
     const vnd = (n: number) => (Number(n) || 0).toLocaleString('vi-VN');
 

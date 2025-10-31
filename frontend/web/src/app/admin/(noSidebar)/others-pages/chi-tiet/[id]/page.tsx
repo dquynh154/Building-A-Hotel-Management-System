@@ -11,10 +11,12 @@ import PageBreadcrumb_ct from '@/components/common/PageBreadCrumb_ct';
 import ComponentCard from '@/components/common/ComponentCard';
 import Input from '@/components/form/input/InputField';
 import Select from '@/components/form/Select';
-import { PlusIcon, Search } from '@/icons';
+import { PlusIcon, Search, TrashBinIcon } from '@/icons';
 import OccupantsModal, { Occupant } from '@/components/ui/modal/OccupantsModal';
 import KhachHangCreateModal from '@/components/ui/modal/KhachHangCreateModal';
 import PaymentModal, { PaymentPayload } from '@/components/ui/modal/PaymentModal';
+import AddRoomModal from '@/components/ui/modal/AddRoomModal';
+
 type StaffMe = { NV_MA: number; NV_HOTEN: string; NV_CHUCVU: string | null };
 type BookingHeader = {
     id: number;
@@ -278,8 +280,6 @@ export default function BookingDetailPage() {
     useEffect(() => { loadFull(); loadInvoiceStatus(); /* eslint-disable-next-line */ }, [bookingId]);
 
 
-    useEffect(() => { loadFull(); /* eslint-disable-next-line */ }, [bookingId]);
-
     // --- search products ---
     useEffect(() => {
         let alive = true;
@@ -459,6 +459,7 @@ export default function BookingDetailPage() {
         dvTen: string;
         price: number;
         qty: number;            // tổng đã lưu
+        ngay: string;
     };
 
     const persistedByRoom = useMemo(() => {
@@ -466,7 +467,7 @@ export default function BookingDetailPage() {
         services.forEach(s => {
             const roomId = s.PHONG_MA;
             const arr = byRoom[roomId] ||= [];
-            const found = arr.find(x => x.DV_MA === s.DV_MA && x.price === s.don_gia);
+            const found = arr.find(x => x.DV_MA === s.DV_MA && x.price === s.don_gia && x.ngay === s.ngay);
             if (found) {
                 found.qty += s.so_luong;
             } else {
@@ -476,6 +477,7 @@ export default function BookingDetailPage() {
                     dvTen: s.dvTen,
                     price: s.don_gia,
                     qty: s.so_luong,
+                    ngay: s.ngay
                 });
             }
         });
@@ -553,6 +555,7 @@ export default function BookingDetailPage() {
     }, [occOpen, loading]);
     const [payOpen, setPayOpen] = useState(false);
     const [payGuests, setPayGuests] = useState<GuestRow[]>([]);
+    const [payForCheckout, setPayForCheckout] = useState(false);
 
     useEffect(() => {
         if (!payOpen) return;
@@ -720,7 +723,7 @@ export default function BookingDetailPage() {
             const at = new Date().toISOString();
             // BE sẽ kiểm tra trống phòng tại thời điểm `at` cho tất cả phòng thuộc HĐ,
             // nếu hợp lệ sẽ cập nhật HDONG_NGAYTHUCNHAN = at và chuyển trạng thái.
-            await api.post(`/bookings/${bookingId}/checkin`, { at });
+            await api.post(`/bookings/${bookingId}/checkin1`, { at });
 
             alert(`Đã nhận phòng lúc ${new Date(at).toLocaleString('vi-VN', { hour12: false })}`);
             await loadFull(); // refresh header/rooms/services/totals, trạng thái sẽ thành CHECKED_IN
@@ -742,6 +745,58 @@ export default function BookingDetailPage() {
             setCheckingIn(false);
         }
     }
+
+
+    async function doCheckout() {
+        if (!booking) return;
+        try {
+            await api.post(`/bookings/${bookingId}/checkout`, { at: new Date().toISOString() });
+            alert('Đã trả phòng thành công');
+            await loadInvoiceStatus();
+            await loadFull();
+        } catch (e: any) {
+            alert(e?.response?.data?.message || 'Trả phòng thất bại');
+        } finally {
+            setPayForCheckout(false);
+        }
+    }
+
+    const steps = [
+        { key: 'PENDING', text: 'Đặt' },
+        { key: 'CONFIRMED', text: 'Xác nhận' },
+        { key: 'CHECKED_IN', text: 'Nhận phòng' },
+        { key: 'CHECKED_OUT', text: 'Trả phòng' },
+    ];
+
+    function Stepper({ status }: { status?: string }) {
+        const idx = Math.max(steps.findIndex(s => s.key === (status || '').toUpperCase()), 0);
+        return (
+            <div className="flex items-center gap-2 text-xs">
+                {steps.map((s, i) => (
+                    <div key={s.key} className="flex items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 ring-1
+            ${i < idx ? 'bg-emerald-600 text-white ring-emerald-600'
+                                : i === idx ? 'bg-emerald-100 text-emerald-700 ring-emerald-200'
+                                    : 'bg-slate-100 text-slate-500 ring-slate-200'}`}>
+                            {s.text}
+                        </span>
+                        {i < steps.length - 1 && <span className="text-slate-300">—</span>}
+                    </div>
+                ))}
+            </div>
+        );
+    }
+    const status = booking?.trang_thai;
+    const isCheckedOut = status === 'CHECKED_OUT';
+
+    // (nếu bạn đã có các biến này thì giữ nguyên)
+    const hasInvoice = !!invStatus?.hasInvoice;
+    const total = Number(hasInvoice ? invStatus?.total : totals?.grand ?? 0);
+    const paid = Number(invStatus?.paid ?? 0);
+    const due = Math.max(0, total - paid);
+    const canCheckoutByStatus = status === 'CHECKED_IN';
+
+    const [openAddRoomModal, setOpenAddRoomModal] = useState(false);
 
     return (
         <div className="min-h-screen">
@@ -807,14 +862,14 @@ export default function BookingDetailPage() {
                     </ComponentCard>
 
                     {/* RIGHT: Chi tiết HĐ (gộp Phòng + Dịch vụ) */}
-                    <ComponentCard title="Chi tiết hợp đồng">
-                        {(!isCheckedIn || isOverdue) && (
+                    <ComponentCard title="Chi tiết hợp đồng" right={<Stepper status={status} />} >
+                        {/* {(!isCheckedIn || isOverdue) && (
                             <div className="mb-2 rounded-md border border-amber-400 bg-amber-50 p-2 text-sm text-amber-700">
                                 {!isCheckedIn
                                     ? 'Chỉ có thể thêm dịch vụ khi khách hàng đã NHẬN PHÒNG.'
                                     : 'Hợp đồng đã quá hạn trả phòng. Vui lòng gia hạn để thêm dịch vụ.'}
                             </div>
-                        )}
+                        )} */}
                         <div className="mb-3 flex flex-wrap items-end gap-3">
                             <div className="inline-flex w-fit flex-col gap-1 self-end">
                                 <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
@@ -896,7 +951,43 @@ export default function BookingDetailPage() {
                                     </div>
                                 );
                             })()}
+                            {(() => {
+                                const actualCheckOut = booking?.thuc_tra || null;
+                                const hasCheckOut = !!actualCheckOut;
+                                const base =
+                                    'inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium ring-1';
+                                const onCls =
+                                    'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-800';
+                                const offCls =
+                                    'bg-white/60 text-gray-800 ring-gray-200 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:ring-white/10';
 
+                                return (
+                                    <div className="inline-flex w-fit flex-col gap-1 self-end">
+                                        <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
+                                            NGÀY TRẢ PHÒNG
+                                        </span>
+
+                                        <div className={`${base} ${hasCheckOut ? onCls : offCls}`}>
+                                            {hasCheckOut ? (
+                                                <time className="tabular-nums">{fmt(actualCheckOut)}</time>
+                                            ) : (
+                                                <span className="opacity-60">Chưa trả</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                        <div className="flex justify-between items-center mb-3">
+                            <h3 className="font-semibold text-base">Danh sách phòng</h3>
+                            {booking?.trang_thai === 'CONFIRMED' && (
+                                <button
+                                    onClick={() => setOpenAddRoomModal(true)}
+                                    className="rounded-md bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700"
+                                >
+                                    + Thêm phòng
+                                </button>
+                            )}
                         </div>
 
                         {/* danh sách theo phòng */}
@@ -910,6 +1001,23 @@ export default function BookingDetailPage() {
                                         {/* Header phòng */}
                                         <div className="flex flex-wrap items-center justify-between gap-3">
                                             <div className="flex items-center gap-3">
+                                                {booking?.trang_thai === 'CONFIRMED' && (
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (!confirm(`Xóa ${g.room.roomName} khỏi hợp đồng?`)) return;
+                                                            try {
+                                                                await api.delete(`/bookings/${booking.id}/rooms/${g.room.PHONG_MA}`);
+                                                                await loadFull();
+                                                            } catch (e: any) {
+                                                                alert(e?.response?.data?.message || 'Xóa phòng thất bại.');
+                                                            }
+                                                        }}
+                                                        className="ml-2 text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700"
+                                                    >
+                                                        {<TrashBinIcon />}
+                                                    </button>
+                                                )}
+
                                                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border text-xs font-medium dark:border-slate-700">
                                                     {idx + 1}
                                                 </span>
@@ -940,7 +1048,9 @@ export default function BookingDetailPage() {
                                                         <div className="text-[11px] text-gray-500">đã lưu</div>
                                                     </div>
 
-                                                    <div className="text-xs text-gray-500">{fmtDate(new Date().toISOString())}</div>
+                                                    <div className="text-xs text-gray-500">
+                                                        {fmtDate(row.ngay)}
+                                                    </div>
 
                                                     <div className="flex items-center gap-1">
                                                         <span className="text-xs text-gray-500">SL</span>
@@ -1081,9 +1191,23 @@ export default function BookingDetailPage() {
                         )}
 
                         <div className="mt-6 flex justify-end gap-2">
+                            {status === 'CONFIRMED' && (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                        window.location.href = `/admin/others-pages/dat-phong/${bookingId}/print`;
+                                    }}
+                                    className=""
+                                >
+                                    In phiếu đặt phòng
+                                </Button>
+                            )}
+
                             <Button
                                 size="sm"
                                 variant="primary"
+                                disabled={isCheckedOut}
                                 onClick={async () => {
                                     // gom tất cả draft thành một mảng lệnh
                                     const all: DraftLine[] = Object.values(drafts).flat();
@@ -1098,6 +1222,7 @@ export default function BookingDetailPage() {
                                                 CTDV_SOLUONG: d.so_luong,
                                                 CTDV_DONGIA: d.don_gia,
                                                 CTDV_GHICHU: d.ghi_chu ?? null,
+                                                // CTDV_NGAY: new Date().toISOString()
                                             });
                                         }
                                         // clear draft & reload
@@ -1112,15 +1237,55 @@ export default function BookingDetailPage() {
                             >
                                 Lưu
                             </Button>
+                            {status !== 'CONFIRMED' && (
+                                <>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                            const invoiceId = invStatus?.invoiceId;
+                                            if (!invoiceId) { alert('Chưa có hóa đơn để in'); return; }
+                                            window.open(`/admin/others-pages/hoa-don/${invoiceId}/print`, '_blank', 'noopener');
+                                        }}
+                                    >
+                                        In hóa đơn
+                                    </Button>
 
-                            <Button
+
+
+                                    {/* <Button
                                 size="sm"
                                 variant="primary"
+                                disabled={isCheckedOut}
                                 onClick={() => setPayOpen(true)}
                             // disabled={invStatus?.due != null && invStatus.due <= 0} 
                             >
                                 Thanh toán
-                            </Button>
+                            </Button> */}
+
+
+
+
+                                    <Button
+                                        size="sm"
+                                        variant="primary"
+                                        disabled={isCheckedOut}
+                                        onClick={() => {
+                                            // chỉ cho CHECKED_IN; nếu muốn chặt hơn, bạn có thể disable luôn khi chưa CHECKED_IN
+                                            if ((booking?.trang_thai || '').toUpperCase() !== 'CHECKED_IN') {
+                                                alert('Chỉ trả phòng khi hợp đồng đang CHECKED_IN');
+                                                return;
+                                            }
+                                            setPayForCheckout(true);   // bật chế độ trả phòng sau khi thu
+                                            setPayOpen(true);          // mở modal thu tiền
+                                        }}
+                                    >
+                                        Thanh toán & trả phòng
+                                    </Button>
+
+
+                                </>
+                            )}
                             {booking?.trang_thai === 'CONFIRMED' && (
                                 <Button
                                     size="sm"
@@ -1191,9 +1356,41 @@ export default function BookingDetailPage() {
                     due={Number(invStatus?.due ?? 0)}
                     currentStaff={me ? { id: me.NV_MA, name: me.NV_HOTEN } : { id: '', name: '—' }}
                     details={paymentDetails}          // 👈 slot chi tiết bên trái
-                    onSubmit={handleConfirmPayment}
+                    onSubmit={async (p) => {
+                        // 1) gọi lại logic thu tiền y như nút “Thanh toán”
+                        await handleConfirmPayment(p);
+
+                        // 2) Nếu đang ở chế độ “Thanh toán & trả phòng”, kiểm tra lại due rồi checkout
+                        if (payForCheckout) {
+                            try {
+                                // lấy lại invoice-status thật mới
+                                const r = await api.get(`/bookings/${bookingId}/invoice-status`, { params: { _: Date.now() } });
+                                const due = Number(r.data?.due ?? 0);
+                                if (due > 0) {
+                                    alert(`Vẫn còn thiếu ${due.toLocaleString('vi-VN')}. Cần tất toán đủ để trả phòng.`);
+                                    return; // giữ modal mở để thanh toán tiếp
+                                }
+                                setPayOpen(false);        // đóng modal
+                                await doCheckout();       // trả phòng
+                            } catch (e: any) {
+                                alert(e?.response?.data?.message || 'Không kiểm tra được số tiền sau thanh toán');
+                            }
+                        } else {
+                            // thanh toán thường: đóng modal là xong
+                            setPayOpen(false);
+                        }
+
+
+                    }}
                 />
 
+                <AddRoomModal
+                    open={openAddRoomModal}
+                    onClose={() => setOpenAddRoomModal(false)}
+                    booking={booking}
+                    bookingId={booking?.id}
+                    onAdded={loadFull}
+                />
 
 
             </div>

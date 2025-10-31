@@ -56,9 +56,10 @@ import Room from "./room.svg";
 import Service from "./service.svg";
 import Staff from "./staff.svg";
 import LeTan from "./letan.svg";
-import Bang from "./bang.svg";
-import ListPhong from "./listphong.svg";
-import Lich from "./lich.svg";
+import Bang from "./bang1.svg";
+import ListPhong from "./listphong1.svg";
+import Lich from "./lich1.svg";
+import BaCham from "./3dauchamden.svg";
 export {
   DownloadIcon,
   BellIcon,
@@ -121,4 +122,5 @@ export {
   Bang,
   ListPhong,
   Lich,  
+  BaCham,
 };

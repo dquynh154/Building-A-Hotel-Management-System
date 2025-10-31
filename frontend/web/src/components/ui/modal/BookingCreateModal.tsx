@@ -222,7 +222,7 @@ export default function BookingCreateModal({
             resetForm();
         }
     }, [open]);
-    
+
     // mở modal tạo KH từ nút + Người lớn
     const [occCreateOpen, setOccCreateOpen] = useState(false);
     // nơi để lưu callback append do OccupantsModal truyền lên
@@ -514,7 +514,7 @@ export default function BookingCreateModal({
 
             let realFromISO = fromISO;
             let realToISO = toISO;
-            
+
             // // Nếu người dùng bấm "Nhận phòng" và đang ở chế độ NGÀY → ép from = NOW
             // if (action === 'nhan_phong' && !isHourMode) {
             //     realFromISO = nowISO;
@@ -572,7 +572,7 @@ export default function BookingCreateModal({
             const hd = await api.post('/bookings', {
                 KH_MA: Number(kh!.value),
                 HT_MA: Number(ht),
-                HDONG_TRANG_THAI: action === 'nhan_phong' ? 'CHECKED_IN' : 'CONFIRMED',
+                HDONG_TRANG_THAI: action === 'nhan_phong' ? 'CONFIRMED' : 'CONFIRMED',
                 HDONG_NGAYDAT: realFromISO,
                 HDONG_NGAYTRA: toISO,
                 ...(note.trim() ? { HDONG_GHICHU: note.trim() } : {}),
@@ -606,7 +606,7 @@ export default function BookingCreateModal({
                     // CTSD theo ĐÊM (mỗi ngày 1 dòng)
                     const toNoonISO = (ymd: string) => {
                         const [y, m, d] = ymd.split('-').map(Number);
-                        return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).toISOString();
+                        return new Date(Date.UTC(y, m - 1, d, 5, 0, 0)).toISOString();
                     };
 
                     const daysItems = quoteItems.length
@@ -636,13 +636,20 @@ export default function BookingCreateModal({
             }
 
             // 3️⃣ Nếu là hành động "Nhận phòng" → gọi check-in để đổi trạng thái phòng
-            if (action === 'nhan_phong') {
-                try {
-                    await api.post(`/bookings/${bookingId}/checkin`);
-                } catch (e) {
-                    console.warn('Lỗi check-in tự động:',);
-                }
-            }
+            // 3️⃣ Nếu là hành động "Nhận phòng" → gọi check-in để đổi trạng thái phòng
+            // if (action === 'nhan_phong') {
+            //     try {
+            //         for (const ln of lines) {
+            //             if (ln.roomId) {
+            //                 await api.post(`/bookings/${bookingId}/checkin`, { PHONG_MA: Number(ln.roomId) });
+            //             }
+            //         }
+            //     } catch (e:any) {
+            //         const msg = e?.response?.data?.message || 'Không thể nhận phòng.';
+            //         alert(msg);
+            //         return;
+            //     }
+            // }
 
 
             const guestsPayload = (occupants || [])
@@ -663,7 +670,31 @@ export default function BookingCreateModal({
                 // console.error('Lưu khách lưu trú lỗi:', e?.response?.data || e);
             }
 
-            onCreated?.(bookingId);
+            //  chỉ redirect nếu mọi thứ thành công, không lỗi checkin
+            if (action !== 'nhan_phong') {
+                // Đặt trước phòng → in hợp đồng ngay
+                onCreated?.(bookingId);
+                window.location.href = `/admin/others-pages/dat-phong/${bookingId}/print`;
+            } else {
+                // Nếu là nhận phòng → chỉ in nếu checkin thành công
+                try {
+                    for (const ln of lines) {
+                        if (ln.roomId) {
+                            await api.post(`/bookings/${bookingId}/checkin`, { PHONG_MA: Number(ln.roomId) });
+                        }
+                    }
+                    // 🟢 nếu không lỗi, thì mới chuyển sang trang in
+                    onCreated?.(bookingId);
+                    window.location.href = `/admin/others-pages/dat-phong/${bookingId}/print`;
+                } catch (e: any) {
+                    const msg = e?.response?.data?.message || 'Không thể nhận phòng.';
+                    alert(msg);
+                    // 🚫 dừng ở đây, không redirect
+                    return;
+                }
+            }
+
+
         } catch (e: any) {
             setErr(e?.response?.data?.message || 'Tạo đặt phòng thất bại');
         } finally { setSaving(false); }
@@ -766,7 +797,7 @@ export default function BookingCreateModal({
         const isoTo = toDate && toTime ? new Date(`${toDate}T${toTime}:00`).toISOString() : '';
         if (!isoFrom || !isoTo || +new Date(isoTo) <= +new Date(isoFrom)) {
             // reset giá
-            if (runId !== quoteRunIdRef.current) return;  
+            if (runId !== quoteRunIdRef.current) return;
             setLines(prev => prev.map(l => ({ ...l, price: 0, quoting: false })));
             setQuoteTotal(0);
             return;
@@ -1139,13 +1170,13 @@ export default function BookingCreateModal({
 
                         {/* Nhận / Trả: dùng chung cho tất cả dòng (như Figma bạn gửi) */}
                         <div className="grid grid-cols-[170px_110px] gap-2">
-                            <Flatpickr value={fromDate} options={{ dateFormat: 'Y-m-d', minDate: 'today' }} onChange={(d: any, s: string) => setFromDate(s)} 
+                            <Flatpickr value={fromDate} options={{ dateFormat: 'Y-m-d', minDate: 'today' }} onChange={(d: any, s: string) => setFromDate(s)}
                                 className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                             <Flatpickr value={fromTime} options={timeOptsFrom} onChange={(_, s) => setFromTime(s || '14:00')}
                                 className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                         </div>
                         <div className="grid grid-cols-[170px_110px] gap-2">
-                            <Flatpickr value={toDate} options={{ dateFormat: 'Y-m-d', minDate: fromDate || 'today' }} onChange={(d: any, s: string) => setToDate(s)} 
+                            <Flatpickr value={toDate} options={{ dateFormat: 'Y-m-d', minDate: fromDate || 'today' }} onChange={(d: any, s: string) => setToDate(s)}
                                 className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                             <Flatpickr value={toTime} options={timeOptsTo} onChange={(_, s) => setToTime(s || '12:00')}
                                 className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />

@@ -9,6 +9,7 @@ interface ComponentCardProps {
   /** Tùy chỉnh class cho header nếu cần */
   headerClassName?: string;
   button?: React.ReactNode;
+  right?: React.ReactNode;
 }
 
 const ComponentCard: React.FC<ComponentCardProps> = ({
@@ -19,6 +20,7 @@ const ComponentCard: React.FC<ComponentCardProps> = ({
   headerRight,
   headerClassName = "",
   button,
+  right,
 }) => {
   return (
     <div
@@ -32,7 +34,14 @@ const ComponentCard: React.FC<ComponentCardProps> = ({
       {/* Card Header */}
       <div  className={`px-6 py-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${headerClassName}`} >
         <h3 className="text-base font-medium text-gray-800 dark:text-white/90">
-          {title}
+          {(title || right) && (
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                {title}
+              </h3>
+              {right && <div className="shrink-0">{right}</div>}
+            </div>
+          )}
         </h3>
         {desc && (
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">

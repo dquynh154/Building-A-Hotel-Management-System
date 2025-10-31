@@ -148,22 +148,168 @@ async function createFromBooking(req, res, next) {
 }
 
 // GET /invoices/:id
+// async function get(req, res, next) {
+//     try {
+//         const id = Number(req.params.id);
+//         const inv = await prisma.hOA_DON.findUnique({
+//             where: { HDON_MA: id },
+//             include: { THANH_TOAN: true, LIEN_KET: true }
+//         });
+//         if (!inv) return res.status(404).json({ message: 'Not found' });
+
+//         const paid = await sumSucceededPayments(id);
+//         const due = Math.max(0, toNum(inv.HDON_THANH_TIEN) - paid);
+
+//         res.json({ ...inv, _payment: { paid: money(paid), due: money(due) } });
+//     } catch (e) { next(e); }
+// }
+
 async function get(req, res, next) {
     try {
         const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+            return res.status(400).json({ message: 'id không hợp lệ' });
+        }
+
+        // 1) Hóa đơn + các khoản thanh toán
         const inv = await prisma.hOA_DON.findUnique({
             where: { HDON_MA: id },
-            include: { THANH_TOAN: true, LIEN_KET: true }
+            include: {
+                THANH_TOAN: true, // TT_SO_TIEN, TT_PHUONG_THUC, TT_TRANG_THAI_GIAO_DICH, ...
+                NHAN_VIEN: {                      // 👈 nếu model HOA_DON có relation NHAN_VIEN
+                    select: { NV_MA: true, NV_HOTEN: true, NV_SDT: true, NV_EMAIL: true }
+                },
+            },
         });
         if (!inv) return res.status(404).json({ message: 'Not found' });
 
-        const paid = await sumSucceededPayments(id);
-        const due = Math.max(0, toNum(inv.HDON_THANH_TIEN) - paid);
+        // 2) Link hóa đơn ↔ hợp đồng
+        const link = await prisma.hOA_DON_HOP_DONG.findFirst({
+            where: { HDON_MA: id },
+            select: { HDONG_MA: true },
+        });
 
-        res.json({ ...inv, _payment: { paid: money(paid), due: money(due) } });
-    } catch (e) { next(e); }
+        let BOOKING = null;
+        let KHACH_HANG = null;
+        let CHI_TIET = [];
+        let STAFF = inv.NHAN_VIEN ?? null;  
+
+        if (link?.HDONG_MA) {
+            // 3) Ưu tiên khách gắn trong HĐ
+            const hd = await prisma.hOP_DONG_DAT_PHONG.findFirst({
+                where: { HDONG_MA: link.HDONG_MA },
+                select: {
+                    HDONG_MA: true,
+                    HDONG_NGAYDAT: true,
+                    HDONG_NGAYTRA: true,
+                    HDONG_NGAYTHUCNHAN: true,
+                    HDONG_NGAYTHUCTRA: true,
+                    KHACH_HANG: {
+                        select: {
+                            KH_HOTEN: true, KH_DIACHI: true, KH_SDT: true, KH_EMAIL: true,
+                        },
+                    },
+                    NHAN_VIEN: {                    // 👈 fallback NV từ hợp đồng
+                        select: { NV_MA: true, NV_HOTEN: true, NV_SDT: true, NV_EMAIL: true }
+                    },
+                },
+            });
+
+            if (hd) {
+                BOOKING = {
+                    HDONG_MA: hd.HDONG_MA,
+                    HDONG_NGAYDAT: hd.HDONG_NGAYDAT,
+                    HDONG_NGAYTRA: hd.HDONG_NGAYTRA,
+                    HDONG_NGAYTHUCNHAN: hd.HDONG_NGAYTHUCNHAN,
+                    HDONG_NGAYTHUCTRA: hd.HDONG_NGAYTHUCTRA,
+                };
+                KHACH_HANG = hd.KHACH_HANG ?? null;
+                if (!STAFF && hd.NHAN_VIEN) STAFF = hd.NHAN_VIEN; 
+            }
+
+            // 4) Fallback: khách chính từ LUU_TRU_KHACH nếu HĐ chưa có KH
+            if (!KHACH_HANG) {
+                const lt = await prisma.lUU_TRU_KHACH.findFirst({
+                    where: { HDONG_MA: link.HDONG_MA, LA_KHACH_CHINH: true },
+                    include: {
+                        KHACH_HANG: {
+                            select: {
+                                KH_HOTEN: true, KH_DIACHI: true, KH_MASO_THUE: true, KH_SDT: true, KH_EMAIL: true,
+                            },
+                        },
+                    },
+                    orderBy: { KH_MA: 'asc' },
+                });
+                if (lt?.KHACH_HANG) KHACH_HANG = lt.KHACH_HANG;
+            }
+
+            // 5) GHÉP CHI_TIET
+            // 5.1 Dịch vụ
+            const dv = await prisma.cHI_TIET_DICH_VU.findMany({
+                where: { HDONG_MA: link.HDONG_MA },
+                include: {
+                    DICH_VU: { select: { DV_TEN: true } },
+                    PHONG: { select: { PHONG_TEN: true } },
+                },
+                orderBy: [{ CTDV_STT: 'asc' }],
+            });
+
+            const dvRows = dv.map(r => {
+                const ten = r.DICH_VU?.DV_TEN ?? r.CTDV_TEN ?? 'Dịch vụ';
+                const room = r.PHONG?.PHONG_TEN ? ` - ${r.PHONG.PHONG_TEN}` : '';
+                const qty = Number(r.CTDV_SOLUONG  ?? r.so_luong ?? 1);
+                const unit = Number(r.CTDV_DONGIA ?? r.don_gia ?? 0);
+                const amt = Number(r.thanh_tien ?? qty * unit);
+                return {
+                    loai: 'DICH_VU', dien_giai: `${ten}${room}`, so_luong: qty, don_gia: unit, thanh_tien: amt, PHONG_MA: r.PHONG_MA ?? null,
+                    PHONG_TEN: ten,
+};
+            });
+
+            // 5.2 Tiền phòng
+            const sd = await prisma.cHI_TIET_SU_DUNG.findMany({
+                where: { HDONG_MA: link.HDONG_MA },
+                include: { PHONG: { select: { PHONG_TEN: true } } },
+                orderBy: [{ PHONG_MA: 'asc' }, { CTSD_STT: 'asc' }],
+            });
+
+            const roomRows = sd.map(r => {
+                const roomName = r.PHONG?.PHONG_TEN || (r.PHONG_MA ? `Phòng ${r.PHONG_MA}` : 'Phòng');
+                // nếu bạn có số đêm/đơn giá trong CTSD thì tận dụng, không thì để 1 × đơn giá/tổng
+                const qty = Number(r.CTSD_SO_LUONG ?? r.so_dem ?? 1);
+                const unit = Number(r.CTSD_DON_GIA ?? r.CTSD_GIA ?? r.don_gia ?? 0);
+                const amt = Number(r.CTSD_TONG_TIEN ?? r.thanh_tien ?? (unit ? qty * unit : 0));
+                const dienGiai = unit || amt ? `${roomName}` : `${roomName}`;
+                return {
+                    loai: 'PHONG', dien_giai: dienGiai, so_luong: qty, don_gia: unit, thanh_tien: amt, PHONG_MA: r.PHONG_MA ?? null,  
+                    PHONG_TEN: roomName,
+};
+            });
+
+            CHI_TIET = [...roomRows, ...dvRows].filter(x => Number.isFinite(x.thanh_tien));
+        }
+
+        // 6) paid/due (optional)
+        const total = Number(inv?.HDON_THANH_TIEN || 0);
+        const paid = (inv?.THANH_TOAN || [])
+            .filter(p => (p.TT_TRANG_THAI_GIAO_DICH || '').toUpperCase() === 'SUCCEEDED')
+            .reduce((s, p) => s + Number(p.TT_SO_TIEN || 0), 0);
+        const due = Math.max(0, total - paid);
+
+        // 7) Trả về
+        return res.json({
+            ...inv,
+            KHACH_HANG,
+            BOOKING,
+            CHI_TIET,
+            STAFF,        
+            _payment: { paid, due },
+        });
+    } catch (e) {
+        console.error('GET /hoadon/:id error:', e);
+        next(e);
+    }
 }
-
 // POST /invoices/:id/finalize
 // Ép trạng thái → PAID nếu đã đủ tiền
 async function finalize(req, res, next) {

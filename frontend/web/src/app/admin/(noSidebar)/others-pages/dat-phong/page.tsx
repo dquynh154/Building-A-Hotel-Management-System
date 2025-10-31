@@ -30,11 +30,13 @@ export type BookingLite = {
     HDONG_MA: number;
     KH_TEN?: string | null;
     PHONG_MA: number;
+    PHONG_TEN: string;
     HT_MA: number;
     TU_LUC: string; DEN_LUC: string; // ISO
     TRANG_THAI: 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED' | 'NO_SHOW';
     HDONG_NGAYTHUCNHAN:string;
     HDONG_NGAYTHUCTRA:string;
+    HDONG_TONGTIENDUKIEN: string;
 };
 
 export default function BookingPage() {

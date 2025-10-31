@@ -97,9 +97,14 @@ async function get(req, res, next) {
             include: {
                 KHACH_HANG: true,
                 NHAN_VIEN: true,
+                HINH_THUC_THUE: true,
                 CHI_TIET_SU_DUNG: {
                     orderBy: [{ PHONG_MA: 'asc' }, { CTSD_STT: 'asc' }],
-                    include: { PHONG: true }
+                    include: {
+                        PHONG: {
+                            include: { LOAI_PHONG: true } // 👉 lấy luôn loại phòng
+                        }
+                    }
                 },
                 CHI_TIET_DICH_VU: {
                     orderBy: [{ CTDV_STT: 'asc' }],
@@ -126,7 +131,7 @@ async function create(req, res, next) {
             HDONG_TRANG_THAI,
             HDONG_TONGTIENDUKIEN,
             HDONG_TILECOCAPDUNG,
-            
+
         } = req.body || {};
 
         // 1) Validate bắt buộc theo schema
@@ -170,8 +175,12 @@ async function create(req, res, next) {
                 HDONG_TIENCOCYEUCAU: money(toNum(HDONG_TIENCOCYEUCAU || 0)),
                 HDONG_GHICHU: HDONG_GHICHU ?? null,
                 HDONG_TRANG_THAI: status,
+
             }
         });
+
+
+
 
         res.status(201).json(created);
     } catch (e) { next(e); }
@@ -215,7 +224,7 @@ async function remove(req, res, next) {
 }
 
 // POST /bookings/:id/checkin
-// POST /bookings/:id/checkin
+
 // async function checkin(req, res, next) {
 //     try {
 //         const id = Number(req.params.id);
@@ -239,7 +248,7 @@ async function remove(req, res, next) {
 //             if (roomIds.length) {
 //                 await tx.pHONG.updateMany({
 //                     where: { PHONG_MA: { in: roomIds } },
-//                     data: { PHONG_TRANGTHAI: 'OCCUPIED' }   // 👈 tên cột trạng thái phòng của bạn
+//                     data: { PHONG_TRANGTHAI: 'OCCUPIED' }  
 //                 });
 //             }
 
@@ -249,8 +258,92 @@ async function remove(req, res, next) {
 //         res.json({ ok: true, ...result });
 //     } catch (e) { next(e); }
 // }
+
+
 // POST /bookings/:id/checkin
+// POST /bookings/:id/checkin
+// Dùng cho khách "nhận phòng liền" (walk-in booking)
+
 async function checkin(req, res, next) {
+    try {
+        const id = Number(req.params.id);
+        const { PHONG_MA } = req.body || {};
+        const now = new Date();
+
+        console.log('>>> CHECKIN (walk-in):', id, 'PHONG_MA =', PHONG_MA);
+
+        if (!id) {
+            console.log('🚨 STOP: Không có id');
+            return res.status(400).json({ message: 'ID không hợp lệ' });
+        }
+        if (!PHONG_MA) {
+            console.log('🚨 STOP: Không có PHONG_MA');
+            return res.status(400).json({ message: 'Thiếu mã phòng (PHONG_MA)' });
+        }
+
+        const booking = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+            where: { HDONG_MA: id },
+            select: { HDONG_TRANG_THAI: true },
+        });
+        if (!booking) {
+            console.log('🚨 STOP: Không tìm thấy hợp đồng');
+            return res.status(404).json({ message: 'Không tìm thấy hợp đồng' });
+        }
+        if (!['PENDING', 'CONFIRMED'].includes(booking.HDONG_TRANG_THAI)) {
+            console.log('🚨 STOP: Trạng thái hiện tại =', booking.HDONG_TRANG_THAI);
+            return res.status(409).json({
+                message: `Hợp đồng hiện tại (${booking.HDONG_TRANG_THAI}) không thể nhận phòng.`,
+            });
+        }
+
+        const conflict = await prisma.cHI_TIET_SU_DUNG.findFirst({
+            where: {
+                PHONG_MA: Number(PHONG_MA),
+                HOP_DONG_DAT_PHONG: { HDONG_TRANG_THAI: 'CHECKED_IN' },
+            },
+            select: { HDONG_MA: true },
+        });
+        if (conflict) {
+            console.log('🚨 STOP: Phòng đang có HĐ CHECKED_IN', conflict.HDONG_MA);
+            await prisma.hOP_DONG_DAT_PHONG.delete({ where: { HDONG_MA: id } });
+            return res.status(409).json({
+                message: `Phòng ${PHONG_MA} đang có khách ở trong hợp đồng ${conflict.HDONG_MA}.`,
+            });
+        }
+
+        console.log('✅ Passed all checks, updating...');
+        const result = await prisma.$transaction(async (tx) => {
+            const updated = await tx.hOP_DONG_DAT_PHONG.update({
+                where: { HDONG_MA: id },
+                data: {
+                    HDONG_TRANG_THAI: 'CHECKED_IN',
+                    HDONG_NGAYTHUCNHAN: now,
+                },
+                select: { HDONG_MA: true, HDONG_TRANG_THAI: true, HDONG_NGAYTHUCNHAN: true },
+            });
+
+            await tx.pHONG.update({
+                where: { PHONG_MA: Number(PHONG_MA) },
+                data: { PHONG_TRANGTHAI: 'OCCUPIED' },
+            });
+
+            return updated;
+        });
+
+        console.log('>>> UPDATED', result);
+        return res.json({ ok: true, booking: result });
+    } catch (e) {
+        console.error('❌ ERROR in checkin:', e);
+        next(e);
+    }
+}
+
+
+
+
+
+// POST /bookings/:id/checkin1
+async function checkin1(req, res, next) {
     try {
         const id = Number(req.params.id);
         if (!id) return res.status(400).json({ message: 'ID không hợp lệ' });
@@ -289,32 +382,73 @@ async function checkin(req, res, next) {
 
         // 4) Kiểm tra từng phòng có bị hợp đồng khác chồng lấn tại thời điểm "at" hay không
         const BLOCKING_STATUSES = ['CONFIRMED', 'CHECKED_IN'];
+
         for (const pid of roomIds) {
+            // 4a. Kiểm tra nếu phòng đang có hợp đồng khác CHECKED_IN chưa CHECK_OUT
+            const activeStay = await prisma.cHI_TIET_SU_DUNG.findFirst({
+                where: {
+                    PHONG_MA: pid,
+                    HDONG_MA: { not: id },
+                    HOP_DONG_DAT_PHONG: {
+                        HDONG_TRANG_THAI: 'CHECKED_IN', // khách vẫn đang ở
+                    },
+                },
+                select: { HDONG_MA: true, PHONG: { select: { PHONG_TEN: true } }, HOP_DONG_DAT_PHONG: { select: { HDONG_NGAYDAT: true, HDONG_NGAYTRA: true } } },
+            });
+
+            if (activeStay) {
+                const roomName = activeStay.PHONG?.PHONG_TEN || `Phòng ${pid}`;
+                const toLocal = (d) =>
+                    new Date(d).toLocaleString("vi-VN", {
+                        hour12: false,
+                        timeZone: "Asia/Ho_Chi_Minh",
+                    });
+                const cFrom = toLocal(activeStay.HOP_DONG_DAT_PHONG.HDONG_NGAYDAT);
+                const cTo = toLocal(activeStay.HOP_DONG_DAT_PHONG.HDONG_NGAYTRA);
+                return res.status(409).json({
+                    message: `${roomName} hiện đang có khách ở trong hợp đồng ${activeStay.HDONG_MA} (${cFrom} → ${cTo}). Vui lòng checkout trước khi nhận phòng mới.`,
+                });
+            }
+
+            // 4b. Kiểm tra trùng lịch với hợp đồng CONFIRMED khác
             const conflict = await prisma.cHI_TIET_SU_DUNG.findFirst({
                 where: {
                     PHONG_MA: pid,
-                    HDONG_MA: { not: id }, // loại trừ chính HĐ hiện tại
+                    HDONG_MA: { not: id },
                     HOP_DONG_DAT_PHONG: {
-                        HDONG_TRANG_THAI: { in: BLOCKING_STATUSES },
-                        AND: [{ HDONG_NGAYDAT: { lt: at } }, { HDONG_NGAYTRA: { gt: at } }],
+                        HDONG_TRANG_THAI: { in: ['CONFIRMED', 'CHECKED_IN'] },
+                        AND: [
+                            { HDONG_NGAYDAT: { lt: hd.HDONG_NGAYTRA } }, // hợp đồng khác bắt đầu trước khi HĐ hiện tại kết thúc
+                            { HDONG_NGAYTRA: { gt: at } }, // hợp đồng khác kết thúc sau khi HĐ hiện tại bắt đầu
+                        ],
+
                     },
                 },
                 select: {
                     HDONG_MA: true,
-                    HOP_DONG_DAT_PHONG: { select: { HDONG_NGAYDAT: true, HDONG_NGAYTRA: true } },
-                    PHONG_MA: true,
+                    PHONG: { select: { PHONG_TEN: true } },
+                    HOP_DONG_DAT_PHONG: {
+                        select: { HDONG_NGAYDAT: true, HDONG_NGAYTRA: true },
+                    },
                 },
             });
 
             if (conflict) {
-                const rn = pid;
-                const cFrom = conflict.HOP_DONG_DAT_PHONG.HDONG_NGAYDAT?.toISOString();
-                const cTo = conflict.HOP_DONG_DAT_PHONG.HDONG_NGAYTRA?.toISOString();
+                const roomName = conflict.PHONG?.PHONG_TEN || `Phòng ${pid}`;
+                const toLocal = (d) =>
+                    new Date(d).toLocaleString("vi-VN", {
+                        hour12: false,
+                        timeZone: "Asia/Ho_Chi_Minh",
+                    });
+                const cFrom = toLocal(conflict.HOP_DONG_DAT_PHONG.HDONG_NGAYDAT);
+                const cTo = toLocal(conflict.HOP_DONG_DAT_PHONG.HDONG_NGAYTRA);
                 return res.status(409).json({
-                    message: `Phòng ${rn} đang bận bởi HĐ ${conflict.HDONG_MA} trong khoảng ${cFrom} → ${cTo}. Không thể nhận phòng tại thời điểm này.`,
+                    message: `${roomName} hiện đang có lịch đặt trong hợp đồng ${conflict.HDONG_MA} (${cFrom} → ${cTo}). Không thể nhận phòng tại thời điểm này.`,
                 });
             }
+
         }
+
 
         // 5) Không có xung đột → nhận phòng
         const result = await prisma.$transaction(async (tx) => {
@@ -340,26 +474,186 @@ async function checkin(req, res, next) {
 
 
 // POST /bookings/:id/checkout
+// async function checkout(req, res, next) {
+//     try {
+//         const id = Number(req.params.id);
+
+//         // tuỳ: bắt buộc tất cả CTSD đã kết thúc?
+//         const openItem = await prisma.cHI_TIET_SU_DUNG.findFirst({
+//             where: { HDONG_MA: id, CTSD_TRANGTHAI: 'ACTIVE' },
+//             select: { CTSD_STT: true }
+//         });
+//         if (openItem) {
+//             const err = new Error('Còn mục sử dụng phòng đang ACTIVE, không thể checkout'); err.status = 409; throw err;
+//         }
+
+//         const hd = await prisma.hOP_DONG_DAT_PHONG.update({
+//             where: { HDONG_MA: id },
+//             data: { HDONG_TRANG_THAI: 'CHECKED_OUT', HDONG_NGAYTHUCTRA: new Date() }
+//         });
+//         res.json(hd);
+//     } catch (e) { next(e); }
+// }
+// ===== Helper: tính trạng thái hóa đơn theo HĐ (total/paid/due/over) =====
+async function computeInvoiceStatusByBooking(hdId) {
+    // Link hóa đơn ↔ hợp đồng
+    const link = await prisma.hOA_DON_HOP_DONG.findFirst({
+        where: { HDONG_MA: hdId },
+        select: { HDON_MA: true },
+    });
+
+    // Chưa có hóa đơn ⇒ coi như chưa thu, due = tổng hiện tại (CTSD + CTDV)
+    if (!link) {
+        const roomAgg = await prisma.cHI_TIET_SU_DUNG.aggregate({
+            _sum: { CTSD_THANH_TIEN: true },
+            where: { HDONG_MA: hdId },
+        });
+        const svcAgg = await prisma.cHI_TIET_DICH_VU.aggregate({
+            _sum: { THANH_TIEN: true },
+            where: { HDONG_MA: hdId },
+        });
+
+        const total =
+            Number(roomAgg._sum.CTSD_THANH_TIEN || 0) +
+            Number(svcAgg._sum.THANH_TIEN || 0);
+
+        return {
+            hasInvoice: false,
+            invoiceId: null,
+            status: 'NO_INVOICE',
+            total,
+            paid: 0,
+            due: total,
+            over: 0,
+        };
+    }
+
+    // Có hóa đơn ⇒ lấy tổng + cộng tiền đã thu thành công
+    const invoice = await prisma.hOA_DON.findUnique({
+        where: { HDON_MA: link.HDON_MA },
+        select: { HDON_MA: true, HDON_TRANG_THAI: true, HDON_THANH_TIEN: true },
+    });
+
+    const paidAgg = await prisma.tHANH_TOAN.aggregate({
+        _sum: { TT_SO_TIEN: true },
+        where: {
+            HDON_MA: link.HDON_MA,
+            TT_TRANG_THAI_GIAO_DICH: 'SUCCEEDED',
+        },
+    });
+
+    const total = Number(invoice?.HDON_THANH_TIEN || 0);
+    const paid = Number(paidAgg._sum.TT_SO_TIEN || 0);
+    const due = Math.max(0, total - paid);
+    const over = Math.max(0, paid - total);
+
+    return {
+        hasInvoice: true,
+        invoiceId: invoice?.HDON_MA ?? null,
+        status: invoice?.HDON_TRANG_THAI ?? 'UNKNOWN',
+        total,
+        paid,
+        due,
+        over,
+    };
+}
+
+// ===== POST /bookings/:id/checkout =====
 async function checkout(req, res, next) {
     try {
         const id = Number(req.params.id);
-
-        // tuỳ: bắt buộc tất cả CTSD đã kết thúc?
-        const openItem = await prisma.cHI_TIET_SU_DUNG.findFirst({
-            where: { HDONG_MA: id, CTSD_TRANGTHAI: 'ACTIVE' },
-            select: { CTSD_STT: true }
-        });
-        if (openItem) {
-            const err = new Error('Còn mục sử dụng phòng đang ACTIVE, không thể checkout'); err.status = 409; throw err;
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({ message: 'ID không hợp lệ' });
         }
 
-        const hd = await prisma.hOP_DONG_DAT_PHONG.update({
+        // 1) Header HĐ & guard trạng thái
+        const hd = await prisma.hOP_DONG_DAT_PHONG.findUnique({
             where: { HDONG_MA: id },
-            data: { HDONG_TRANG_THAI: 'CHECKED_OUT', HDONG_NGAYTHUCTRA: new Date() }
+            select: {
+                HDONG_MA: true,
+                HDONG_TRANG_THAI: true,
+                HDONG_NGAYTHUCTRA: true,
+            },
         });
-        res.json(hd);
-    } catch (e) { next(e); }
+        if (!hd) return res.status(404).json({ message: 'Không tìm thấy hợp đồng' });
+
+        const st = (hd.HDONG_TRANG_THAI || '').toUpperCase();
+        if (st === 'CHECKED_OUT') {
+            return res.status(409).json({
+                message: 'Hợp đồng đã trả phòng.',
+                detail: { at: hd.HDONG_NGAYTHUCTRA?.toISOString?.() },
+            });
+        }
+        if (st !== 'CHECKED_IN') {
+            return res
+                .status(409)
+                .json({ message: `Chỉ hợp đồng đang CHECKED_IN mới được trả phòng (hiện tại: ${st}).` });
+        }
+
+        // 2) Bắt buộc tất toán đủ trước khi trả phòng
+        const inv = await computeInvoiceStatusByBooking(id);
+        if (inv.due > 0) {
+            return res.status(409).json({
+                message: 'Chưa thanh toán đủ. Vui lòng tất toán trước khi trả phòng.',
+                detail: { due: inv.due, total: inv.total, paid: inv.paid },
+            });
+        }
+
+        // 3) Danh sách phòng thuộc HĐ (để đổi trạng thái phòng)
+        const ctsd = await prisma.cHI_TIET_SU_DUNG.findMany({
+            where: { HDONG_MA: id },
+            select: { PHONG_MA: true },
+        });
+        const roomIds = [...new Set(ctsd.map(r => r.PHONG_MA).filter(Boolean))];
+
+        // 4) Thời điểm thực trả
+        const at = req.body?.at ? new Date(req.body.at) : new Date();
+        if (Number.isNaN(+at)) {
+            return res.status(400).json({ message: 'Thời điểm trả phòng (at) không hợp lệ' });
+        }
+
+        // 5) Transaction trả phòng
+        const result = await prisma.$transaction(async (tx) => {
+            // 5.1) Cập nhật HĐ → CHECKED_OUT + mốc thực trả
+            const updated = await tx.hOP_DONG_DAT_PHONG.update({
+                where: { HDONG_MA: id },
+                data: { HDONG_TRANG_THAI: 'CHECKED_OUT', HDONG_NGAYTHUCTRA: at },
+                select: { HDONG_MA: true, HDONG_TRANG_THAI: true, HDONG_NGAYTHUCTRA: true },
+            });
+
+            // 5.2) Đóng CTSD (nếu bạn có enum khác, đổi 'COMPLETED' cho khớp)
+            await tx.cHI_TIET_SU_DUNG.updateMany({
+                where: { HDONG_MA: id },
+                data: { CTSD_TRANGTHAI: 'INVOICED' },
+            });
+
+            // 5.3) Phòng → CHUA_DON (đổi thành 'AVAILABLE' nếu không theo quy trình “bẩn”)
+            if (roomIds.length > 0) {
+                await tx.pHONG.updateMany({
+                    where: { PHONG_MA: { in: roomIds } },
+                    data: { PHONG_TRANGTHAI: 'CHUA_DON' }, // hoặc 'AVAILABLE'
+                });
+            }
+
+            // 5.4) (tuỳ chọn) cập nhật trạng thái hóa đơn: đã thu đủ ⇒ PAID
+            if (inv.hasInvoice && inv.invoiceId) {
+                await tx.hOA_DON.update({
+                    where: { HDON_MA: inv.invoiceId },
+                    data: { HDON_TRANG_THAI: 'PAID' },
+                });
+            }
+
+            return updated;
+        });
+
+        // 6) Trả về
+        return res.json({ ok: true, booking: result, rooms: roomIds });
+    } catch (e) {
+        next(e);
+    }
 }
+
+
 
 // POST /bookings/:id/cancel
 async function cancel(req, res, next) {
@@ -378,4 +672,4 @@ async function cancel(req, res, next) {
     } catch (e) { next(e); }
 }
 
-module.exports = { list, get, create, update, remove, checkin, checkout, cancel };
+module.exports = { list, get, create, update, remove, checkin, checkin1, checkout, cancel };

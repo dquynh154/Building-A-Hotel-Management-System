@@ -1,20 +1,22 @@
 // controllers/ctsd.js
 const { prisma } = require('../db/prisma');
+const { TRANGTHAI_HOPDONG } = require('@prisma/client');
+
 
 const money = (n) => Number(n || 0).toFixed(2);
 const ACTIVE_STATES = ['ACTIVE', 'INVOICED'];
 
 // helpers
 const toDate = (v) => {
-  if (!v) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
+    if (!v) return null;
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d;
 };
 
 const addDays = (d, n) => {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
+    const x = new Date(d);
+    x.setDate(x.getDate() + n);
+    return x;
 };
 
 async function recalcBookingTotals(HDONG_MA) {
@@ -154,6 +156,7 @@ async function list(req, res, next) {
 //     } catch (e) { next(e); }
 // }
 
+
 async function create(req, res, next) {
     try {
         const bookingId = Number(req.params.id);
@@ -206,6 +209,14 @@ async function create(req, res, next) {
         const activeWhere = {
             PHONG_MA: Number(PHONG_MA),
             CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+            HOP_DONG_DAT_PHONG: {
+                HDONG_TRANG_THAI: {
+                    notIn: [
+                        TRANGTHAI_HOPDONG.CHECKED_OUT,
+                        TRANGTHAI_HOPDONG.CANCELLED,
+                    ],
+                },
+            },
         };
 
         let conflict = null;
@@ -317,6 +328,154 @@ async function create(req, res, next) {
         res.status(201).json(created);
     } catch (err) { next(err); }
 }
+
+
+//mới
+// async function create(req, res, next) {
+//     try {
+//         const bookingId = Number(req.params.id);
+//         const {
+//             PHONG_MA,
+//             TU_GIO,
+//             DEN_GIO,
+//             NGAY,
+//             SO_LUONG,
+//             DON_GIA,
+//             CTSD_SO_LUONG: CTSD_SO_LUONG_FE,
+//             CTSD_DON_GIA: CTSD_DON_GIA_FE,
+//         } = req.body || {};
+
+//         if (!bookingId || !PHONG_MA) {
+//             const e = new Error('Thiếu dữ liệu tạo chi tiết sử dụng');
+//             e.status = 400;
+//             throw e;
+//         }
+
+//         // Xác định hình thức: HOUR hoặc NIGHT
+//         const isHour = !!(TU_GIO && DEN_GIO);
+//         const isNight = !!NGAY;
+
+//         if (!isHour && !isNight) {
+//             const e = new Error('Thiếu thời gian: cần TU_GIO & DEN_GIO (HOUR) hoặc NGAY (NIGHT)');
+//             e.status = 400;
+//             throw e;
+//         }
+
+//         // Parse khoảng thời gian
+//         let start = null, end = null;
+//         if (isHour) {
+//             start = toDate(TU_GIO);
+//             end = toDate(DEN_GIO);
+//         } else {
+//             start = toDate(NGAY);
+//             end = addDays(start, 1);
+//         }
+//         if (!(start && end) || end <= start) {
+//             const e = new Error('Khoảng thời gian không hợp lệ');
+//             e.status = 400;
+//             throw e;
+//         }
+
+//         const soLuong = Number(CTSD_SO_LUONG_FE ?? SO_LUONG ?? 1);
+//         const donGia = Number(CTSD_DON_GIA_FE ?? DON_GIA ?? 0);
+//         const tongTien = soLuong * donGia;
+
+//         // ====== CHECK CONFLICT ======
+//         const activeWhere = {
+//             PHONG_MA: Number(PHONG_MA),
+//             CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+//             HOP_DONG_DAT_PHONG: {
+//                 HDONG_TRANG_THAI: {
+//                     notIn: [
+//                         TRANGTHAI_HOPDONG.CHECKED_OUT,
+//                         TRANGTHAI_HOPDONG.CANCELLED,
+//                     ],
+//                 },
+//             },
+//         };
+
+//         let conflict = null;
+
+//         if (isNight) {
+//             // ✅ Theo NGÀY: chỉ kiểm tra đêm trùng
+//             const nightSame = await prisma.cHI_TIET_SU_DUNG.findFirst({
+//                 where: {
+//                     ...activeWhere,
+//                     CTSD_NGAY_DA_O: start, // cùng ngày
+//                 },
+//                 select: { HDONG_MA: true, PHONG_MA: true },
+//             });
+//             conflict = nightSame;
+//         } else {
+//             // ✅ Theo GIỜ: chỉ kiểm tra các CTSD có giờ (bỏ kiểm tra đêm)
+//             const possible = await prisma.cHI_TIET_SU_DUNG.findMany({
+//                 where: {
+//                     ...activeWhere,
+//                     CTSD_O_TU_GIO: { not: null, lt: end },
+//                     CTSD_O_DEN_GIO: { not: null, gt: start },
+//                 },
+//                 select: {
+//                     HDONG_MA: true,
+//                     PHONG_MA: true,
+//                     CTSD_O_TU_GIO: true,
+//                     CTSD_O_DEN_GIO: true,
+//                 },
+//             });
+
+//             // Lọc lại để bỏ những trường hợp chỉ chạm biên
+//             conflict = possible.find(h => {
+//                 const existingStart = new Date(h.CTSD_O_TU_GIO);
+//                 const existingEnd = new Date(h.CTSD_O_DEN_GIO);
+//                 return !(end <= existingStart || start >= existingEnd);
+//             });
+//         }
+
+//         if (conflict) {
+//             await prisma.hOP_DONG_DAT_PHONG
+//                 .delete({ where: { HDONG_MA: bookingId } })
+//                 .catch(() => { });
+//             const e = new Error('Phòng đã có người đặt trong khoảng thời gian này');
+//             e.status = 409;
+//             throw e;
+//         }
+
+//         // ====== Tạo chi tiết sử dụng ======
+//         const last = await prisma.cHI_TIET_SU_DUNG.findFirst({
+//             where: { HDONG_MA: bookingId, PHONG_MA: Number(PHONG_MA) },
+//             orderBy: { CTSD_STT: 'desc' },
+//             select: { CTSD_STT: true },
+//         });
+//         const nextStt = (last?.CTSD_STT ?? 0) + 1;
+
+//         const baseData = {
+//             HDONG_MA: bookingId,
+//             PHONG_MA: Number(PHONG_MA),
+//             CTSD_STT: nextStt,
+//             CTSD_SO_LUONG: soLuong,
+//             CTSD_DON_GIA: donGia,
+//             CTSD_TONG_TIEN: tongTien,
+//             CTSD_TRANGTHAI: 'ACTIVE',
+//         };
+
+//         const created = await prisma.cHI_TIET_SU_DUNG.create({
+//             data: isHour
+//                 ? {
+//                     ...baseData,
+//                     CTSD_O_TU_GIO: start,
+//                     CTSD_O_DEN_GIO: end,
+//                 }
+//                 : {
+//                     ...baseData,
+//                     CTSD_NGAY_DA_O: start,
+//                 },
+//         });
+
+//         res.status(201).json(created);
+//     } catch (err) {
+//         next(err);
+//     }
+// }
+
 
 
 // PUT /bookings/:id/items/:phongMa/:stt

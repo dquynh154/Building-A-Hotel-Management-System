@@ -44,6 +44,25 @@ export default function BookingToolbar({
                 <Button size="sm" startIcon={<ListPhong />} variant={mode === 'list' ? 'primary' : 'outline'} onClick={() => onModeChange('list')}> </Button>
                 <Button size="sm" startIcon={<Lich />} variant={mode === 'timeline' ? 'primary' : 'outline'} onClick={() => onModeChange('timeline')}> </Button>
             </div>
+            {/* Chú thích trạng thái phòng */}
+            <div className="flex items-center gap-4 text-sm">
+                <div className="flex items-center gap-1">
+                    <span className="h-3 w-3 rounded-sm bg-orange-400 border border-orange-500"></span>
+                    <span className="text-slate-600 dark:text-slate-300">Sắp đến</span>
+                </div>
+                <div className="flex items-center gap-1">
+                    <span className="h-3 w-3 rounded-sm bg-green-500 border border-green-600"></span>
+                    <span className="text-slate-600 dark:text-slate-300">Đang sử dụng</span>
+                </div>
+                <div className="flex items-center gap-1">
+                    <span className="h-3 w-3 rounded-sm bg-yellow-400 border border-yellow-500"></span>
+                    <span className="text-slate-600 dark:text-slate-300">Chưa dọn</span>
+                </div>
+                <div className="flex items-center gap-1">
+                    <span className="h-3 w-3 rounded-sm bg-gray-300 border border-gray-400"></span>
+                    <span className="text-slate-600 dark:text-slate-300">Phòng trống</span>
+                </div>
+            </div>
 
             <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2">
@@ -59,7 +78,7 @@ export default function BookingToolbar({
                         placeholder="Đến ngày"
                         onChange={(dates: any) => onFiltersChange({ ...filters, range: { ...filters.range, to: dates?.[0] || dates || null } })}
                     />
-                </div>
+                </div>   
 
                 <input
                     value={filters.search}
@@ -75,12 +94,12 @@ export default function BookingToolbar({
                     onConfirm={(data) => {
                         setOpenTool(false);
                         setPrefillForCreate(data);     // lưu tạm payload
-                        setCreateSeed(Date.now()); 
+                        setCreateSeed(Date.now());
                         setOpenCreate(true);           // mở BookingCreateModal ngay sau đó
                     }}
                 />
                 <BookingCreateModal
-                    key={createSeed}    
+                    key={createSeed}
                     open={openCreate}
                     onClose={() => { setOpenCreate(false); setPrefillForCreate(null); }}
                     onCreated={() => { setOpenCreate(false); setPrefillForCreate(null); onBooked(); }}
