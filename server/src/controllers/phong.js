@@ -212,12 +212,114 @@ async function availability(req, res, next) {
 
 // GET /rooms/available-by-booking/:id
 // Trả về danh sách phòng trống theo khoảng ngày của hợp đồng cụ thể
+// async function availableRoomsByBooking(req, res, next) {
+//     try {
+//         const id = Number(req.params.id);
+//         if (!id) return res.status(400).json({ message: 'Thiếu ID hợp đồng' });
+
+//         // Lấy hợp đồng để biết khoảng thời gian
+//         const booking = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+//             where: { HDONG_MA: id },
+//             select: {
+//                 HDONG_NGAYDAT: true,
+//                 HDONG_NGAYTRA: true,
+//                 HDONG_TRANG_THAI: true,
+//                 HDONG_MA: true,
+//             },
+//         });
+
+//         if (!booking)
+//             return res.status(404).json({ message: 'Không tìm thấy hợp đồng.' });
+
+//         const from = new Date(booking.HDONG_NGAYDAT);
+//         const to = new Date(booking.HDONG_NGAYTRA);
+
+//         if (!(from && to && to > from))
+//             return res.status(400).json({ message: 'Ngày nhận/trả không hợp lệ.' });
+
+//         console.log('=== Kiểm tra phòng trống cho hợp đồng:', booking.HDONG_MA, '===');
+//         console.log('Từ:', from.toLocaleString('vi-VN'), '→ Đến:', to.toLocaleString('vi-VN'));
+//         console.log('Trạng thái hợp đồng:', booking.HDONG_TRANG_THAI);
+
+//         // Các trạng thái hợp đồng giữ phòng
+//         const HOLD_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN'];
+
+//         // Tìm các phòng đang bị giữ trong khoảng trùng lặp
+//         // const busyRooms = await prisma.cHI_TIET_SU_DUNG.findMany({
+//         //     where: {
+//         //         HOP_DONG_DAT_PHONG: {
+//         //             HDONG_TRANG_THAI: { in: HOLD_STATUSES },
+//         //             // overlap logic
+//         //             HDONG_NGAYDAT: { lt: to },
+//         //             HDONG_NGAYTRA: { gt: from },
+//         //         },
+//         //     },
+//         //     select: { PHONG_MA: true },
+//         //     distinct: ['PHONG_MA'],
+//         // });
+
+//         const busyRooms = await prisma.cHI_TIET_SU_DUNG.findMany({
+//             where: {
+//                 CTSD_TRANGTHAI: 'ACTIVE',
+//                 HOP_DONG_DAT_PHONG: {
+//                     OR: [
+//                         // 1️⃣ Các hợp đồng CHECKED_IN vẫn chiếm phòng dù quá hạn
+//                          { HDONG_TRANG_THAI: 'CHECKED_IN' },
+
+//                         // 2️⃣ Hoặc các hợp đồng CONFIRMED / PENDING có khoảng trùng lặp
+//                         {
+//                             HDONG_TRANG_THAI: { in: ['CONFIRMED', 'PENDING'] },
+//                             AND: [
+//                                 { HDONG_NGAYDAT: { lt: to } },
+//                                 { HDONG_NGAYTRA: { gt: from } },
+//                             ],
+//                         },
+//                     ],
+//                 },
+//             },
+//             select: { PHONG_MA: true },
+//             distinct: ['PHONG_MA'],
+//         });
+
+//         console.log('Phòng đang bận (bị trùng khoảng):', busyRooms);
+
+//         const busyIds = busyRooms.map((r) => r.PHONG_MA);
+
+//         // Lấy tất cả phòng, trừ những phòng đang bận
+//         const availableRooms = await prisma.pHONG.findMany({
+//             where: {
+//                 AND: [
+//                     { PHONG_TRANGTHAI: { in: ['AVAILABLE'] } },
+//                     { NOT: { PHONG_MA: { in: busyIds }, } },
+//                 ],
+//                 //NOT: { PHONG_MA: { in: busyIds } },
+//             },
+//             include: { LOAI_PHONG: true },
+//             orderBy: { PHONG_TEN: 'asc' },
+//         });
+
+//         res.json({
+//             available: availableRooms.map((r) => ({
+//                 id: r.PHONG_MA,
+//                 name: r.PHONG_TEN,
+//                 type: r.LOAI_PHONG?.LP_TEN || 'Không rõ loại',
+//             })),
+//             total: availableRooms.length,
+//         });
+//     } catch (e) {
+//         next(e);
+//     }
+// }
+// GET /rooms/available-by-booking/:id?lp=...
+// Nếu có ?lp= thì lọc theo loại phòng cụ thể, ngược lại trả tất cả phòng trống
+// GET /rooms/available-by-booking/:id?lp=...
+// Tự động lọc loại phòng nếu hợp đồng là đặt trực tuyến và chỉ có 1 loại
 async function availableRoomsByBooking(req, res, next) {
     try {
         const id = Number(req.params.id);
         if (!id) return res.status(400).json({ message: 'Thiếu ID hợp đồng' });
 
-        // Lấy hợp đồng để biết khoảng thời gian
+        // 👇 Kiểm tra xem hợp đồng có phải đặt trực tuyến không
         const booking = await prisma.hOP_DONG_DAT_PHONG.findUnique({
             where: { HDONG_MA: id },
             select: {
@@ -225,6 +327,7 @@ async function availableRoomsByBooking(req, res, next) {
                 HDONG_NGAYTRA: true,
                 HDONG_TRANG_THAI: true,
                 HDONG_MA: true,
+                CT_DAT_TRUOC: { select: { LP_MA: true } }, // 👈 thêm để kiểm tra online
             },
         });
 
@@ -233,39 +336,55 @@ async function availableRoomsByBooking(req, res, next) {
 
         const from = new Date(booking.HDONG_NGAYDAT);
         const to = new Date(booking.HDONG_NGAYTRA);
-
         if (!(from && to && to > from))
             return res.status(400).json({ message: 'Ngày nhận/trả không hợp lệ.' });
 
-        console.log('=== Kiểm tra phòng trống cho hợp đồng:', booking.HDONG_MA, '===');
-        console.log('Từ:', from.toLocaleString('vi-VN'), '→ Đến:', to.toLocaleString('vi-VN'));
-        console.log('Trạng thái hợp đồng:', booking.HDONG_TRANG_THAI);
+        // ⚙️ Xác định LP cần lọc
+        const preBooked = booking.CT_DAT_TRUOC || [];
+        const isOnline = preBooked.length > 0;
 
+        // Nếu chỉ có 1 loại phòng online → tự động lọc theo loại đó
+        const lpAuto = isOnline && preBooked.length === 1 ? preBooked[0].LP_MA : null;
+
+        // Nếu FE gửi ?lp= thì ưu tiên, ngược lại dùng lpAuto
+        const lp = req.query.lp ? Number(req.query.lp) : lpAuto;
+
+        // 👇 nếu có ?all=true thì bỏ lọc theo loại phòng
+        const showAll = String(req.query.all || '').toLowerCase() === 'true';
         // Các trạng thái hợp đồng giữ phòng
         const HOLD_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN'];
 
-        // Tìm các phòng đang bị giữ trong khoảng trùng lặp
+        // 🔒 Phòng đang bị giữ trong khoảng trùng lặp
         const busyRooms = await prisma.cHI_TIET_SU_DUNG.findMany({
             where: {
+                CTSD_TRANGTHAI: 'ACTIVE',
                 HOP_DONG_DAT_PHONG: {
-                    HDONG_TRANG_THAI: { in: HOLD_STATUSES },
-                    // overlap logic
-                    HDONG_NGAYDAT: { lt: to },
-                    HDONG_NGAYTRA: { gt: from },
+                    OR: [
+                        { HDONG_TRANG_THAI: 'CHECKED_IN' },
+                        {
+                            HDONG_TRANG_THAI: { in: ['CONFIRMED', 'PENDING'] },
+                            AND: [
+                                { HDONG_NGAYDAT: { lt: to } },
+                                { HDONG_NGAYTRA: { gt: from } },
+                            ],
+                        },
+                    ],
                 },
             },
             select: { PHONG_MA: true },
             distinct: ['PHONG_MA'],
         });
 
-        console.log('Phòng đang bận (bị trùng khoảng):', busyRooms);
-
         const busyIds = busyRooms.map((r) => r.PHONG_MA);
 
-        // Lấy tất cả phòng, trừ những phòng đang bận
+        // ✅ Lấy phòng trống (lọc theo LP_MA nếu có)
         const availableRooms = await prisma.pHONG.findMany({
             where: {
-                NOT: { PHONG_MA: { in: busyIds } },
+                AND: [
+                    { PHONG_TRANGTHAI: { in: ['AVAILABLE'] } },
+                    { NOT: { PHONG_MA: { in: busyIds } } },
+                    ...(showAll ? [] : lp ? [{ LP_MA: lp }] : []),
+                ],
             },
             include: { LOAI_PHONG: true },
             orderBy: { PHONG_TEN: 'asc' },
@@ -276,13 +395,18 @@ async function availableRoomsByBooking(req, res, next) {
                 id: r.PHONG_MA,
                 name: r.PHONG_TEN,
                 type: r.LOAI_PHONG?.LP_TEN || 'Không rõ loại',
+                lp_ma: r.LP_MA,
             })),
             total: availableRooms.length,
+            autoFilteredBy: lpAuto || null, // 👈 thêm để FE biết BE đã tự lọc
+            isOnline,
         });
     } catch (e) {
+        console.error('ERR /rooms/available-by-booking/:id:', e);
         next(e);
     }
 }
+
 
 async function setClean(req, res) {
     const id = Number(req.params.id);

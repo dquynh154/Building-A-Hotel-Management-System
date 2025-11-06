@@ -12,6 +12,7 @@ import {
     PopoverTrigger,
     PopoverContent,
 } from "@/components/ui/popover";
+import ChangeRoomModal from '../ui/modal/ChangeRoomModal';
 
 const statusColor: Record<string, any> = {
     AVAILABLE: 'success', OCCUPIED: 'warning', MAINTENANCE: 'dark', CHUA_DON: 'error'
@@ -31,6 +32,11 @@ const fmt = (iso: string) => {
         hour: '2-digit', minute: '2-digit',
         hour12: false,
     }).format(d);
+};
+
+// mở trang chi tiết hợp đồng
+const goToBookingDetail = (b: BookingLite) => {
+    window.location.href = `/admin/others-pages/chi-tiet/${b.HDONG_MA}`;
 };
 
 export default function BoardView({
@@ -72,6 +78,7 @@ export default function BoardView({
             setLoading(false);
         }
     };
+    const [changeRoomBooking, setChangeRoomBooking] = useState<any | null>(null);
 
     return (
         <div className="space-y-6">
@@ -212,13 +219,13 @@ export default function BoardView({
                                                         <div className="flex justify-end gap-2 pt-3">
                                                             <button
                                                                 className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-100"
-                                                                onClick={() => alert("Gọi API trả phòng")}
+                                                                onClick={() => goToBookingDetail(b)}
                                                             >
-                                                                Trả phòng
+                                                                Chi tiết
                                                             </button>
                                                             <button
                                                                 className="rounded-md bg-amber-500 px-2 py-1 text-xs text-white hover:bg-amber-600"
-                                                                onClick={() => alert("Gọi API đổi phòng")}
+                                                                onClick={() => setChangeRoomBooking(b)}
                                                             >
                                                                 Đổi phòng
                                                             </button>
@@ -233,7 +240,7 @@ export default function BoardView({
                                         )}
                                     </div>
 
-                                    
+
                                     {/* ✅ nút đặt nhanh phòng này */}
                                     <div className="mt-3 flex justify-end">
                                         <Button
@@ -282,6 +289,12 @@ export default function BoardView({
                     </button>
                 </div>
             </Modal>
+            {changeRoomBooking && (
+                <ChangeRoomModal
+                    booking={changeRoomBooking}
+                    onClose={() => setChangeRoomBooking(null)}
+                />
+            )}
 
 
 

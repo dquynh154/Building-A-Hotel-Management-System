@@ -208,7 +208,7 @@ async function create(req, res, next) {
         // 1) CHECK CONFLICT RÕ RÀNG THEO HOUR/NIGHT
         const activeWhere = {
             PHONG_MA: Number(PHONG_MA),
-            CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+            CTSD_TRANGTHAI: { in: ['ACTIVE'] },
             HOP_DONG_DAT_PHONG: {
                 HDONG_TRANG_THAI: {
                     notIn: [

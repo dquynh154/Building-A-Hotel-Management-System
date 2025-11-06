@@ -38,7 +38,7 @@ async function roomTypeAvailability(req, res, next) {
                         { HDONG_NGAYTRA: { gt: from } },
                     ],
                 },
-                CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] }, // tuỳ bạn, có thể bỏ điều kiện này
+                CTSD_TRANGTHAI: { in: ['ACTIVE'] }, // tuỳ bạn, có thể bỏ điều kiện này
             },
             select: { PHONG_MA: true, HOP_DONG_DAT_PHONG: { select: { HDONG_NGAYDAT: true, HDONG_NGAYTRA: true } } }
         });

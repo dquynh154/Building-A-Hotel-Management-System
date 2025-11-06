@@ -299,6 +299,7 @@ async function checkin(req, res, next) {
         const conflict = await prisma.cHI_TIET_SU_DUNG.findFirst({
             where: {
                 PHONG_MA: Number(PHONG_MA),
+                CTSD_TRANGTHAI: 'ACTIVE', 
                 HOP_DONG_DAT_PHONG: { HDONG_TRANG_THAI: 'CHECKED_IN' },
             },
             select: { HDONG_MA: true },
@@ -372,7 +373,7 @@ async function checkin1(req, res, next) {
 
         // 3) Lấy danh sách phòng thuộc HĐ
         const ctsd = await prisma.cHI_TIET_SU_DUNG.findMany({
-            where: { HDONG_MA: id, CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] } },
+            where: { HDONG_MA: id, CTSD_TRANGTHAI: { in: ['ACTIVE'] } },
             select: { PHONG_MA: true },
         });
         const roomIds = [...new Set(ctsd.map(r => r.PHONG_MA).filter(Boolean))];
@@ -388,6 +389,7 @@ async function checkin1(req, res, next) {
             const activeStay = await prisma.cHI_TIET_SU_DUNG.findFirst({
                 where: {
                     PHONG_MA: pid,
+                    CTSD_TRANGTHAI: 'ACTIVE',
                     HDONG_MA: { not: id },
                     HOP_DONG_DAT_PHONG: {
                         HDONG_TRANG_THAI: 'CHECKED_IN', // khách vẫn đang ở
@@ -414,6 +416,7 @@ async function checkin1(req, res, next) {
             const conflict = await prisma.cHI_TIET_SU_DUNG.findFirst({
                 where: {
                     PHONG_MA: pid,
+                    CTSD_TRANGTHAI: 'ACTIVE',
                     HDONG_MA: { not: id },
                     HOP_DONG_DAT_PHONG: {
                         HDONG_TRANG_THAI: { in: ['CONFIRMED', 'CHECKED_IN'] },

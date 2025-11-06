@@ -12,6 +12,8 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 // app.use(morgan('dev'));
 app.use('/uploads', express.static(UPLOAD_DIR));
+app.use('/admin', require('./routes/admin'));
+
 app.use(routes);
 app.use(error);
 

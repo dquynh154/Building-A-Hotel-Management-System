@@ -1,9 +1,8 @@
 const r = require('express').Router();
+const { prisma } = require('../db/prisma');
 const { crud } = require('../controllers/crud');
 const auth = require('../middlewares/auth');
 const permit = require('../middlewares/permit');
-const { prisma } = require('../db/prisma');   
-
 const onlyAdmin = permit('ADMIN');
 const staffOrAdmin = permit('RECEPTIONIST', 'ADMIN');
 

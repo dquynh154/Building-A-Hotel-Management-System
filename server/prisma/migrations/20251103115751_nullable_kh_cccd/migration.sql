@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `khach_hang` MODIFY `KH_CCCD` VARCHAR(191) NULL;

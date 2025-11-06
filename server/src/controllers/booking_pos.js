@@ -81,7 +81,7 @@ async function getBookingFull(req, res, next) {
         const ctsd = await prisma.cHI_TIET_SU_DUNG.findMany({
             where: {
                 HDONG_MA: id,
-                CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+                CTSD_TRANGTHAI: { in: ['ACTIVE'] },
             },
             select: {
                 CTSD_STT: true,
@@ -104,6 +104,20 @@ async function getBookingFull(req, res, next) {
                 { CTSD_O_TU_GIO: 'asc' },
             ],
         });
+
+
+        // === TÍNH TỔNG THỰC TẾ GỒM CẢ INVOICED ===
+        const allCtsdForTotal = await prisma.cHI_TIET_SU_DUNG.findMany({
+            where: {
+                HDONG_MA: id,
+                CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+            },
+            select: { CTSD_TONG_TIEN: true },
+        });
+        const totalRooms = allCtsdForTotal.reduce(
+            (s, r) => s + Number(r.CTSD_TONG_TIEN || 0),
+            0
+        );
 
         const rooms = ctsd.map((r) => {
             const isHour = !!r.CTSD_O_TU_GIO; // theo giờ nếu có cột giờ
@@ -159,7 +173,7 @@ async function getBookingFull(req, res, next) {
             thanh_tien: Number(s.CTDV_DONGIA) * s.CTDV_SOLUONG,
         }));
 
-        const totalRooms = rooms.reduce((s, r) => s + (r.tong_tien || 0), 0);
+        // const totalRooms = rooms.reduce((s, r) => s + (r.tong_tien || 0), 0);
         const totalServices = services.reduce((s, v) => s + (v.thanh_tien || 0), 0);
 
         res.json({
@@ -587,7 +601,7 @@ async function removeService(req, res, next) {
 async function addItemToExisting(req, res, next) {
     try {
         const bookingId = Number(req.params.id);
-        const { PHONG_MA } = req.body || {};
+        const { PHONG_MA, LP_MA: LP_MA_REQ } = req.body || {};
 
         if (!bookingId || !PHONG_MA)
             return res.status(400).json({ message: 'Thiếu dữ liệu.' });
@@ -657,6 +671,8 @@ async function addItemToExisting(req, res, next) {
         });
         let nextStt = (last?.CTSD_STT ?? 0) + 1;
 
+
+
         // 7️⃣ Tạo nhiều bản ghi CTSD (1 bản ghi/đêm)
         const dataToInsert = dates.map((ngay) => ({
             HDONG_MA: bookingId,
@@ -670,7 +686,14 @@ async function addItemToExisting(req, res, next) {
         }));
 
         await prisma.cHI_TIET_SU_DUNG.createMany({ data: dataToInsert });
-
+        await prisma.cT_DAT_TRUOC.updateMany({
+            where: {
+                HDONG_MA: bookingId,
+                LP_MA: LP_MA || phong.LP_MA,
+                TRANG_THAI: { in: ['CONFIRMED'] },
+            },
+            data: { TRANG_THAI: 'ALLOCATED' },
+        });
         res.status(201).json({
             message: `Đã thêm ${phong.PHONG_TEN} vào hợp đồng.`,
             donGia,
@@ -682,6 +705,24 @@ async function addItemToExisting(req, res, next) {
 }
 
 
+// GET /bookings/:id/pending-rooms
+async function pendingRooms(req, res, next) {
+    try {
+        const id = Number(req.params.id);
+        if (!id) return res.status(400).json({ message: 'Thiếu ID hợp đồng' });
+
+        const rows = await prisma.cT_DAT_TRUOC.findMany({
+            where: { HDONG_MA: id, TRANG_THAI: 'CONFIRMED' },
+            include: { LOAI_PHONG: { select: { LP_TEN: true } } },
+        });
+
+        res.json(rows.map(r => ({
+            LP_MA: r.LP_MA,
+            LP_TEN: r.LOAI_PHONG?.LP_TEN || '',
+            SO_LUONG: r.SO_LUONG,
+        })));
+    } catch (e) { next(e); }
+}
 
 
 // DELETE /bookings/:id/rooms/:phongId
@@ -703,6 +744,10 @@ async function removeRoom(req, res) {
             PHONG_MA: Number(phongId),
         },
     });
+    await prisma.cT_DAT_TRUOC.updateMany({
+        where: { HDONG_MA: Number(id), LP_MA: phongId.LP_MA },
+                data: { TRANG_THAI: 'CONFIRMED' } // cho phép gán lại
+            });
 
     res.json({ success: true });
 }
@@ -907,4 +952,5 @@ module.exports = {
     addItemToExisting,
     removeRoom,
     changeRoom,
+    pendingRooms,
 };

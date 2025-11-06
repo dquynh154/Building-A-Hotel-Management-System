@@ -23,7 +23,7 @@ exports.register = async (req, res, next) => {
             data: {
                 KH_HOTEN: body.KH_HOTEN,
                 KH_SDT: body.KH_SDT,
-                KH_CCCD: body.KH_CCCD,
+                KH_CCCD: body.KH_CCCD ?? null,
                 KH_EMAIL: body.KH_EMAIL ?? null,
                 KH_TAIKHOAN: body.KH_TAIKHOAN,
                 KH_MATKHAU: pwd,

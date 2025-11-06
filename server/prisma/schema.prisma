@@ -110,6 +110,8 @@ model LOAI_PHONG {
   PHONG            PHONG[]
   TRANGBI_TIENNGHI TRANGBI_TIENNGHI[]
   DON_GIA          DON_GIA[]
+  CT_DAT_TRUOC CT_DAT_TRUOC[]     // Một hợp đồng có thể có nhiều dòng đặt trước
+
 }
 
 model LOAI_PHONG_IMAGE {
@@ -229,7 +231,7 @@ model KHACH_HANG {
   KH_HOTEN    String
   KH_NGAYSINH DateTime? // có thể null
   KH_GIOITINH String? // Nam/Nữ/Khác
-  KH_CCCD     String    @unique // giấy tờ tuỳ thân
+  KH_CCCD     String?    @unique // giấy tờ tuỳ thân
   KH_EMAIL    String?   @unique
   KH_SDT      String    @unique
   KH_DIACHI   String?
@@ -313,10 +315,29 @@ model HOP_DONG_DAT_PHONG {
   NHAN_VIEN      NHAN_VIEN?      @relation(fields: [NV_MA], references: [NV_MA])
   HINH_THUC_THUE HINH_THUC_THUE  @relation(fields: [HT_MA], references: [HT_MA])
   LUU_TRU_KHACH  LUU_TRU_KHACH[]
+  CT_DAT_TRUOC CT_DAT_TRUOC[]     // Một hợp đồng có thể có nhiều dòng đặt trước
 
   @@index([KH_MA, HDONG_TRANG_THAI])
   @@index([HDONG_NGAYDAT, HDONG_NGAYTRA])
 }
+
+model CT_DAT_TRUOC {
+  CTDP_ID      Int      @id @default(autoincrement())
+  HDONG_MA     Int
+  LP_MA        Int
+  SO_LUONG     Int       @default(1)
+  DON_GIA      Float     @default(0)
+  TONG_TIEN    Float     @default(0)
+  TRANG_THAI   String    @default("CONFIRMED") // CONFIRMED | ALLOCATED | CANCELLED
+  NGAY_TAO     DateTime  @default(now())
+
+  // --- Quan hệ ---
+  HOP_DONG_DAT_PHONG  HOP_DONG_DAT_PHONG @relation(fields: [HDONG_MA], references: [HDONG_MA])
+  LOAI_PHONG          LOAI_PHONG         @relation(fields: [LP_MA], references: [LP_MA])
+
+  @@map("CT_DAT_TRUOC")
+}
+
 
 //vì các cột thời gian có thể NULL, hãy đảm bảo logic ở code: THEO_NGAY ⇒ chỉ set CTSD_NGAY_DA_O, để 2 cột giờ NULL.THEO_GIO ⇒ chỉ set O_TU_GIO, O_DEN_GIO, để NGAY_DA_O NULL
 model CHI_TIET_SU_DUNG {

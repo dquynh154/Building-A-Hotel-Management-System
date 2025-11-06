@@ -158,3 +158,27 @@ exports.remove = async (req, res, next) => {
         res.json({ ok: true });
     } catch (e) { next(e); }
 };
+// controllers/loai_phong_image.js
+exports.listByLoaiPhongPublic = async (req, res, next) => {
+    try {
+        const lpId = Number(req.params.id);
+        if (!Number.isFinite(lpId) || lpId <= 0) {
+            return res.status(400).json({ message: 'LP_MA không hợp lệ' });
+        }
+
+        const rows = await prisma.lOAI_PHONG_IMAGE.findMany({
+            where: { LP_MA: lpId },
+            select: { IMG_ID: true, URL: true, IS_MAIN: true, ORD: true },
+            orderBy: [{ IS_MAIN: 'desc' }, { ORD: 'asc' }, { IMG_ID: 'asc' }],
+        });
+
+        const base = `${req.protocol}://${req.get('host')}`;
+        const items = rows.map(r => ({
+            ...r,
+            URL_ABS: r.URL?.startsWith('http') ? r.URL : `${base}${r.URL || ''}`,
+        }));
+
+        res.set('Cache-Control', 'public, max-age=300'); // 5 phút
+        return res.json({ items });
+    } catch (e) { next(e); }
+};

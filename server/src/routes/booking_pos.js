@@ -1,7 +1,7 @@
 // routes/booking_pos.js
 const r = require('express').Router();
 const {
-    getBookingFull, searchProducts, addService, updateService, removeService, addItemToExisting, removeRoom, changeRoom
+    getBookingFull, searchProducts, addService, updateService, removeService, addItemToExisting, removeRoom, changeRoom, pendingRooms,
 } = require('../controllers/booking_pos');
 
 // Chi tiết HĐ + các dòng
@@ -17,4 +17,6 @@ r.delete('/bookings/:id/services/:ctdvStt', removeService);
 r.post('/bookings/:id/add-room', addItemToExisting);
 r.delete('/bookings/:id/rooms/:phongId', removeRoom);
 r.post('/bookings/:id/change-room', changeRoom);
+r.get('/bookings/:id/pending-rooms', pendingRooms);
+
 module.exports = r;

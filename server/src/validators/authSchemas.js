@@ -3,8 +3,8 @@ const { z } = require('zod');
 // Guest: đăng ký & đăng nhập
 exports.guestRegister = z.object({
     KH_HOTEN: z.string().min(1),
-    KH_SDT: z.string().min(8),
-    KH_CCCD: z.string().min(6),
+    KH_SDT: z.string().min(10),
+    KH_CCCD: z.string().min(12).max(12).optional().nullable(),
     KH_EMAIL: z.string().email().optional().nullable(),
     KH_TAIKHOAN: z.string().min(4),
     KH_MATKHAU: z.string().min(6),

@@ -10,7 +10,7 @@ type PropsType = {
   id: string;
   mode?: "single" | "multiple" | "range" | "time";
   onChange?: Hook | Hook[];
-  defaultDate?: DateOption;
+  defaultDate?: DateOption | DateOption[];
   label?: string;
   placeholder?: string;
 };
@@ -22,14 +22,17 @@ export default function DatePicker({
   label,
   defaultDate,
   placeholder,
-  
+
 }: PropsType) {
   useEffect(() => {
+    const isTime = mode === 'time';
     const flatPickr = flatpickr(`#${id}`, {
       mode: mode || "single",
+      dateFormat: isTime ? 'H:i' : 'd-m-Y', // 👈 dd-mm-yyyy
+      minDate: isTime ? undefined : 'today', 
       static: true,
       monthSelectorType: "static",
-      dateFormat: "Y-m-d",
+      // dateFormat: "Y-m-d",
       defaultDate,
       onChange,
       locale: { ...Vietnamese, firstDayOfWeek: 1 },

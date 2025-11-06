@@ -1,7 +1,7 @@
 const r = require('express').Router();
 
 r.get('/health', (req, res) => res.json({ ok: true }));
-
+r.use('/public', require('./public'));
 r.use('/auth/guest', require('./auth_guest'));
 r.use('/auth/staff', require('./auth_staff'));
 r.use('/', require('./booking'));
@@ -18,4 +18,5 @@ r.use('/', require('./ctsd'));
 r.use('/bookings', require('./bookingguest'));
 r.use('/', require('./availability'));
 r.use('/', require('./booking_pos'));
+
 module.exports = r;

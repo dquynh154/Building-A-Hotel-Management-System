@@ -1,0 +1,926 @@
+const pub = require('express').Router();
+const { prisma } = require('../db/prisma');
+const crypto = require('crypto');
+const qs = require('qs');
+const { Prisma } = require('@prisma/client'); // <-- THÊM DÒNG NÀY để dùng Prisma.Decimal
+const NV_MA_DEFAULT = Number(process.env.DEFAULT_NV_MA || 1);
+const { VNP_TMN_CODE, VNP_HASH_SECRET, APP_URL, DEFAULT_NV_MA } = process.env;
+const nodemailer = require('nodemailer');
+
+// Helper: lấy giá theo ngày (HT_MA=1) tại ngày fromDt; ưu tiên SPECIAL, fallback BASE
+async function getPriceForDay(tx, lpMa, atDateTime) {
+    const sp = await tx.$queryRaw`
+    SELECT MIN(g.DG_DONGIA) AS PRICE
+    FROM DON_GIA g
+    JOIN THOI_DIEM t ON t.TD_MA = g.TD_MA
+    JOIN THOI_DIEM_SPECIAL s ON s.TD_MA = t.TD_MA
+    WHERE g.HT_MA = 1
+      AND g.LP_MA = ${lpMa}
+      AND s.TD_NGAY_BAT_DAU <= ${atDateTime}
+      AND s.TD_NGAY_KET_THUC >= ${atDateTime}
+  `;
+    let price = Number(sp?.[0]?.PRICE || 0);
+    if (!price) {
+        const base = await tx.$queryRaw`
+      SELECT MIN(g.DG_DONGIA) AS PRICE
+      FROM DON_GIA g
+      JOIN THOI_DIEM t ON t.TD_MA = g.TD_MA
+      JOIN THOI_DIEM_BASE b ON b.TD_MA = t.TD_MA
+      WHERE g.HT_MA = 1
+        AND g.LP_MA = ${lpMa}
+    `;
+        price = Number(base?.[0]?.PRICE || 0);
+    }
+    return price;
+}
+const pad = (n) => String(n).padStart(2, '0');
+
+function makeCheckInUTC(ymd /* 'YYYY-MM-DD' */) {
+    const [y, m, d] = ymd.slice(0, 10).split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d, 7, 0, 0)); // 14:00 VN = 07:00 UTC
+}
+function makeCheckOutUTC(ymd /* 'YYYY-MM-DD' */) {
+    const [y, m, d] = ymd.slice(0, 10).split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d, 5, 0, 0)); // 12:00 VN = 05:00 UTC
+}
+function toSqlUTC(dt /* Date in UTC */) {
+    return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())} ${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}:${pad(dt.getUTCSeconds())}`;
+}
+
+
+// POST /public/dat-truoc/prepare
+// body: { from:'YYYY-MM-DD', to:'YYYY-MM-DD', adults:number, items:[{lp_ma:number, qty:number}], guests:any }
+// POST /public/dat-truoc/prepare
+pub.post('/dat-truoc/prepare', async (req, res) => {
+    try {
+        const { from, to, adults = 1, items = [], kh_ma } = req.body || {};
+        if (!from || !to) return res.status(400).json({ message: 'from/to bắt buộc (YYYY-MM-DD)' });
+        if (!kh_ma) return res.status(400).json({ message: 'Thiếu kh_ma (khách phải đăng nhập trước khi đặt)' });
+        if (!Array.isArray(items) || items.length === 0)
+            return res.status(400).json({ message: 'Danh sách loại phòng rỗng' });
+
+        const checkinUtc = makeCheckInUTC(String(from).slice(0, 10));
+        const checkoutUtc = makeCheckOutUTC(String(to).slice(0, 10));
+        const fromDt = toSqlUTC(checkinUtc);   // 'YYYY-MM-DD HH:mm:ss' (UTC)
+        const toDt = toSqlUTC(checkoutUtc);  // 'YYYY-MM-DD HH:mm:ss' (UTC)
+
+        const nights = Math.max(1, Math.ceil((new Date(to) - new Date(from)) / 86400000));
+        const NV_MA_DEFAULT = Number(process.env.DEFAULT_NV_MA || 1);
+        const tileCoc = Number(process.env.DEFAULT_DEPOSIT_RATE || 50); // % cọc (bạn đã dùng 50%)
+
+        const out = await prisma.$transaction(async (tx) => {
+            // 1) Kiểm tra tồn cho từng loại phòng
+            for (const it of items) {
+                const lp = Number(it.lp_ma);
+                const need = Number(it.qty || 0);
+                if (!lp || need <= 0) throw new Error(`Item không hợp lệ: ${JSON.stringify(it)}`);
+
+                // tổng phòng theo loại
+                const totalRow = await tx.$queryRaw`
+          SELECT COUNT(*) AS TOTAL
+          FROM PHONG WHERE LP_MA = ${lp}
+        `;
+                const TOTAL = Number(totalRow?.[0]?.TOTAL || 0);
+
+                // phòng đã bận (đã gán vào CTSD) trong khoảng ngày
+                const usedRow = await tx.$queryRaw`
+          SELECT COUNT(DISTINCT P.PHONG_MA) AS USED
+          FROM CHI_TIET_SU_DUNG CT
+          JOIN HOP_DONG_DAT_PHONG H ON H.HDONG_MA = CT.HDONG_MA
+          JOIN PHONG P ON P.PHONG_MA = CT.PHONG_MA
+          WHERE P.LP_MA = ${lp}
+            AND H.HDONG_TRANG_THAI NOT IN ('CANCELLED','NO_SHOW')
+            AND COALESCE(H.HDONG_NGAYTHUCNHAN, H.HDONG_NGAYDAT) < ${toDt}
+            AND COALESCE(H.HDONG_NGAYTHUCTRA,  H.HDONG_NGAYTRA)  > ${fromDt}
+        `;
+                const USED = Number(usedRow?.[0]?.USED || 0);
+
+                // số lượng đã GIỮ CHỖ qua CT_DAT_TRUOC (join HĐ để lấy khoảng ngày)
+                const heldRow = await tx.$queryRaw`
+          SELECT COALESCE(SUM(CT.SO_LUONG),0) AS HELD
+          FROM CT_DAT_TRUOC CT
+          JOIN HOP_DONG_DAT_PHONG H ON H.HDONG_MA = CT.HDONG_MA
+          WHERE CT.LP_MA = ${lp}
+            AND CT.TRANG_THAI IN ('CONFIRMED','ALLOCATED')
+            AND COALESCE(H.HDONG_NGAYTHUCNHAN, H.HDONG_NGAYDAT) < ${toDt}
+            AND COALESCE(H.HDONG_NGAYTHUCTRA,  H.HDONG_NGAYTRA)  > ${fromDt}
+        `;
+                const HELD = Number(heldRow?.[0]?.HELD || 0);
+
+                const AVAI = TOTAL - USED - HELD;
+                if (AVAI < need) throw new Error(`Loại phòng ${lp} không đủ (còn ${AVAI}).`);
+            }
+
+            // 2) TÍNH GIÁ
+            let total = 0;
+            const details = [];
+            for (const it of items) {
+                const lp = Number(it.lp_ma);
+                const qty = Number(it.qty || 0);
+                const unit = await getPriceForDay(tx, lp, fromDt); // HT_MA=1
+                const sub = unit * qty * nights;
+                total += sub;
+                details.push({ LP_MA: lp, QTY: qty, UNIT_PRICE: unit, SUBTOTAL: sub });
+            }
+            const deposit = Math.round(total * tileCoc / 100);
+
+            // 3) TẠO HỢP ĐỒNG (đủ cột NOT NULL)
+            const hopdong = await tx.hOP_DONG_DAT_PHONG.create({
+                data: {
+                    KHACH_HANG: { connect: { KH_MA: Number(kh_ma) } }, // bắt buộc: nested connect
+                    HINH_THUC_THUE: { connect: { HT_MA: 1 } },    // hình thức giá: theo ngày
+                    HDONG_NGAYDAT: checkinUtc,   // 07:00 UTC ~ 14:00 VN
+                    HDONG_NGAYTRA: checkoutUtc,  // 05:00 UTC ~ 12:00 VN
+                    HDONG_TONGTIENDUKIEN: new Prisma.Decimal(total),
+                    HDONG_TILECOCAPDUNG: new Prisma.Decimal(tileCoc),
+                    HDONG_TIENCOCYEUCAU: new Prisma.Decimal(deposit),
+                    HDONG_TRANG_THAI: 'PENDING',
+                },
+                select: { HDONG_MA: true },
+            });
+
+            // 4) TẠO HÓA ĐƠN (đặt cọc)
+            const invoice = await tx.hOA_DON.create({
+                data: {
+                    NV_MA: NV_MA_DEFAULT,
+                    HDON_TONG_TIEN: new Prisma.Decimal(total),
+                    HDON_GIAM_GIA: new Prisma.Decimal(0),
+                    HDON_PHI: new Prisma.Decimal(0),
+                    HDON_COC_DA_TRU: new Prisma.Decimal(0),
+                    HDON_THANH_TIEN: new Prisma.Decimal(deposit),
+                    HDON_CHITIET_JSON: {
+                        type: 'DEPOSIT',
+                        hdong_ma: hopdong.HDONG_MA,
+                        from, to, nights, adults,
+                        deposit_rate: tileCoc,
+                        items: items.map(it => {
+                            const d = details.find(x => x.LP_MA === Number(it.lp_ma));
+                            return {
+                                lp_ma: Number(it.lp_ma),
+                                qty: Number(it.qty),
+                                unit_price: d?.UNIT_PRICE || 0,
+                                subtotal: d?.SUBTOTAL || 0,
+                            };
+                        }),
+                    },
+                },
+            });
+
+            // 5) Link HĐ ↔ Hóa đơn
+            await tx.hOA_DON_HOP_DONG.create({
+                data: { HDON_MA: invoice.HDON_MA, HDONG_MA: hopdong.HDONG_MA },
+            });
+
+            // 6) Tạo bản ghi THANH_TOAN trạng thái INITIATED (để theo dõi)
+            // const pay = await tx.tHANH_TOAN.create({
+            //     data: {
+            //         HDON_MA: invoice.HDON_MA,
+            //         TT_PHUONG_THUC: 'GATEWAY',
+            //         TT_NHA_CUNG_CAP: 'MOCK',
+            //         TT_TRANG_THAI_GIAO_DICH: 'INITIATED',
+            //         TT_SO_TIEN: new Prisma.Decimal(deposit),
+            //     },
+            // });
+
+            return {
+                hdon_ma: Number(invoice.HDON_MA),
+                hdong_ma: Number(hopdong.HDONG_MA),
+                // payment_id: Number(pay.TT_MA),
+                nights,
+                total: Number(total),
+                deposit: Number(deposit),
+            };
+        });
+
+        return res.json(out);
+    } catch (e) {
+        console.error('ERR /public/dat-truoc/prepare:', e);
+        return res.status(500).json({ message: 'Lỗi máy chủ', detail: String(e?.message || e) });
+    }
+});
+
+
+// GET /public/pay/status?txnRef=... | ?hdon_ma=...
+pub.get('/pay/status', async (req, res, next) => {
+    try {
+        const { txnRef, hdon_ma } = req.query;
+        let pay = null;
+
+        if (txnRef) {
+            pay = await prisma.tHANH_TOAN.findFirst({ where: { TT_MA_GIAO_DICH: String(txnRef) } });
+        } else if (hdon_ma) {
+            pay = await prisma.tHANH_TOAN.findFirst({
+                where: { HDON_MA: Number(hdon_ma) },
+                orderBy: { TT_MA: 'desc' },
+            });
+        }
+
+        if (!pay) return res.json({ status: 'NOT_FOUND' });
+
+        return res.json({
+            status: pay.TT_TRANG_THAI_GIAO_DICH, // INITIATED | PAID | FAILED | ...
+            hdon_ma: Number(pay.HDON_MA),
+            txnRef: String(pay.TT_MA_GIAO_DICH || ''),
+            amount: Number(pay.TT_SO_TIEN),
+        });
+    } catch (e) { next(e); }
+});
+
+
+pub.post('/pay/vnpay/create', async (req, res, next) => {
+    try {
+        const { hdon_ma, amount, returnUrl } = req.body;
+        if (!hdon_ma) return res.status(400).json({ message: 'Thiếu HDON_MA' });
+        // Fake gateway cho dev local
+        if (process.env.PAY_GATEWAY === 'fake') {
+            const vnp_TxnRef = 'FAKE_' + Date.now();
+
+            // Tạo bản ghi thanh toán ở trạng thái INITIATED
+            await prisma.tHANH_TOAN.create({
+                data: {
+                    HDON_MA: Number(hdon_ma),
+                    TT_PHUONG_THUC: 'GATEWAY',
+                    TT_NHA_CUNG_CAP: 'FAKE',
+                    TT_TRANG_THAI_GIAO_DICH: 'INITIATED',
+                    TT_SO_TIEN: new Prisma.Decimal(amount),
+                    TT_MA_GIAO_DICH: vnp_TxnRef,
+                    TT_GHI_CHU: 'Cọc FAKE',
+                },
+            });
+
+            const pay_url = `${process.env.APP_URL || 'http://localhost:3000'}`
+                + `/khachhang/pay-mock?hdon_ma=${encodeURIComponent(hdon_ma)}`
+                + `&amount=${encodeURIComponent(amount)}`
+                + `&return=${encodeURIComponent(returnUrl || `${process.env.APP_URL}/khachhang/dat-phong/ket-qua`)}`;
+
+            return res.json({ pay_url });
+        }
+        const vnp_TmnCode = process.env.VNP_TMN_CODE;
+        const vnp_HashSecret = process.env.VNP_HASH_SECRET;
+        const vnp_Url = 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
+        const vnp_ReturnUrl = returnUrl || `${process.env.APP_URL}/khachhang/dat-phong/ket-qua`;
+
+        const vnp_TxnRef = String(Date.now()); // mã giao dịch của bạn
+        const now = new Date();
+        const ymdHMS = now.toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+
+        let params = {
+            vnp_Version: '2.1.0',
+            vnp_Command: 'pay',
+            vnp_TmnCode,
+            vnp_Locale: 'vn',
+            vnp_CurrCode: 'VND',
+            vnp_TxnRef,
+            vnp_OrderInfo: `Coc hoa don ${hdon_ma}`,
+            vnp_OrderType: 'other',
+            vnp_Amount: Number(amount) * 100, // VNPay nhân 100
+            vnp_ReturnUrl,
+            vnp_IpAddr: (req.headers['x-forwarded-for'] || req.ip || '').toString().replace('::ffff:', '') || '127.0.0.1',
+            vnp_CreateDate: ymdHMS,
+        };
+
+        // ký HMAC
+        params = Object.keys(params).sort().reduce((o, k) => (o[k] = params[k], o), {});
+        const signData = qs.stringify(params, { encode: false });
+        if (!VNP_TMN_CODE || !VNP_HASH_SECRET) {
+            return res.status(500).json({ message: 'Thiếu VNP_TMN_CODE hoặc VNP_HASH_SECRET (chưa nạp .env?)' });
+        }
+        params.vnp_SecureHash = crypto.createHmac('sha512', vnp_HashSecret).update(signData).digest('hex');
+
+        const pay_url = vnp_Url + '?' + qs.stringify(params, { encode: false });
+
+        // === GHI NHẬN GIAO DỊCH THEO SCHEMA CỦA BẠN ===
+        // Lưu ý: enum của bạn cần có các giá trị phù hợp, ví dụ:
+        // PHUONGTHUC_TT: ONLINE (hoặc VNPAY)
+        // TRANGTHAI_TT : INITIATED | PENDING | PAID | FAILED | CANCELED (ít nhất có INITIATED/PAID/FAILED)
+        await prisma.tHANH_TOAN.create({
+            data: {
+                HDON_MA: Number(hdon_ma),
+                TT_PHUONG_THUC: 'GATEWAY',      // hoặc 'VNPAY' nếu enum có
+                TT_NHA_CUNG_CAP: 'VNPAY',
+                TT_TRANG_THAI_GIAO_DICH: 'INITIATED',
+                TT_SO_TIEN: new Prisma.Decimal(amount),
+                TT_MA_GIAO_DICH: vnp_TxnRef,   // map vào cột này
+                TT_GHI_CHU: 'Cọc VNPay',
+            },
+        });
+
+        // Trả về URL để FE redirect – không trả object Prisma (tránh lỗi serialize Decimal/BigInt)
+        res.json({ pay_url });
+    } catch (e) { next(e); }
+});
+
+// POST /public/pay/mock/confirm  { hdon_ma:number, success:boolean }
+pub.post('/pay/mock/confirm', async (req, res, next) => {
+    try {
+        const { hdon_ma, success, email } = req.body || {};
+        if (!hdon_ma) return res.status(400).json({ message: 'missing hdon_ma' });
+
+        const last = await prisma.tHANH_TOAN.findFirst({
+            where: { HDON_MA: Number(hdon_ma) },
+            orderBy: { TT_MA: 'desc' },
+        });
+        if (!last) return res.status(404).json({ message: 'payment not found' });
+
+        await prisma.tHANH_TOAN.update({
+            where: { TT_MA: last.TT_MA },
+            data: { TT_TRANG_THAI_GIAO_DICH: success ? 'SUCCEEDED' : 'FAILED' },
+        });
+        if (success) {
+            const link = await prisma.hOA_DON_HOP_DONG.findFirst({
+                where: { HDON_MA: Number(hdon_ma) }
+            });
+
+            // Lấy items từ hóa đơn để tạo CT_DAT_TRUOC
+            const inv = await prisma.hOA_DON.findUnique({
+                where: { HDON_MA: Number(hdon_ma) },
+                select: { HDON_CHITIET_JSON: true }
+            });
+            const meta = inv?.HDON_CHITIET_JSON || {};
+            console.log("DEBUG meta.items =", meta?.items);
+
+            const nights = Number(meta?.nights || 1);
+            const items = Array.isArray(meta?.items) ? meta.items : [];
+            // 🔍 Bổ sung tên loại phòng từ DB
+            const lpIds = items.map(it => Number(it.lp_ma)).filter(Boolean);
+
+            let lpMap = {};
+            if (lpIds.length > 0) {
+                const loaiPhongs = await prisma.lOAI_PHONG.findMany({
+                    where: { LP_MA: { in: lpIds } },
+                    select: { LP_MA: true, LP_TEN: true },
+                });
+                lpMap = Object.fromEntries(loaiPhongs.map(lp => [lp.LP_MA, lp.LP_TEN]));
+            }
+
+            // Gắn thêm tên loại phòng vào từng item
+            for (const it of items) {
+                it.LP_TEN = lpMap[it.lp_ma] || "Không rõ";
+            }
+
+            const total = items.reduce((sum, it) => sum + (it.unit_price || 0) * (it.qty || 0) * nights, 0);
+            
+            if (link && items.length) {
+                // Tạo CT_DAT_TRUOC cho từng loại đã đặt
+                for (const it of items) {
+                    const lp = Number(it.lp_ma);
+                    const qty = Number(it.qty || 0);
+                    const unit = Number(it.unit_price || 0);
+                    await prisma.cT_DAT_TRUOC.create({
+                        data: {
+                            HDONG_MA: link.HDONG_MA,
+                            LP_MA: lp,
+                            SO_LUONG: qty,
+                            DON_GIA: unit,
+                            TONG_TIEN: unit * qty * nights,
+                            TRANG_THAI: 'CONFIRMED', // hoặc 'ALLOCATED' tùy quy ước
+                        },
+                    });
+                }
+
+                // Cập nhật HĐ & HĐơn
+                await prisma.hOP_DONG_DAT_PHONG.update({
+                    where: { HDONG_MA: link.HDONG_MA },
+                    data: { HDONG_TRANG_THAI: 'CONFIRMED' }, // đổi theo enum của bạn
+                });
+                await prisma.hOA_DON.update({
+                    where: { HDON_MA: Number(hdon_ma) },
+                    data: { HDON_COC_DA_TRU: last.TT_SO_TIEN }, // cộng tiền cọc vào hóa đơn
+                });
+            }
+            
+
+            // === GỬI EMAIL XÁC NHẬN ===
+            if (email) {
+                const booking = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+                    where: { HDONG_MA: link?.HDONG_MA },
+                    include: { KHACH_HANG: true },
+                });
+
+                // ✅ Helper định dạng tiền
+                const fmtVND = (n) => {
+                    try {
+                        return (n ?? 0).toLocaleString("vi-VN", {
+                            style: "currency",
+                            currency: "VND",
+                        });
+                    } catch {
+                        return `${n} ₫`;
+                    }
+                };
+
+                const transporter = nodemailer.createTransport({
+                    service: "gmail",
+                    auth: {
+                        user: process.env.MAIL_USER,
+                        pass: process.env.MAIL_PASS,
+                    },
+                });
+
+                const name = booking?.KHACH_HANG?.KH_HOTEN || "Quý khách";
+                const roomName = meta?.items?.map(it => it.LP_TEN).join(", ") || "Không rõ";
+                const from = booking?.HDONG_NGAYDAT
+                    ? new Date(booking.HDONG_NGAYDAT).toLocaleDateString("vi-VN")
+                    : "—";
+                const to = booking?.HDONG_NGAYTRA
+                    ? new Date(booking.HDONG_NGAYTRA).toLocaleDateString("vi-VN")
+                    : "—";
+                const nights = meta?.nights || 1;
+                const deposit = last.TT_SO_TIEN || 0;
+                //const total = meta?.total || deposit;
+                const sdt = booking?.KHACH_HANG?.KH_SDT || "-";
+
+                const html = `
+<div style="font-family:'Segoe UI',Roboto,sans-serif;background:#f8f8f8;padding:24px;">
+  <div style="max-width:720px;margin:auto;background:#fff;border-radius:10px;overflow:hidden;
+              box-shadow:0 2px 8px rgba(0,0,0,0.1);padding:30px;">
+              
+    <div style="text-align:center;margin-bottom:12px;">
+  <h2 style="margin:4px 0 2px 0;color:#004b91;font-size:22px;">Khách sạn Wendy</h2>
+  <h3 style="margin:0;color:#222;font-weight:700;letter-spacing:0.5px;">PHIẾU ĐẶT PHÒNG</h3>
+  <p style="margin:0;font-size:12px;color:#666;">ĐC: 123 Đường 3/2, TP. Cần Thơ — SĐT: 0123456789</p>
+</div>
+
+    <hr style="border:none;border-top:1px solid #ddd;margin:20px 0;">
+    
+<!-- Thông tin khách + ngày -->
+<table style="width:100%;font-size:14px;margin-top:10px;border-collapse:collapse;">
+  <tr>
+    <!-- Cột trái -->
+    <td style="vertical-align:top;padding:4px 0;">
+      <p style="margin:4px 0;"><b>Khách hàng:</b> ${name}</p>
+      <p style="margin:4px 0;"><b>SĐT:</b> ${sdt}</p>
+    </td>
+
+    <!-- Cột phải -->
+    <td style="vertical-align:top;text-align:right;padding:4px 0;">
+      <p style="margin:4px 0;"><b>Ngày nhận:</b> ${from}</p>
+      <p style="margin:4px 0;"><b>Ngày trả:</b> ${to}</p>
+    </td>
+  </tr>
+</table>
+
+
+
+    <table style="width:100%;border-collapse:collapse;margin-top:20px;font-size:14px;">
+      <thead>
+        <tr style="background:#f0f0f0;">
+          <th style="border:1px solid #ccc;padding:8px;text-align:left;">Nội dung</th>
+          <th style="border:1px solid #ccc;padding:8px;text-align:center;">Số đêm</th>
+          <th style="border:1px solid #ccc;padding:8px;text-align:right;">Đơn giá</th>
+          <th style="border:1px solid #ccc;padding:8px;text-align:right;">Thành tiền</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map(it => `
+        <tr>
+          <td style="border:1px solid #ddd;padding:8px;">${it.name || it.LP_TEN || "Không rõ"}</td>
+          <td style="border:1px solid #ddd;padding:8px;text-align:center;">${nights}</td>
+          <td style="border:1px solid #ddd;padding:8px;text-align:right;">${fmtVND(it.unit_price)}</td>
+          <td style="border:1px solid #ddd;padding:8px;text-align:right;">${fmtVND((it.unit_price || 0) * (it.qty || 1) * nights)}</td>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+
+    <table style="width:100%;margin-top:20px;font-size:14px;">
+      <tr>
+        <td style="padding:6px 0;">Tiền cọc:</td>
+        <td style="padding:6px 0;text-align:right;"><b style="color:#b3834c;">${fmtVND(Number(deposit))}</b></td>
+      </tr>
+      <tr>
+        <td style="padding:6px 0;">Tổng tiền dự kiến:</td>
+        <td style="padding:6px 0;text-align:right;"><b>${fmtVND(total)}</b></td>
+      </tr>
+    </table>
+
+    <p style="margin-top:24px;font-size:13px;color:#555;">
+      Nếu có thắc mắc, vui lòng liên hệ 
+      <a href="mailto:wendyhotel.booking@gmail.com" style="color:#b3834c;text-decoration:none;">
+        wendyhotel.booking@gmail.com
+      </a>.
+    </p>
+
+    <p style="margin-top:24px;font-size:13px;color:#555;">
+      Chúng tôi mong sớm được chào đón bạn tại Wendy Hotel!<br>
+      — Đội ngũ hỗ trợ khách hàng Wendy Hotel
+    </p>
+
+    <hr style="border:none;border-top:1px solid #ddd;margin:24px 0;">
+    <div style="text-align:center;font-size:12px;color:#888;">
+      © 2025 Wendy Hotel — 123 Nguyễn Trãi, Cần Thơ<br>Hotline: 0123 456 789
+    </div>
+  </div>
+</div>
+`;
+
+
+
+                await transporter.sendMail({
+                    from: `"Wendy Hotel" <${process.env.MAIL_USER}>`,
+                    to: email,
+                    subject: "Xác nhận đặt phòng – Thanh toán cọc thành công",
+                    html,
+                });
+
+                console.log(`✅ Đã gửi email xác nhận đến ${email}`);
+            }
+        }
+
+        // TODO (tuỳ bạn): cập nhật HOP_DONG_DAT_PHONG/CT_DAT_TRUOC/HOA_DON cho khớp trạng thái
+        return res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
+
+
+// GET /public/loai-phong?take=6&skip=0
+pub.get('/loai-phong', async (req, res, next) => {
+    try {
+        const take = Math.max(1, Math.min(50, Number(req.query.take) || 6));
+        const skip = Math.max(0, Number(req.query.skip) || 0);
+
+        const grouped = await prisma.pHONG.groupBy({
+            by: ['LP_MA'],
+            _count: { _all: true },
+        });
+        const countMap = Object.fromEntries(grouped.map(g => [g.LP_MA, g._count._all]));
+
+        const rows = await prisma.lOAI_PHONG.findMany({
+            where: { LP_TRANGTHAI: 'DANG_KINH_DOANH' },
+            select: {
+                LP_MA: true, LP_TEN: true, LP_SONGUOI: true, LP_TRANGTHAI: true,
+                images: {
+                    select: { URL: true, IS_MAIN: true, ORD: true },
+                    orderBy: [{ IS_MAIN: 'desc' }, { ORD: 'asc' }, { URL: 'asc' }],
+                    take: 1,
+                },
+            },
+            orderBy: { LP_MA: 'asc' },
+            take, skip,
+        });
+
+        res.json({
+            items: rows.map(r => ({
+                LP_MA: r.LP_MA,
+                LP_TEN: r.LP_TEN,
+                LP_SONGUOI: r.LP_SONGUOI,
+                LP_TRANGTHAI: r.LP_TRANGTHAI,
+                ROOM_COUNT: countMap[r.LP_MA] ?? 0,
+                IMG_URL: r.images?.[0]?.URL || null,
+            })),
+        });
+    } catch (e) { next(e); }
+});
+
+// GET /public/loai-phong-trong?from=YYYY-MM-DD&to=YYYY-MM-DD&adults=1&take=50&skip=0
+// pub.get('/loai-phong-trong', async (req, res, next) => {
+//     try {
+//         const from = String(req.query.from || '').slice(0, 10);
+//         const to = String(req.query.to || '').slice(0, 10);
+//         const adults = Math.max(1, Number(req.query.adults || 1));
+//         const take = Math.max(1, Math.min(50, Number(req.query.take) || 50));
+//         const skip = Math.max(0, Number(req.query.skip) || 0);
+
+//         if (!from || !to) return res.status(400).json({ message: 'from/to required (YYYY-MM-DD)' });
+
+//         const rows = await prisma.$queryRawUnsafe(`
+//   WITH
+//   total_per_type AS (
+//     SELECT LP.LP_MA, LP.LP_TEN, LP.LP_SONGUOI, LP.LP_TRANGTHAI,
+//            COUNT(P.PHONG_MA) AS TOTAL_ROOMS
+//     FROM LOAI_PHONG LP
+//     JOIN PHONG P ON P.LP_MA = LP.LP_MA
+//     WHERE LP.LP_TRANGTHAI = 'DANG_KINH_DOANH'
+//       AND LP.LP_SONGUOI >= ?
+//     GROUP BY LP.LP_MA, LP.LP_TEN, LP.LP_SONGUOI, LP.LP_TRANGTHAI
+//   ),
+//   occupied_by_range AS (
+//     SELECT DISTINCT P.PHONG_MA, P.LP_MA
+//     FROM CHI_TIET_SU_DUNG CTSD
+//     JOIN HOP_DONG_DAT_PHONG H ON H.HDONG_MA = CTSD.HDONG_MA
+//     JOIN PHONG P ON P.PHONG_MA = CTSD.PHONG_MA
+//     WHERE H.HDONG_TRANG_THAI NOT IN ('CANCELLED','NO_SHOW')
+//       AND COALESCE(H.HDONG_NGAYTHUCNHAN, H.HDONG_NGAYDAT) < ?
+//       AND COALESCE(H.HDONG_NGAYTHUCTRA,  H.HDONG_NGAYTRA)  > ?
+//   ),
+//   cover_image AS (
+//     SELECT i.LP_MA,
+//            (SELECT ii.URL FROM LOAI_PHONG_IMAGE ii
+//              WHERE ii.LP_MA = i.LP_MA
+//              ORDER BY ii.IS_MAIN DESC, ii.ORD ASC, ii.IMG_ID ASC
+//              LIMIT 1) AS IMG_URL
+//     FROM LOAI_PHONG_IMAGE i
+//     GROUP BY i.LP_MA
+//   ),
+//   /* GIÁ SPECIAL (HT_MA=1) nếu ngày 'from' nằm trong khoảng */
+//   price_special AS (
+//     SELECT g.LP_MA, MIN(g.DG_DONGIA) AS PRICE
+//     FROM DON_GIA g
+//     JOIN THOI_DIEM t ON t.TD_MA = g.TD_MA
+//     JOIN THOI_DIEM_SPECIAL s ON s.TD_MA = t.TD_MA
+//     WHERE g.HT_MA = 1
+//       AND s.TD_NGAY_BAT_DAU <= ?
+//       AND s.TD_NGAY_KET_THUC >= ?
+//     GROUP BY g.LP_MA
+//   ),
+//   /* GIÁ BASE mặc định (HT_MA=1) nếu không có SPECIAL */
+//   price_base AS (
+//     SELECT g.LP_MA, MIN(g.DG_DONGIA) AS PRICE
+//     FROM DON_GIA g
+//     JOIN THOI_DIEM t ON t.TD_MA = g.TD_MA
+//     JOIN THOI_DIEM_BASE b ON b.TD_MA = t.TD_MA
+//     WHERE g.HT_MA = 1
+//     GROUP BY g.LP_MA
+//   )
+//   SELECT
+//     t.LP_MA, t.LP_TEN, t.LP_SONGUOI, t.LP_TRANGTHAI,
+//     CAST(t.TOTAL_ROOMS - COALESCE(b.BOOKED_CNT, 0) AS UNSIGNED) AS ROOM_COUNT,
+//     c.IMG_URL,
+//     COALESCE(ps.PRICE, pb.PRICE) AS PRICE
+//   FROM total_per_type t
+//   LEFT JOIN (
+//     SELECT LP_MA, COUNT(*) AS BOOKED_CNT
+//     FROM occupied_by_range
+//     GROUP BY LP_MA
+//   ) b ON b.LP_MA = t.LP_MA
+//   LEFT JOIN cover_image  c ON c.LP_MA  = t.LP_MA
+//   LEFT JOIN price_special ps ON ps.LP_MA = t.LP_MA
+//   LEFT JOIN price_base   pb ON pb.LP_MA = t.LP_MA
+//   WHERE (t.TOTAL_ROOMS - COALESCE(b.BOOKED_CNT, 0)) > 0
+//   ORDER BY t.LP_MA
+//   LIMIT ? OFFSET ?;
+// `,
+//             Number(adults),
+//             `${to} 00:00:00`, `${from} 00:00:00`,
+//             `${from} 00:00:00`, `${from} 00:00:00`,
+//             Number(take), Number(skip)
+//         );
+
+
+
+//         // BigInt -> Number để trả JSON an toàn
+//         const items = rows.map(r =>
+//             Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? Number(v) : v]))
+//         );
+//         res.json({ items });
+//     } catch (e) {
+//         console.error('ERR /public/loai-phong-trong:', e);
+//         res.status(500).json({ message: 'Lỗi máy chủ', detail: String(e?.message || e) });
+//     }
+// });
+
+// GET /public/loai-phong-trong?from=YYYY-MM-DD&to=YYYY-MM-DD&adults=1&take=50&skip=0
+pub.get('/loai-phong-trong', async (req, res, next) => {
+    try {
+        const from = String(req.query.from || '').slice(0, 10);
+        const to = String(req.query.to || '').slice(0, 10);
+        const includeEmpty = String(req.query.includeEmpty || '').toLowerCase() === 'true';
+        const adults = Math.max(1, Number(req.query.adults || 1));
+        const take = Math.max(1, Math.min(50, Number(req.query.take) || 50));
+        const skip = Math.max(0, Number(req.query.skip) || 0);
+        if (!from || !to) return res.status(400).json({ message: 'from/to required (YYYY-MM-DD)' });
+
+        const fromDt = `${from} 14:00:00`;
+        const toDt = `${to} 12:00:00`;
+        const whereClause = includeEmpty
+            ? ''
+            : 'WHERE (t.TOTAL_ROOMS - COALESCE(b.BOOKED_CNT, 0) - COALESCE(h.HELD, 0)) > 0';
+
+        const rows = await prisma.$queryRawUnsafe(`
+      WITH
+      total_per_type AS (
+        SELECT LP.LP_MA, LP.LP_TEN, LP.LP_SONGUOI, LP.LP_TRANGTHAI,
+               COUNT(P.PHONG_MA) AS TOTAL_ROOMS
+        FROM LOAI_PHONG LP
+        JOIN PHONG P ON P.LP_MA = LP.LP_MA
+        WHERE LP.LP_TRANGTHAI = 'DANG_KINH_DOANH'
+          AND LP.LP_SONGUOI >= ${adults}
+        GROUP BY LP.LP_MA, LP.LP_TEN, LP.LP_SONGUOI, LP.LP_TRANGTHAI
+      ),
+      occupied_by_range AS (
+        SELECT DISTINCT P.PHONG_MA, P.LP_MA
+        FROM CHI_TIET_SU_DUNG CTSD
+        JOIN HOP_DONG_DAT_PHONG H ON H.HDONG_MA = CTSD.HDONG_MA
+        JOIN PHONG P ON P.PHONG_MA = CTSD.PHONG_MA
+        WHERE H.HDONG_TRANG_THAI NOT IN ('CANCELLED','NO_SHOW')
+          AND COALESCE(H.HDONG_NGAYTHUCNHAN, H.HDONG_NGAYDAT) < '${toDt}'
+          AND COALESCE(H.HDONG_NGAYTHUCTRA,  H.HDONG_NGAYTRA)  > '${fromDt}'
+      ),
+      held_qty AS (
+        SELECT CT.LP_MA, COALESCE(SUM(CT.SO_LUONG),0) AS HELD
+        FROM CT_DAT_TRUOC CT
+        JOIN HOP_DONG_DAT_PHONG H ON H.HDONG_MA = CT.HDONG_MA
+        WHERE CT.TRANG_THAI IN ('CONFIRMED','ALLOCATED')
+          AND COALESCE(H.HDONG_NGAYTHUCNHAN, H.HDONG_NGAYDAT) < '${toDt}'
+          AND COALESCE(H.HDONG_NGAYTHUCTRA,  H.HDONG_NGAYTRA)  > '${fromDt}'
+        GROUP BY CT.LP_MA
+      ),
+      cover_image AS (
+        SELECT i.LP_MA,
+               (SELECT ii.URL FROM LOAI_PHONG_IMAGE ii
+                 WHERE ii.LP_MA = i.LP_MA
+                 ORDER BY ii.IS_MAIN DESC, ii.ORD ASC, ii.IMG_ID ASC
+                 LIMIT 1) AS IMG_URL
+        FROM LOAI_PHONG_IMAGE i
+        GROUP BY i.LP_MA
+      ),
+      all_images AS (
+  SELECT 
+    LP_MA,
+    CONCAT('[', GROUP_CONCAT(
+      JSON_OBJECT('URL', URL)
+      ORDER BY IS_MAIN DESC, ORD ASC SEPARATOR ','
+    ), ']') AS IMAGE_LIST
+  FROM LOAI_PHONG_IMAGE
+  GROUP BY LP_MA
+),
+      price_special AS (
+        SELECT g.LP_MA, MIN(g.DG_DONGIA) AS PRICE
+        FROM DON_GIA g
+        JOIN THOI_DIEM t ON t.TD_MA = g.TD_MA
+        JOIN THOI_DIEM_SPECIAL s ON s.TD_MA = t.TD_MA
+        WHERE g.HT_MA = 1
+          AND s.TD_NGAY_BAT_DAU <= '${fromDt}'
+          AND s.TD_NGAY_KET_THUC >= '${fromDt}'
+        GROUP BY g.LP_MA
+      ),
+      price_base AS (
+        SELECT g.LP_MA, MIN(g.DG_DONGIA) AS PRICE
+        FROM DON_GIA g
+        JOIN THOI_DIEM t ON t.TD_MA = g.TD_MA
+        JOIN THOI_DIEM_BASE b ON b.TD_MA = t.TD_MA
+        WHERE g.HT_MA = 1
+        GROUP BY g.LP_MA
+      )
+      SELECT
+        t.LP_MA, t.LP_TEN, t.LP_SONGUOI, t.LP_TRANGTHAI,
+        CAST(t.TOTAL_ROOMS - COALESCE(b.BOOKED_CNT, 0) - COALESCE(h.HELD, 0) AS UNSIGNED) AS ROOM_COUNT,
+        c.IMG_URL,ai.IMAGE_LIST,
+        COALESCE(ps.PRICE, pb.PRICE) AS PRICE
+      FROM total_per_type t
+      LEFT JOIN (
+        SELECT LP_MA, COUNT(*) AS BOOKED_CNT
+        FROM occupied_by_range
+        GROUP BY LP_MA
+      ) b ON b.LP_MA = t.LP_MA
+      LEFT JOIN held_qty    h ON h.LP_MA = t.LP_MA
+      LEFT JOIN cover_image c ON c.LP_MA = t.LP_MA
+      LEFT JOIN price_special ps ON ps.LP_MA = t.LP_MA
+      LEFT JOIN price_base   pb ON pb.LP_MA = t.LP_MA
+      LEFT JOIN all_images ai ON ai.LP_MA = t.LP_MA
+      ${whereClause}
+ORDER BY t.LP_MA
+
+      LIMIT ${take} OFFSET ${skip};
+    `);
+
+        // BigInt -> Number để trả JSON an toàn
+        const items = rows.map(r =>
+            Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? Number(v) : v]))
+        );
+        for (const r of items) {
+            if (typeof r.IMAGE_LIST === 'string') {
+                try {
+                    r.LOAI_PHONG_IMAGE = JSON.parse(r.IMAGE_LIST).map(url => ({ URL: url }));
+                } catch {
+                    r.LOAI_PHONG_IMAGE = [];
+                }
+            } else {
+                r.LOAI_PHONG_IMAGE = [];
+            }
+            delete r.IMAGE_LIST;
+        }
+        res.json({ items });
+    } catch (e) {
+        console.error('ERR /public/loai-phong-trong:', e);
+        res.status(500).json({ message: 'Lỗi máy chủ', detail: String(e?.message || e) });
+    }
+});
+
+
+// GET /public/loai-phong/:id/images
+pub.get('/loai-phong/:id/images', async (req, res, next) => {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id)) return res.status(400).json({ message: 'ID không hợp lệ' });
+        const imgs = await prisma.lOAI_PHONG_IMAGE.findMany({
+            where: { LP_MA: id },
+            select: { IMG_ID: true, URL: true, IS_MAIN: true, ORD: true },
+            orderBy: [{ IS_MAIN: 'desc' }, { ORD: 'asc' }, { IMG_ID: 'asc' }],
+        });
+        res.json(imgs);
+    } catch (e) { next(e); }
+});
+
+
+// GET /public/khachhang/my-bookings?kh_ma=...
+// (Trong môi trường thật, lấy KH_MA từ token đăng nhập: req.guest?.KH_MA)
+pub.get('/khachhang/my-bookings', async (req, res, next) => {
+    try {
+        const kh_ma = Number(req.guest?.KH_MA || req.query.kh_ma);
+        if (!kh_ma) return res.status(401).json({ message: 'Chưa đăng nhập' });
+
+        // 1) Lấy hợp đồng của KH
+        const hops = await prisma.hOP_DONG_DAT_PHONG.findMany({
+            where: { KH_MA: kh_ma },
+            orderBy: { HDONG_TAO_LUC: 'desc' },
+            select: {
+                HDONG_MA: true,
+                HDONG_TRANG_THAI: true,
+                HDONG_NGAYDAT: true,
+                HDONG_NGAYTRA: true,
+                HDONG_TIENCOCYEUCAU: true,
+                HDONG_TONGTIENDUKIEN: true,
+                HDONG_TAO_LUC: true,
+            },
+        });
+
+        const ids = hops.map(h => h.HDONG_MA);
+
+        // 2) Lấy các dòng CT_DAT_TRUOC (khách đặt theo loại phòng)
+        let ct = [];
+        if (ids.length) {
+            ct = await prisma.cT_DAT_TRUOC.findMany({
+                where: { HDONG_MA: { in: ids } },
+                select: {
+                    CTDP_ID: true, HDONG_MA: true,
+                    SO_LUONG: true, DON_GIA: true, TONG_TIEN: true, TRANG_THAI: true,
+                    LOAI_PHONG: { select: { LP_MA: true, LP_TEN: true } },
+                },
+            });
+        }
+        const ctMap = new Map();
+        for (const row of ct) {
+            if (!ctMap.has(row.HDONG_MA)) ctMap.set(row.HDONG_MA, []);
+            ctMap.get(row.HDONG_MA).push(row);
+        }
+
+        // 3) Lấy hóa đơn "DEPOSIT" gắn với HĐ (chọn hóa đơn mới nhất, ưu tiên hóa đơn chưa PAID)
+        let depRows = [];
+        if (ids.length) {
+            const idList = ids.join(',');
+            const q = `
+        SELECT hh.HDONG_MA, h.HDON_MA, h.HDON_TRANG_THAI, h.HDON_THANH_TIEN
+        FROM HOA_DON_HOP_DONG hh
+        JOIN HOA_DON h ON h.HDON_MA = hh.HDON_MA
+        WHERE hh.HDONG_MA IN (${idList})
+          AND JSON_UNQUOTE(JSON_EXTRACT(h.HDON_CHITIET_JSON,'$.type')) = 'DEPOSIT'
+        ORDER BY h.HDON_MA DESC
+      `;
+            depRows = await prisma.$queryRawUnsafe(q);
+        }
+        const depMap = new Map(); // map HDONG_MA -> deposit invoice row
+        for (const r of depRows) {
+            const k = Number(r.HDONG_MA);
+            // Lấy cái đầu tiên chưa PAID; nếu không có thì giữ cái mới nhất
+            if (!depMap.has(k)) depMap.set(k, r);
+            const cur = depMap.get(k);
+            if (cur.HDON_TRANG_THAI === 'PAID' && r.HDON_TRANG_THAI !== 'PAID') {
+                depMap.set(k, r);
+            }
+        }
+
+        res.json({
+            items: hops.map(h => ({
+                ...h,
+                CT: ctMap.get(h.HDONG_MA) || [],
+                DEPOSIT_INVOICE: depMap.get(h.HDONG_MA) || null,
+            })),
+        });
+    } catch (e) { next(e); }
+});
+
+// GET /public/hoa-don/:id
+pub.get('/hoa-don/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const inv = await prisma.hOA_DON.findUnique({
+            where: { HDON_MA: id },
+            include: {
+                LIEN_KET: {
+                    include: {
+                        HOP_DONG_DAT_PHONG: {
+                            include: {
+                                KHACH_HANG: true,
+                                CT_DAT_TRUOC: { include: { LOAI_PHONG: true } },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        if (!inv) return res.status(404).json({ message: 'Không tìm thấy hóa đơn' });
+        const hd = inv.LIEN_KET?.[0]?.HOP_DONG_DAT_PHONG;
+        res.json({
+            ...inv,
+            HOP_DONG_DAT_PHONG: hd || null,
+        });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ message: 'Lỗi máy chủ', detail: String(e) });
+    }
+});
+
+
+module.exports = pub;
