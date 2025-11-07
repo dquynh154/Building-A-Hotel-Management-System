@@ -260,7 +260,9 @@ export default function Home() {
                             <div className="shrink-0 p-4 md:pl-6 md:pr-5">
                                 <button
                                     onClick={onFind}
-                                    className="h-12 min-w-[180px] rounded-md bg-blue-500 px-6 text-sm font-semibold text-white hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-rose-300"
+                                    // className="h-12 min-w-[180px] rounded-md bg-blue-500 px-6 text-sm font-semibold text-white hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-rose-300"
+                                    className="inline-flex items-center rounded-md bg-[#B3834C] px-6 py-3 font-semibold text-white hover:bg-[#9c6f3e] focus:outline-none focus:ring-4 focus:ring-amber-300"
+
                                 >
                                     TÌM PHÒNG
                                 </button>
@@ -399,7 +401,6 @@ export default function Home() {
                     </div>
                 </div>
             </section>
-
 
 
             {/* Footer khớp vibe ảnh mẫu (giản lược) */}

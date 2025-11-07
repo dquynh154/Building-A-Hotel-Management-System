@@ -29,7 +29,7 @@ module.exports = (err, req, res, next) => {
         }
 
         if (fields.includes('KH_TAIKHOAN')) {
-            return res.status(409).json({ message: 'Tài khoản này không có sẳn.' });
+            return res.status(409).json({ message: 'Tài khoản này đã tồn tại.' });
         }
         if (fields.includes('KH_SDT')) {
             return res.status(409).json({ message: 'Số điện thoại này đã có người sử dụng.' });
@@ -42,7 +42,7 @@ module.exports = (err, req, res, next) => {
         }
 
         if (fields.includes('NV_TAIKHOAN')) {
-            return res.status(409).json({ message: 'Tài khoản này không có sẳn.' });
+            return res.status(409).json({ message: 'Tài khoản này đã tồn tại.' });
         }
         if (fields.includes('NV_SDT')) {
             return res.status(409).json({ message: 'Số điện thoại này đã có người sử dụng.' });

@@ -18,7 +18,22 @@ export function useGuest() {
         } finally { setLoading(false); }
     }, []);
 
-    useEffect(() => { refresh(); }, [refresh]);
+    useEffect(() => {
+        refresh();
+
+        // 👇 lắng nghe sự kiện khi đăng nhập hoặc đăng xuất
+        const handleLogin = () => refresh();
+        const handleLogout = () => refresh();
+
+        window.addEventListener("guest-login", handleLogin);
+        window.addEventListener("guest-logout", handleLogout);
+
+        return () => {
+            window.removeEventListener("guest-login", handleLogin);
+            window.removeEventListener("guest-logout", handleLogout);
+        };
+    }, [refresh]);
+
 
     return { guest, loading, refresh, logout: () => { clearToken(); setGuest(null); } };
 }

@@ -86,7 +86,7 @@ exports.me = async (req, res, next) => {
 
         const nv = await prisma.nHAN_VIEN.findUnique({
             where: { NV_MA },
-            select: { NV_MA: true, NV_HOTEN: true, NV_CHUCVU: true }, // không trả info nhạy cảm
+            select: { NV_MA: true, NV_HOTEN: true, NV_CHUCVU: true, NV_SDT: true, NV_GIOITINH:true, NV_NGAYSINH: true, NV_EMAIL:true }, // không trả info nhạy cảm
         });
 
         if (!nv) return unauth(res);

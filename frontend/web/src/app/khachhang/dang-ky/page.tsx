@@ -20,21 +20,39 @@ export default function SignUpForm() {
     const [username, setUsername] = useState(""); // KH_TAIKHOAN
     const [email, setEmail] = useState("");       // KH_EMAIL (optional)
     const [password, setPassword] = useState("");
-    const [err, setErr] = useState("");
+    const [errors, setErrors] = useState({
+        fname: "",
+        lname: "",
+        phone: "",
+        username: "",
+        password: "",
+        isChecked: "",
+    });
+
     const [loading, setLoading] = useState(false);
 
     const onSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setErr("");
-        if (!isChecked) { setErr("Vui lòng đồng ý Điều khoản & Chính sách."); return; }
-        if (!username || !password) { setErr("Tên đăng nhập và mật khẩu là bắt buộc."); return; }
+
+        const newErrors: any = {};
+        if (!fname.trim()) newErrors.fname = "Vui lòng nhập tên";
+        if (!lname.trim()) newErrors.lname = "Vui lòng nhập họ";
+        if (!phone.trim()) newErrors.phone = "Vui lòng nhập số điện thoại";
+        if (!username.trim()) newErrors.username = "Vui lòng nhập tên đăng nhập";
+        if (!password.trim()) newErrors.password = "Vui lòng nhập mật khẩu";
+        if (!isChecked) newErrors.isChecked = "Vui lòng đồng ý Điều khoản & Chính sách";
+
+        setErrors(newErrors);
+
+        // nếu có ít nhất 1 lỗi thì dừng lại
+        if (Object.keys(newErrors).length > 0) return;
 
         setLoading(true);
         try {
             const payload = {
-                KH_HOTEN: `${fname} ${lname}`.trim() || null,
-                KH_SDT: phone || null,          
-                KH_EMAIL: email || null,  // optional
+                KH_HOTEN: `${fname} ${lname}`.trim(),
+                KH_SDT: phone || null,
+                KH_EMAIL: email || null,
                 KH_TAIKHOAN: username,
                 KH_MATKHAU: password,
             };
@@ -45,11 +63,21 @@ export default function SignUpForm() {
             setToken(data.token);
             router.replace("/khachhang");
         } catch (e: any) {
-            setErr(e?.message || "Đăng ký thất bại");
-        } finally {
+            const msg = e?.message || "Đăng ký thất bại";
+            const newErrs: any = {};
+
+            if (msg.includes("Tài khoản")) newErrs.username = msg;
+            else if (msg.includes("Số điện thoại")) newErrs.phone = msg;
+            else if (msg.includes("Email")) newErrs.email = msg;
+            else newErrs.username = msg; // fallback
+
+            setErrors(prev => ({ ...prev, ...newErrs }));
+        }
+        finally {
             setLoading(false);
         }
     };
+
 
     return (
         <div className="flex flex-col flex-1 lg:w-1/2 w-full overflow-y-auto no-scrollbar">
@@ -103,16 +131,19 @@ export default function SignUpForm() {
                                 <div className="sm:col-span-1">
                                     <Label>Tên<span className="text-error-500">*</span></Label>
                                     <Input type="text" placeholder="Nhập tên của bạn" value={fname} onChange={(e) => setFname(e.target.value)} />
+                                    {errors.fname && <p className="text-sm text-red-500 mt-1">{errors.fname}</p>}
                                 </div>
                                 <div className="sm:col-span-1">
                                     <Label>Họ<span className="text-error-500">*</span></Label>
                                     <Input type="text" placeholder="Nhập họ của bạn" value={lname} onChange={(e) => setLname(e.target.value)} />
+                                    {errors.lname && <p className="text-sm text-red-500 mt-1">{errors.lname}</p>}
                                 </div>
                             </div>
 
                             <div>
-                                <Label>Số điện thoại</Label>
+                                <Label>Số điện thoại<span className="text-error-500">*</span></Label>
                                 <Input type="text" placeholder="Nhập số điện thoại của bạn" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                                {errors.phone && <p className="text-sm text-red-500 mt-1">{errors.phone}</p>}
                             </div>
 
                             <div>
@@ -123,6 +154,7 @@ export default function SignUpForm() {
                             <div>
                                 <Label>Tên đăng nhập<span className="text-error-500">*</span></Label>
                                 <Input type="text" placeholder="Nhập tên đăng nhập" value={username} onChange={(e) => setUsername(e.target.value)} />
+                                {errors.username && <p className="text-sm text-red-500 mt-1">{errors.username}</p>}
                             </div>
 
                             <div>
@@ -141,6 +173,7 @@ export default function SignUpForm() {
                                         {showPassword ? <EyeIcon className="fill-gray-500 dark:fill-gray-400" /> : <EyeCloseIcon className="fill-gray-500 dark:fill-gray-400" />}
                                     </span>
                                 </div>
+                                {errors.password && <p className="text-sm text-red-500 mt-1">{errors.password}</p>}
                             </div>
 
                             <div className="flex items-center gap-3">
@@ -151,8 +184,8 @@ export default function SignUpForm() {
                                     <span className="text-gray-800 dark:text-white">Chính sách quyền riêng tư</span>.
                                 </p>
                             </div>
+                            {errors.isChecked && <p className="text-sm text-red-500 mt-1">{errors.isChecked}</p>}
 
-                            {err && <div className="text-sm text-red-500">{err}</div>}
 
                             <div>
                                 <button disabled={loading} className="flex items-center justify-center w-full px-4 py-3 text-sm font-medium text-white transition rounded-lg bg-brand-500 shadow-theme-xs hover:bg-brand-600">

@@ -52,7 +52,20 @@ function UserMenu({ guest }: { guest: any }) {
 }
 
 export default function Header() {
+    // Header.tsx
     const { guest, loading } = useGuest();
+    const [refresh, setRefresh] = useState(0);
+
+    useEffect(() => {
+        const rerender = () => setRefresh((v) => v + 1);
+        window.addEventListener("guest-login", rerender);
+        window.addEventListener("guest-logout", rerender);
+        return () => {
+            window.removeEventListener("guest-login", rerender);
+            window.removeEventListener("guest-logout", rerender);
+        };
+    }, []);
+
 
     return (
         <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200 text-slate-800">

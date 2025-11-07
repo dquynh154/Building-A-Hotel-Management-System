@@ -1,10 +1,14 @@
 "use client";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useModal } from "../../hooks/useModal";
 import { Modal } from "../ui/modal";
 import Button from "../ui/button/Button";
 import Input from "../form/input/InputField";
 import Label from "../form/Label";
+import { sfetch, clearToken } from "@/lib/auth";
+import Select from "../form/Select";
+import MultiSelect from "../form/MultiSelect";
+import { ChevronDownIcon } from "@/icons";
 
 export default function UserInfoCard() {
   const { isOpen, openModal, closeModal } = useModal();
@@ -13,6 +17,48 @@ export default function UserInfoCard() {
     console.log("Saving changes...");
     closeModal();
   };
+  const [staff, setStaff] = useState<any>(null);
+  useEffect(() => {
+    async function loadMe() {
+      try {
+        const data = await sfetch("/api/auth/staff/me");
+        console.log("DEBUG /api/auth/me:", data);
+        setStaff(data.staff);
+      } catch (err) {
+        console.error("Lỗi lấy thông tin nhân viên:", err);
+      }
+    }
+    loadMe();
+  }, []);
+  const options = [
+    { value: "Nam", label: "Nam" },
+    { value: "Nữ", label: "Nữ" },
+    { value: "Khác", label: "Khác" },
+  ];
+
+
+  const handleSelectChange = (value: string) => {
+    console.log("Selected value:", value);
+  };
+  const [formData, setFormData] = useState({
+    NV_HOTEN: "",
+    NV_SDT: "",
+    NV_EMAIL: "",
+    NV_NGAYSINH: "",
+    NV_GIOITINH: "",  
+  });
+  useEffect(() => {
+    if (staff) {
+      setFormData({
+        NV_HOTEN: staff.NV_HOTEN || "",
+        NV_SDT: staff.NV_SDT || "",
+        NV_EMAIL: staff.NV_EMAIL || "",
+        NV_NGAYSINH: staff.NV_NGAYSINH || "",
+        NV_GIOITINH: staff.NV_NGAYSINH || "",
+      });
+    }
+  }, [staff]);
+
   return (
     <div className="p-5 border border-gray-200 rounded-2xl dark:border-gray-800 lg:p-6">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
@@ -24,46 +70,10 @@ export default function UserInfoCard() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-7 2xl:gap-x-32">
             <div>
               <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400">
-                First Name
+                Tên
               </p>
               <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                Musharof
-              </p>
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400">
-                Họ
-              </p>
-              <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                Chowdhury
-              </p>
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400">
-                Địa chỉ email
-              </p>
-              <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                randomuser@pimjo.com
-              </p>
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400">
-                Số điện thoại
-              </p>
-              <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                +09 363 398 46
-              </p>
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400">
-                Ngày sinh
-              </p>
-              <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                Team Manager
+                {staff?.NV_HOTEN || "Chưa đăng nhập"}
               </p>
             </div>
 
@@ -72,7 +82,43 @@ export default function UserInfoCard() {
                 Chức vụ
               </p>
               <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                Team Manager
+                {staff?.NV_CHUCVU || "Không rõ chức vụ"}
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400">
+                Địa chỉ email
+              </p>
+              <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                {staff?.NV_EMAIL || "Không có email"}
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400">
+                Số điện thoại
+              </p>
+              <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                {staff?.NV_SDT || "Không có số điện thoại"}
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400">
+                Ngày sinh
+              </p>
+              <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                {staff?.NV_NGAYSINH || "Không thêm ngày sinh"}
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400">
+                Giới tính
+              </p>
+              <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                {staff?.NV_GIOITINH || "Chưa thêm giới tính"}
               </p>
             </div>
           </div>
@@ -115,7 +161,7 @@ export default function UserInfoCard() {
             <div className="custom-scrollbar h-[450px] overflow-y-auto px-2 pb-3">
               <div>
                 <h5 className="mb-5 text-lg font-medium text-gray-800 dark:text-white/90 lg:mb-6">
-                  Đường dẫn mạng xã hội
+                  Liên kết mạng xã hội
                 </h5>
 
                 <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
@@ -151,49 +197,66 @@ export default function UserInfoCard() {
               </div>
               <div className="mt-7">
                 <h5 className="mb-5 text-lg font-medium text-gray-800 dark:text-white/90 lg:mb-6">
-                  Thong tin cá nhân
+                  Thông tin cá nhân
                 </h5>
 
                 <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
-                  <div className="col-span-2 lg:col-span-1">
+                  <div className="col-span-2 ">
                     <Label>Tên</Label>
-                    <Input type="text" defaultValue="Musharof" />
+                    <Input type="text" value={formData.NV_HOTEN}
+                      onChange={(e) => setFormData({ ...formData, NV_HOTEN: e.target.value })} />
+                  </div>
+
+                  {/* <div className="col-span-2 lg:col-span-1">
+                    <Label>Họ</Label>
+                    <Input type="text" defaultValue="Chowdhury" />
+                  </div> */}
+
+                  <div className="col-span-2 lg:col-span-1">
+                    <Label>Ngày sinh</Label>
+                    <Input type="date" placeholder="Chọn ngày sinh" value={formData.NV_NGAYSINH}
+                      onChange={(e) => setFormData({ ...formData, NV_NGAYSINH: e.target.value })} />
                   </div>
 
                   <div className="col-span-2 lg:col-span-1">
-                    <Label>Họ</Label>
-                    <Input type="text" defaultValue="Chowdhury" />
+                    <Label>Giới tính</Label>
+                    
+                    <div>
+                      <div className="relative">
+                        <Select
+                          options={options}
+                          placeholder="Chọn giới tính"
+                          onChange={handleSelectChange}
+                          className="dark:bg-dark-900"
+                        />
+                        <span className="absolute text-gray-500 -translate-y-1/2 pointer-events-none right-3 top-1/2 dark:text-gray-400">
+                          <ChevronDownIcon />
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="col-span-2 lg:col-span-1">
                     <Label>Địa chỉ email</Label>
-                    <Input type="text" defaultValue="randomuser@pimjo.com" />
+                    <Input type="text" value={formData.NV_EMAIL} placeholder="Nhập email"
+                      onChange={(e) => setFormData({ ...formData, NV_EMAIL: e.target.value })} />
                   </div>
 
                   <div className="col-span-2 lg:col-span-1">
                     <Label>Số điện thoại</Label>
-                    <Input type="text" defaultValue="+09 363 398 46" />
+                    <Input type="text" value={formData.NV_SDT}
+                      onChange={(e) => setFormData({ ...formData, NV_SDT: e.target.value })} />
                   </div>
 
-                  <div className="col-span-2">
-                    <Label>Ngày sinh</Label>
-                    <Input type="date" defaultValue="01/01/2020" />
-                  </div>
-
-                  <div className="col-span-2">
-                    <Label>Ngày sinh</Label>
-                    <Input type="date" defaultValue="01/01/2020" />
-                  </div>
-                  
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-3 px-2 mt-6 lg:justify-end">
               <Button size="sm" variant="outline" onClick={closeModal}>
-                Close
+                Đóng
               </Button>
               <Button size="sm" onClick={handleSave}>
-                Save Changes
+                Lưu thay đổi
               </Button>
             </div>
           </form>

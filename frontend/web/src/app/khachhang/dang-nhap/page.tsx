@@ -21,6 +21,10 @@ export default function SignInForm() {
     const onSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setErr("");
+        if (!username.trim() || !password.trim()) {
+            setErr("Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.");
+            return;
+        }
         setLoading(true);
         try {
             const data = await gfetch("/api/auth/guest/login", {
@@ -33,6 +37,7 @@ export default function SignInForm() {
                 new URLSearchParams(typeof window !== "undefined" ? window.location.search : "")
                     .get("redirect") || "/khachhang";
             router.replace(redirect);
+            // window.location.reload();
         } catch (e: any) {
             setErr(e?.message || "Đăng nhập thất bại");
         } finally {

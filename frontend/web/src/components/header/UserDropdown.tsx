@@ -1,17 +1,31 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
+import { clearToken, sfetch } from "@/lib/auth";
 
 export default function UserDropdown() {
   const [isOpen, setIsOpen] = useState(false);
+  const [staff, setStaff] = useState<any>(null);
 
-function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
-  e.stopPropagation();
-  setIsOpen((prev) => !prev);
-}
+  useEffect(() => {
+    async function loadStaff() {
+      try {
+        const data = await sfetch("/api/auth/staff/me");
+        setStaff(data.staff);
+      } catch (err) {
+        console.error("Lỗi lấy thông tin nhân viên:", err);
+      }
+    }
+    loadStaff();
+  }, []);
+
+  function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
+    e.stopPropagation();
+    setIsOpen((prev) => !prev);
+  }
 
   function closeDropdown() {
     setIsOpen(false);
@@ -19,7 +33,7 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
   return (
     <div className="relative">
       <button
-        onClick={toggleDropdown} 
+        onClick={toggleDropdown}
         className="flex items-center text-gray-700 dark:text-gray-400 dropdown-toggle"
       >
         <span className="mr-3 overflow-hidden rounded-full h-11 w-11">
@@ -31,12 +45,11 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
           />
         </span>
 
-        <span className="block mr-1 font-medium text-theme-sm">Musharof</span>
+        <span className="block mr-1 font-medium text-theme-sm">{staff?.NV_HOTEN || "Chưa đăng nhập"}</span>
 
         <svg
-          className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
-            isOpen ? "rotate-180" : ""
-          }`}
+          className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""
+            }`}
           width="18"
           height="20"
           viewBox="0 0 18 20"
@@ -60,11 +73,12 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
       >
         <div>
           <span className="block font-medium text-gray-700 text-theme-sm dark:text-gray-400">
-            Musharof Chowdhury
+            {staff?.NV_HOTEN || "Chưa đăng nhập"}
           </span>
           <span className="mt-0.5 block text-theme-xs text-gray-500 dark:text-gray-400">
-            randomuser@pimjo.com
+            {staff?.NV_CHUCVU || "Không rõ chức vụ"}
           </span>
+
         </div>
 
         <ul className="flex flex-col gap-1 pt-4 pb-3 border-b border-gray-200 dark:border-gray-800">
@@ -90,7 +104,7 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
                   fill=""
                 />
               </svg>
-              Edit profile
+              Thông tin cá nhân
             </DropdownItem>
           </li>
           <li>
@@ -115,7 +129,7 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
                   fill=""
                 />
               </svg>
-              Account settings
+              Cài đặt
             </DropdownItem>
           </li>
           <li>
@@ -140,7 +154,7 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
                   fill=""
                 />
               </svg>
-              Support
+              Hỗ trợ
             </DropdownItem>
           </li>
         </ul>
@@ -163,8 +177,18 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
               fill=""
             />
           </svg>
-          Sign out
+          Đăng xuất
         </Link>
+        <button
+          onClick={() => {
+            clearToken();
+            window.location.href = "/full-width-pages/auth/signin";
+          }}
+          className="flex w-full items-center justify-center gap-2 rounded-full border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 shadow-theme-xs hover:bg-red-100 dark:border-red-700 dark:bg-gray-800 dark:text-red-400 lg:inline-flex lg:w-auto"
+        >
+          Đăng xuất
+        </button>
+
       </Dropdown>
     </div>
   );
