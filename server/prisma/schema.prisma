@@ -312,7 +312,7 @@ model HOP_DONG_DAT_PHONG {
   HDONG_GHICHU     String?
 
   KHUYEN_MAI_SU_DUNG KHUYEN_MAI_SU_DUNG?
-  DANH_GIA           DANH_GIA?
+   DANH_GIA       DANH_GIA[] 
 
   CHI_TIET_SU_DUNG CHI_TIET_SU_DUNG[]
   CHI_TIET_DICH_VU CHI_TIET_DICH_VU[]
@@ -337,7 +337,7 @@ model CT_DAT_TRUOC {
   TONG_TIEN    Float     @default(0)
   TRANG_THAI   String    @default("CONFIRMED") // CONFIRMED | ALLOCATED | CANCELLED
   NGAY_TAO     DateTime  @default(now())
-
+   DANH_GIA       DANH_GIA[] 
   // --- Quan hệ ---
   HOP_DONG_DAT_PHONG  HOP_DONG_DAT_PHONG @relation(fields: [HDONG_MA], references: [HDONG_MA])
   LOAI_PHONG          LOAI_PHONG         @relation(fields: [LP_MA], references: [LP_MA])
@@ -459,6 +459,7 @@ model DANH_GIA {
   DG_MA    Int @id @default(autoincrement())
   KH_MA    Int
   HDONG_MA Int
+  CTDP_ID    Int?
 
   DG_SAO      Int // 1..5 (check ở code)
   DG_TIEU_DE  String
@@ -472,8 +473,9 @@ model DANH_GIA {
 
   HOP_DONG_DAT_PHONG HOP_DONG_DAT_PHONG @relation(fields: [HDONG_MA], references: [HDONG_MA], onDelete: Cascade)
   KHACH_HANG         KHACH_HANG         @relation(fields: [KH_MA], references: [KH_MA], onDelete: Restrict)
+  CT_DAT_TRUOC       CT_DAT_TRUOC?      @relation(fields: [CTDP_ID], references: [CTDP_ID], onDelete: Cascade)
 
-  @@unique([HDONG_MA])
+  @@unique([HDONG_MA, CTDP_ID])
   @@index([HDONG_MA, DG_TRANG_THAI])
 }
 

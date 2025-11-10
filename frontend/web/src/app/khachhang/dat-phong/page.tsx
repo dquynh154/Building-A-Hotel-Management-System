@@ -338,7 +338,7 @@ export default function DatPhongPage() {
 
             <div className="rounded-2xl border bg-white p-6 md:p-8">
                 <div className="relative flex justify-center items-center border-b-4 border-rose-200 pb-3 mb-8">
-                    <h2 className="text-lg md:text-xl font-semibold text-slate-800">
+                    <h2 className="text-lg md:text-2xl font-semibold text-slate-800">
                         Chọn phòng
                     </h2>
                     <span className="absolute bottom-[-4px] left-0 h-[4px] w-1/3 bg-rose-700"></span>

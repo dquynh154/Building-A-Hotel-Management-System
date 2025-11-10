@@ -740,18 +740,40 @@ async function checkout(req, res, next) {
 async function cancel(req, res, next) {
     try {
         const id = Number(req.params.id);
-        const lydo = req.body?.lydo ?? null;
+        const { reason } = req.body;
 
-        const hd = await prisma.hOP_DONG_DAT_PHONG.update({
+        const hopdong = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+            where: { HDONG_MA: id },
+        });
+        if (!hopdong) return res.status(404).json({ message: 'Không tìm thấy hợp đồng' });
+
+        if (['CHECKED_OUT', 'CANCELLED', 'NO_SHOW'].includes(hopdong.HDONG_TRANG_THAI)) {
+            return res.status(400).json({ message: 'Không thể huỷ hợp đồng ở trạng thái hiện tại' });
+        }
+
+        await prisma.hOP_DONG_DAT_PHONG.update({
             where: { HDONG_MA: id },
             data: {
                 HDONG_TRANG_THAI: 'CANCELLED',
-                HDONG_GHICHU: lydo ? `[CANCELLED] ${lydo}` : '[CANCELLED]'
-            }
+                HDONG_GHICHU: reason || 'Huỷ bởi quản lý',
+            },
         });
-        res.json(hd);
-    } catch (e) { next(e); }
+
+        await prisma.hOA_DON.updateMany({
+            where: {
+                LIEN_KET: {
+                    some: { HDONG_MA: id }, // 👈 đi qua bảng HOA_DON_HOP_DONG
+                },
+            },
+            data: { HDON_TRANG_THAI: 'VOID' },
+        });
+
+        res.json({ ok: true });
+    } catch (e) {
+        next(e);
+    }
 }
+
 
 // DELETE /bookings/:id/guests/:khId
 async function delete_kh(req, res, next) {

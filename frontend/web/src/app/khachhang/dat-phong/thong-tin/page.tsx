@@ -173,9 +173,7 @@ export default function ThongTinLuuTruPage() {
     const isNonEmpty = (s?: string) => !!(s && s.trim().length > 0);
     const isEmail = (s?: string) => !!s && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
     const isPhone = (s?: string) => !!s && /^[0-9]{10,11}$/.test(s.replace(/\D/g, ''));
-    const [errors1, setErrors1] = useState({
-        isChecked: "",
-    });
+   
     const validateForm = () => {
         const be: Record<string, string> = {};
         const ge: Record<string, string> = {};
@@ -197,22 +195,33 @@ export default function ThongTinLuuTruPage() {
     };
     const [method, setMethod] = useState<'bank' | 'cod' | 'momo'>('bank');
     const [isChecked, setIsChecked] = useState(false);
+    const [note, setNote] = useState('');
+    const [errors1, setErrors1] = useState({
+        isChecked: "",
+    });
+
     return (
         <div className="mx-auto max-w-6xl px-4 py-6 text-slate-800">
             {/* KHUNG BỌC CHUNG */}
             <div className="rounded-2xl border bg-white">
                 {/* Header khung */}
-                <div className="grid grid-cols-[1fr,auto,1fr] items-center gap-3 border-b px-5 py-4">
+                <div className="grid grid-cols-[1fr,auto,1fr] items-center gap-3 border-b px-5 pt-4 pb-0">
                     <div className="justify-self-start">
                         <Link href={backHref} className="inline-flex items-center gap-2 text-rose-700 hover:text-rose-800">
                             <span className="text-lg leading-none">‹</span>
                             <span className="text-sm font-medium">Quay lại phòng</span>
                         </Link>
                     </div>
-                    <h2 className="justify-self-center text-lg md:text-xl font-semibold text-slate-800">
+                    {/* <h2 className="justify-self-center text-lg md:text-xl font-semibold text-slate-800">
                         Thông tin lưu trú của bạn
-                    </h2>
-
+                    </h2> */}
+                    <div className="relative flex justify-center items-center border-b-4 border-rose-200 pb-3">
+                        <h2 className="text-lg md:text-2xl font-semibold text-slate-800">
+                            Thông tin lưu trú của bạn
+                        </h2>
+                        <span className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 h-[4px] w-1/3 bg-rose-700"></span>
+                        {/* <span className="absolute bottom-[-2px] left-1/2 h-[3px] w-1/3 -translate-x-1/2 bg-rose-600 rounded-full"></span> */}
+                    </div>
                 </div>
 
                 {/* Nội dung trong khung */}
@@ -385,7 +394,12 @@ export default function ThongTinLuuTruPage() {
                                 <div className="text-lg font-semibold">Ghi chú</div>
                             </div>
                             <div className="px-5 py-5">
-                                <input type="text" />
+                                <textarea
+                                    value={note}
+                                    onChange={e => setNote(e.target.value)}
+                                    placeholder="Nhập ghi chú cho khách sạn (nếu có)"
+                                    className="w-full rounded-md border px-3 py-2 text-sm resize-none min-h-[80px]"
+                                />
                             </div>
 
                         </div>
@@ -395,10 +409,11 @@ export default function ThongTinLuuTruPage() {
                                 Tôi đồng ý xử lý dữ liệu cá nhân và xác nhận rằng tôi đã đọc{" "}
                                 <span className="text-gray-800 dark:text-white/90">Quy tắc đặt phòng online </span> và{" "}
                                 <span className="text-gray-800 dark:text-white">Chính sách quyền riêng tư</span>.
-                                 
+
                             </p>
                         </div>
                         {errors1.isChecked && <p className="text-sm text-red-500 mt-1">{errors1.isChecked}</p>}
+
                         <button
                             onClick={async () => {
                                 if (!guest && !guestLoading) {
@@ -409,6 +424,13 @@ export default function ThongTinLuuTruPage() {
                                     document.getElementById('form-root')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                                     return;
                                 }
+                                if (!isChecked) {
+                                    setErrors1({ isChecked: 'Vui lòng đồng ý với điều khoản trước khi tiếp tục.' });
+                                    return;
+                                } else {
+                                    setErrors1({ isChecked: '' });
+                                }
+
 
                                 // Lưu thông tin khách ở chính
                                 sessionStorage.setItem('stay_guests', JSON.stringify(buildStayGuests()));
@@ -425,6 +447,7 @@ export default function ThongTinLuuTruPage() {
                                         from, to, adults, items,
                                         kh_ma: guest?.KH_MA || null,
                                         stay_guests: stayGuests,
+                                        ghi_chu: note, 
                                     }),
 
                                 });

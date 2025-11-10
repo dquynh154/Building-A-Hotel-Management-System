@@ -34,8 +34,8 @@ export type BookingLite = {
     HT_MA: number;
     TU_LUC: string; DEN_LUC: string; // ISO
     TRANG_THAI: 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED' | 'NO_SHOW';
-    HDONG_NGAYTHUCNHAN:string;
-    HDONG_NGAYTHUCTRA:string;
+    HDONG_NGAYTHUCNHAN: string;
+    HDONG_NGAYTHUCTRA: string;
     HDONG_TONGTIENDUKIEN: string;
 };
 
@@ -55,6 +55,11 @@ export default function BookingPage() {
     const [openCreate, setOpenCreate] = useState(false);
     const [initialForCreate, setInitialForCreate] = useState<any>(undefined);
     const [openBulk, setOpenBulk] = useState(false);
+    const [statusFilter, setStatusFilter] = useState<string>(''); // '' = tất cả
+    const filteredBookings = useMemo(() => {
+        if (!statusFilter) return bookings;
+        return bookings.filter(b => b.TRANG_THAI === statusFilter);
+    }, [bookings, statusFilter]);
 
     const loadData = async () => {
         setLoading(true);
@@ -105,7 +110,7 @@ export default function BookingPage() {
     const handleBooked = () => {
         setOpenCreate(false);
         setInitialForCreate(undefined);
-        loadData();                  
+        loadData();
     };
     return (
         <div>
@@ -124,6 +129,25 @@ export default function BookingPage() {
             <ComponentCard title={
                 mode === 'board' ? 'Sơ đồ phòng (Board)' : mode === 'list' ? 'Danh sách đặt phòng' : 'Lịch đặt phòng'
             }>
+                {mode === 'list' && (
+                    <div className="mb-4 flex items-center gap-3">
+                        <label className="text-sm font-medium text-slate-700">Lọc theo trạng thái:</label>
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="border rounded-lg px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-rose-500"
+                        >
+                            <option value="">Tất cả</option>
+                            <option value="PENDING">Chờ cọc</option>
+                            <option value="CONFIRMED">Đã cọc</option>
+                            <option value="CHECKED_IN">Đang ở</option>
+                            <option value="CHECKED_OUT">Đã trả</option>
+                            <option value="CANCELLED">Đã huỷ</option>
+                            <option value="NO_SHOW">Vắng mặt</option>
+                        </select>
+                    </div>
+                )}
+
                 {loading ? (
                     <div className="p-6 text-gray-500">Đang tải…</div>
                 ) : mode === 'board' ? (
@@ -134,7 +158,7 @@ export default function BookingPage() {
                         onQuickBook={handleQuickBookRoom} // ✅ truyền callback
                     />
                 ) : mode === 'list' ? (
-                    <ListView bookings={bookings} filters={filters} />
+                    <ListView bookings={filteredBookings} filters={filters} />
                 ) : (
                     <TimelineView rooms={rooms} bookings={bookings} filters={filters} />
                 )}

@@ -5,6 +5,7 @@ import Button from '@/components/ui/button/Button';
 // Nếu bạn có type BookingLite đã export ở page.tsx thì import lại:
 import { BookingLite } from '@/app/admin/(noSidebar)/others-pages/dat-phong/page';
 import { FilterState } from './BookingToolbar';
+import api from '@/lib/api';
 
 type GroupedBooking = BookingLite & { count: number };
 
@@ -39,7 +40,7 @@ export default function ListView({
     bookings,
 }: {
     bookings: BookingLite[];
-        filters: FilterState;
+    filters: FilterState;
 }) {
     // Gộp theo HDONG_MA để chỉ hiển thị 1 dòng/hợp đồng
     const grouped = useMemo<GroupedBooking[]>(() => {
@@ -58,11 +59,11 @@ export default function ListView({
         return Array.from(map.values());
     }, [bookings]);
     const STATUS_META: Record<string, { text: string; cls: string }> = {
-        PENDING: { text: 'PENDING', cls: 'bg-amber-100 text-amber-700' },
-        CONFIRMED: { text: 'CONFIRMED', cls: 'bg-sky-100 text-sky-700' },
-        CHECKED_IN: { text: 'CHECKED IN', cls: 'bg-emerald-100 text-emerald-700' },
-        CHECKED_OUT: { text: 'CHECKED OUT', cls: 'bg-slate-200 text-slate-700' },
-        CANCELLED: { text: 'CANCELLED', cls: 'bg-rose-100 text-rose-700' },
+        PENDING: { text: 'CHỜ CỌC', cls: 'bg-amber-100 text-amber-700' },
+        CONFIRMED: { text: 'ĐÃ XÁC NHẬN', cls: 'bg-sky-100 text-sky-700' },
+        CHECKED_IN: { text: 'ĐANG LƯU TRÚ', cls: 'bg-emerald-100 text-emerald-700' },
+        CHECKED_OUT: { text: 'ĐÃ TRẢ PHÒNG', cls: 'bg-slate-200 text-slate-700' },
+        CANCELLED: { text: 'ĐÃ HỦY ĐẶT PHÒNG', cls: 'bg-rose-100 text-rose-700' },
         NO_SHOW: { text: 'NO SHOW', cls: 'bg-zinc-100 text-zinc-700' },
         DEFAULT: { text: 'UNKNOWN', cls: 'bg-gray-100 text-gray-600' },
     };
@@ -140,7 +141,40 @@ export default function ListView({
                                         <Button size="sm" variant="outline">
                                             <Link href={`/admin/others-pages/chi-tiet/${b.HDONG_MA}`}>Chi tiết</Link>
                                         </Button>
-                                        <Button size="sm" variant="danger">Huỷ</Button>
+                                        <Button
+                                            size="sm"
+                                            variant="danger"
+                                            disabled={['CHECKED_OUT', 'CANCELLED','CHECKED_IN'].includes(b.TRANG_THAI)}
+                                            onClick={async () => {
+                                                if (['CHECKED_OUT', 'CANCELLED'].includes(b.TRANG_THAI)) return;
+
+                                                const confirmMsg =
+                                                    b.TRANG_THAI === 'CONFIRMED'
+                                                        ? 'Huỷ hợp đồng này sẽ giữ lại tiền cọc. Bạn có chắc muốn huỷ không?'
+                                                        : 'Bạn có chắc chắn muốn huỷ hợp đồng này?';
+                                                if (!confirm(confirmMsg)) return;
+
+                                                const reason = prompt('Nhập lý do huỷ hợp đồng (bắt buộc):', '');
+                                                if (!reason || !reason.trim()) {
+                                                    alert('Vui lòng nhập lý do huỷ hợp đồng.');
+                                                    return;
+                                                }
+
+                                                try {
+                                                    const res = await api.post(`/bookings/${b.HDONG_MA}/cancel`, { reason });
+                                                    alert('Đã huỷ hợp đồng thành công.');
+                                                    window.location.reload();
+                                                } catch (err: any) {
+                                                    const msg = err.response?.data?.message || 'Không thể huỷ hợp đồng.';
+                                                    alert(msg);
+                                                }
+
+                                            }}
+                                        >
+                                            Huỷ
+                                        </Button>
+
+
                                     </div>
                                 </TableCell>
                             </TableRow>

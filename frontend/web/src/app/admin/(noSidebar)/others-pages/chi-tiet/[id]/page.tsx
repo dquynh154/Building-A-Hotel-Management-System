@@ -787,6 +787,17 @@ export default function BookingDetailPage() {
     ];
 
     function Stepper({ status }: { status?: string }) {
+        const upper = (status || '').toUpperCase();
+
+        // Nếu trạng thái là CANCELLED → hiện badge đỏ, không render step
+        if (upper === 'CANCELLED') {
+            return (
+                <span className="rounded-full bg-rose-100 text-rose-700 ring-1 ring-rose-300 px-3 py-1 text-sm font-medium">
+                    Đã hủy đặt phòng
+                </span>
+            );
+        }
+
         const idx = Math.max(steps.findIndex(s => s.key === (status || '').toUpperCase()), 0);
         return (
             <div className="flex items-center gap-2 text-sm">

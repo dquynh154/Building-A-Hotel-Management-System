@@ -54,7 +54,7 @@ function toSqlUTC(dt /* Date in UTC */) {
 pub.post('/dat-truoc/prepare', async (req, res) => {
     try {
         // const { from, to, adults = 1, items = [], kh_ma } = req.body || {};
-        const { from, to, adults = 1, items = [], kh_ma, stay_guests = [] } = req.body || {};
+        const { from, to, adults = 1, items = [], kh_ma, stay_guests = [], ghi_chu } = req.body || {};
         if (!from || !to) return res.status(400).json({ message: 'from/to bắt buộc (YYYY-MM-DD)' });
         if (!kh_ma) return res.status(400).json({ message: 'Thiếu kh_ma (khách phải đăng nhập trước khi đặt)' });
         if (!Array.isArray(items) || items.length === 0)
@@ -125,7 +125,7 @@ pub.post('/dat-truoc/prepare', async (req, res) => {
                 details.push({ LP_MA: lp, QTY: qty, UNIT_PRICE: unit, SUBTOTAL: sub });
             }
             const deposit = Math.round(total * tileCoc / 100);
-            
+
             // 3) TẠO HỢP ĐỒNG (đủ cột NOT NULL)
             const hopdong = await tx.hOP_DONG_DAT_PHONG.create({
                 data: {
@@ -137,6 +137,7 @@ pub.post('/dat-truoc/prepare', async (req, res) => {
                     HDONG_TILECOCAPDUNG: new Prisma.Decimal(tileCoc),
                     HDONG_TIENCOCYEUCAU: new Prisma.Decimal(deposit),
                     HDONG_TRANG_THAI: 'PENDING',
+                    HDONG_GHICHU: ghi_chu || null,
                 },
                 select: { HDONG_MA: true },
             });
@@ -214,6 +215,7 @@ pub.post('/dat-truoc/prepare', async (req, res) => {
                                 subtotal: d?.SUBTOTAL || 0,
                             };
                         }),
+
                     },
                 },
             });
@@ -411,7 +413,7 @@ pub.post('/pay/mock/confirm', async (req, res, next) => {
             }
 
             const total = items.reduce((sum, it) => sum + (it.unit_price || 0) * (it.qty || 0) * nights, 0);
-            
+
             if (link && items.length) {
                 // Tạo CT_DAT_TRUOC cho từng loại đã đặt
                 for (const it of items) {
@@ -437,10 +439,10 @@ pub.post('/pay/mock/confirm', async (req, res, next) => {
                 });
                 await prisma.hOA_DON.update({
                     where: { HDON_MA: Number(hdon_ma) },
-                    data: { HDON_TRANG_THAI: 'PAID' , HDON_COC_DA_TRU: last.TT_SO_TIEN }, // cộng tiền cọc vào hóa đơn
+                    data: { HDON_TRANG_THAI: 'PAID', HDON_COC_DA_TRU: last.TT_SO_TIEN }, // cộng tiền cọc vào hóa đơn
                 });
             }
-            
+
 
             // === GỬI EMAIL XÁC NHẬN ===
             if (email) {
@@ -971,6 +973,176 @@ pub.get('/hoa-don/:id', async (req, res) => {
     } catch (e) {
         console.error(e);
         res.status(500).json({ message: 'Lỗi máy chủ', detail: String(e) });
+    }
+});
+
+// POST /public/khachhang/cancel-booking
+pub.post('/khachhang/cancel-booking', async (req, res, next) => {
+    try {
+        const { kh_ma, hdong_ma } = req.body || {};
+        if (!kh_ma || !hdong_ma)
+            return res.status(400).json({ message: 'Thiếu mã khách hoặc mã hợp đồng' });
+
+        const hd = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+            where: { HDONG_MA: Number(hdong_ma) },
+            select: { KH_MA: true, HDONG_TRANG_THAI: true },
+        });
+
+        if (!hd)
+            return res.status(404).json({ message: 'Không tìm thấy hợp đồng' });
+        if (hd.KH_MA !== Number(kh_ma))
+            return res.status(403).json({ message: 'Bạn không có quyền huỷ hợp đồng này' });
+        if (['CHECKED_IN', 'CHECKED_OUT', 'CANCELLED', 'NO_SHOW'].includes(hd.HDONG_TRANG_THAI))
+            return res.status(400).json({ message: 'Không thể huỷ hợp đồng ở trạng thái hiện tại' });
+
+        // cập nhật trạng thái
+        let note = 'Khách huỷ đặt phòng';
+        if (hd.HDONG_TRANG_THAI === 'CONFIRMED')
+            note = 'Khách huỷ – giữ lại tiền cọc';
+
+        const updated = await prisma.hOP_DONG_DAT_PHONG.update({
+            where: { HDONG_MA: Number(hdong_ma) },
+            data: { HDONG_TRANG_THAI: 'CANCELLED', HDONG_GHICHU: note },
+        });
+
+        // (tùy chọn) cập nhật hóa đơn nếu cần
+        await prisma.hOA_DON.updateMany({
+            where: { HDONG_MA: Number(hdong_ma) },
+            data: { HDON_TRANG_THAI: 'VOID' },
+        });
+
+        res.json({ ok: true, updated });
+    } catch (e) {
+        console.error('ERR /public/khachhang/cancel-booking', e);
+        next(e);
+    }
+});
+
+// POST /public/khachhang/review
+pub.post('/khachhang/review', async (req, res, next) => {
+    try {
+        const { kh_ma, hdong_ma, ctdp_id, sao, tieu_de, noi_dung, dinh_kem = [] } = req.body || {};
+
+        // Kiểm tra đầu vào cơ bản
+        if (!kh_ma || !hdong_ma)
+            return res.status(400).json({ message: 'Thiếu kh_ma hoặc hdong_ma' });
+        if (!sao || sao < 1 || sao > 5)
+            return res.status(400).json({ message: 'Số sao phải 1–5' });
+        if (!tieu_de?.trim())
+            return res.status(400).json({ message: 'Thiếu tiêu đề đánh giá' });
+
+        // 1️⃣ kiểm tra quyền + trạng thái hợp đồng
+        const hd = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+            where: { HDONG_MA: Number(hdong_ma) },
+            select: { KH_MA: true, HDONG_TRANG_THAI: true },
+        });
+        if (!hd || hd.KH_MA !== Number(kh_ma))
+            return res.status(403).json({ message: 'Bạn không có quyền đánh giá đơn này' });
+        if (hd.HDONG_TRANG_THAI !== 'CHECKED_OUT')
+            return res.status(400).json({ message: 'Chỉ đánh giá hợp đồng đã trả phòng' });
+
+        // 2️⃣ Nếu có ctdp_id thì kiểm tra dòng đó thuộc hợp đồng này
+        if (ctdp_id) {
+            const ct = await prisma.cT_DAT_TRUOC.findUnique({
+                where: { CTDP_ID: Number(ctdp_id) },
+                select: { HDONG_MA: true },
+            });
+            if (!ct || ct.HDONG_MA !== Number(hdong_ma))
+                return res.status(403).json({ message: 'Chi tiết đặt phòng không thuộc hợp đồng này' });
+        }
+
+        // 3️⃣ Kiểm tra đã có đánh giá chưa (theo từng trường hợp)
+        let exist = null;
+        if (ctdp_id) {
+            exist = await prisma.dANH_GIA.findUnique({
+                where: { CTDP_ID: Number(ctdp_id) },
+            });
+            if (exist)
+                return res.status(400).json({ message: 'Bạn đã đánh giá loại phòng này rồi' });
+        } else {
+            exist = await prisma.dANH_GIA.findFirst({
+                where: { HDONG_MA: Number(hdong_ma), CTDP_ID: null },
+            });
+            if (exist)
+                return res.status(400).json({ message: 'Bạn đã đánh giá tổng thể đơn này rồi' });
+        }
+
+        // 4️⃣ Tạo đánh giá (có thể kèm đính kèm)
+        const review = await prisma.dANH_GIA.create({
+            data: {
+                KH_MA: Number(kh_ma),
+                HDONG_MA: Number(hdong_ma),
+                CTDP_ID: ctdp_id ? Number(ctdp_id) : null,
+                DG_SAO: Number(sao),
+                DG_TIEU_DE: tieu_de.trim(),
+                DG_NOI_DUNG: noi_dung || null,
+                DG_TRANG_THAI: 'PUBLISHED',
+                DINH_KEMS: {
+                    createMany: {
+                        data: (Array.isArray(dinh_kem) ? dinh_kem : []).map((f) => ({
+                            DKDG_LOAI: f.loai || 'IMAGE',
+                            DKDG_URL: f.url,
+                            DKDG_CHUTHICH: f.ghi_chu || null,
+                        })),
+                    },
+                },
+            },
+            include: { DINH_KEMS: true },
+        });
+
+        res.json({ ok: true, review });
+    } catch (e) {
+        console.error('ERR /public/khachhang/review:', e);
+        next(e);
+    }
+});
+
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// 📂 tạo thư mục nếu chưa có
+const uploadDir = path.resolve(__dirname, '../../uploads/review');
+fs.mkdirSync(uploadDir, { recursive: true });
+
+// cấu hình lưu file
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+        const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const ext = path.extname(file.originalname);
+        cb(null, `${uniqueName}${ext}`);
+    },
+});
+
+const upload = multer({ storage });
+
+// ✅ API upload hình đánh giá
+pub.post('/upload-review', upload.single('file'), async (req, res, next) => {
+    try {
+        if (!req.file) return res.status(400).json({ message: 'Chưa có file' });
+
+        // tạo URL công khai
+        const fileUrl = `${req.protocol}://${req.get('host')}/uploads/review/${req.file.filename}`;
+        res.json({ ok: true, url: fileUrl });
+    } catch (e) {
+        next(e);
+    }
+});
+// GET /public/khachhang/reviews?kh_ma=...
+pub.get('/khachhang/reviews', async (req, res, next) => {
+    try {
+        const kh_ma = Number(req.query.kh_ma);
+        if (!kh_ma) return res.status(400).json({ message: 'Thiếu kh_ma' });
+
+        const rows = await prisma.dANH_GIA.findMany({
+            where: { KH_MA: kh_ma },
+            select: { HDONG_MA: true, CTDP_ID: true, DG_SAO: true, DG_TIEU_DE: true, DG_TAO_LUC: true },
+        });
+
+        res.json({ items: rows });
+    } catch (e) {
+        next(e);
     }
 });
 

@@ -79,7 +79,24 @@ export default function BoardView({
         }
     };
     const [changeRoomBooking, setChangeRoomBooking] = useState<any | null>(null);
-
+    const STATUS_META: Record<string, { text: string; cls: string }> = {
+        PENDING: { text: 'CHỜ CỌC', cls: 'bg-amber-100 text-amber-700' },
+        CONFIRMED: { text: 'ĐÃ XÁC NHẬN', cls: 'bg-sky-100 text-sky-700' },
+        CHECKED_IN: { text: 'ĐANG LƯU TRÚ', cls: 'bg-emerald-100 text-emerald-700' },
+        CHECKED_OUT: { text: 'ĐÃ TRẢ PHÒNG', cls: 'bg-slate-200 text-slate-700' },
+        CANCELLED: { text: 'ĐÃ HỦY ĐẶT PHÒNG', cls: 'bg-rose-100 text-rose-700' },
+        NO_SHOW: { text: 'NO SHOW', cls: 'bg-zinc-100 text-zinc-700' },
+        DEFAULT: { text: 'UNKNOWN', cls: 'bg-gray-100 text-gray-600' },
+    };
+    function StatusPill({ status }: { status?: string }) {
+        const key = (status || '').toUpperCase();
+        const meta = STATUS_META[key] ?? STATUS_META.DEFAULT;
+        return (
+            <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${meta.cls}`}>
+                {meta.text}
+            </span>
+        );
+    }
     return (
         <div className="space-y-6">
             {floors.map(f => (
@@ -212,7 +229,7 @@ export default function BoardView({
                                                                 {`${b.PHONG_TEN}`}
                                                             </div>
                                                             <span className="text-xs text-green-600 font-medium">
-                                                                {b.TRANG_THAI}
+                                                                <StatusPill status={b.TRANG_THAI} />
                                                             </span>
                                                         </div>
 

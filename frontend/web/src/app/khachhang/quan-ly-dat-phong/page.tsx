@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useGuest } from '@/hooks/useGuest';
 import BookingDetailModal from '@/components/ui/modal/BookingDetaiModal';
+import ReviewModal from '@/components/ui/modal/ReviewModal';
 
 type CTLine = {
     CTDP_ID: number;
@@ -55,6 +56,7 @@ export default function QuanLyDatPhongPage() {
     const { guest, loading: guestLoading } = useGuest();
     const [detailOpen, setDetailOpen] = useState(false);
     const [selectedId, setSelectedId] = useState<number | null>(null);
+    const [reviewOpen, setReviewOpen] = useState(false);
 
     useEffect(() => {
         if (guestLoading) return;
@@ -78,6 +80,23 @@ export default function QuanLyDatPhongPage() {
         })();
     }, [guestLoading, guest]);
 
+    useEffect(() => {
+        if (selectedId) setReviewOpen(true);
+    }, [selectedId]);
+    const [reviews, setReviews] = useState<number[]>([]); // danh sách HDONG_MA đã được đánh giá tổng thể
+
+    useEffect(() => {
+        if (!guest) return;
+        const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+        fetch(`${BASE}/public/khachhang/reviews?kh_ma=${guest.KH_MA}`)
+            .then(res => res.json())
+            .then(json => {
+                if (Array.isArray(json.items)) {
+                    setReviews(json.items.map((r: any) => r.HDONG_MA));
+                }
+            })
+            .catch(() => { });
+    }, [guest]);
 
     return (
         <div className="mx-auto max-w-5xl px-4 py-8">
@@ -86,7 +105,7 @@ export default function QuanLyDatPhongPage() {
                     <h1 className="text-xl md:text-2xl font-bold text-slate-900">
                         Đơn đặt phòng của tôi
                     </h1>
-                    
+
                 </div>
 
                 <div className="p-6">
@@ -132,6 +151,7 @@ export default function QuanLyDatPhongPage() {
                             const invoiceHref = r.DEPOSIT_INVOICE
                                 ? `/khachhang/dat-phong/ket-qua?hdon_ma=${r.DEPOSIT_INVOICE.HDON_MA}`
                                 : undefined;
+                           
 
                             return (
                                 <div
@@ -204,7 +224,7 @@ export default function QuanLyDatPhongPage() {
 
                                     {/* Footer hành động */}
                                     <div className="mt-4 flex flex-wrap justify-end gap-2">
-                                        <button
+                                        {/* <button
                                             onClick={() => {
                                                 setSelectedId(r.HDONG_MA);
                                                 setDetailOpen(true);
@@ -212,10 +232,10 @@ export default function QuanLyDatPhongPage() {
                                             className="rounded-md border px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                         >
                                             Xem chi tiết
-                                        </button>
+                                        </button> */}
 
 
-                                        {canPay ? (
+                                        {/* {canPay ? (
                                             <Link
                                                 href={payHref!}
                                                 className="rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
@@ -229,7 +249,84 @@ export default function QuanLyDatPhongPage() {
                                             >
                                                 Xem biên nhận
                                             </Link>
+                                        ) : null} */}
+
+                                        {canPay ? (
+                                            <Link
+                                                href={payHref!}
+                                                className="rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+                                            >
+                                                Thanh toán cọc
+                                            </Link>
+                                        ) : (
+                                            (
+                                                r.DEPOSIT_INVOICE?.HDON_TRANG_THAI === 'PAID' || // đã thanh toán thì luôn được xem
+                                                !(r.HDONG_TRANG_THAI === 'CANCELLED' && r.DEPOSIT_INVOICE?.HDON_TRANG_THAI === 'ISSUED') // ẩn nếu vừa bị hủy + chưa thanh toán
+                                            )
+                                        ) ? (
+                                            <Link
+                                                href={invoiceHref || '#'}
+                                                className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+                                            >
+                                                Xem biên nhận
+                                            </Link>
                                         ) : null}
+
+
+                                        {['PENDING', 'CONFIRMED'].includes(r.HDONG_TRANG_THAI) && (
+                                            <button
+                                                onClick={async () => {
+                                                    if (!confirm(
+                                                        r.HDONG_TRANG_THAI === 'CONFIRMED'
+                                                            ? 'Huỷ đơn này sẽ mất tiền cọc. Bạn có chắc chắn muốn huỷ không?'
+                                                            : 'Bạn có chắc chắn muốn huỷ đơn đặt phòng này?'
+                                                    )) return;
+
+                                                    try {
+                                                        const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+                                                        await fetch(`${BASE}/public/khachhang/cancel-booking`, {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json' },
+                                                            credentials: 'include',
+                                                            body: JSON.stringify({ kh_ma: guest?.KH_MA, hdong_ma: r.HDONG_MA }),
+                                                        });
+                                                        alert('Đơn đã được huỷ.');
+                                                        // reload danh sách
+                                                        const res = await fetch(
+                                                            `${BASE}/public/khachhang/my-bookings?kh_ma=${guest?.KH_MA}`,
+                                                            { credentials: 'include' }
+                                                        );
+                                                        const json = await res.json();
+                                                        setRows(Array.isArray(json?.items) ? json.items : []);
+                                                    } catch (err) {
+                                                        alert('Không thể huỷ đơn. Vui lòng thử lại.');
+                                                    }
+                                                }}
+                                                className="rounded-md bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+                                            >
+                                                Huỷ đơn
+                                            </button>
+                                        )}
+
+
+                                        {r.HDONG_TRANG_THAI === 'CHECKED_OUT' && (
+                                            reviews.includes(r.HDONG_MA) ? (
+                                                <Link
+                                                    href={`/khachhang/danh-gia/${r.HDONG_MA}`}
+                                                    className="rounded-md bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                                                >
+                                                    Xem lại đánh giá
+                                                </Link>
+                                            ) : (
+                                                <button
+                                                    onClick={() => setSelectedId(r.HDONG_MA)}
+                                                    className="rounded-md bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100"
+                                                >
+                                                    Đánh giá
+                                                </button>
+                                            )
+                                        )}
+
                                     </div>
                                 </div>
                             );
@@ -244,6 +341,19 @@ export default function QuanLyDatPhongPage() {
                     setDetailOpen(false);
                     setSelectedId(null);
                 }}
+            />
+            <ReviewModal
+                open={reviewOpen}
+                onClose={() => setReviewOpen(false)}
+                hdong_ma={selectedId}
+                kh_ma={guest?.KH_MA}
+                rooms={
+                    rows.find(x => x.HDONG_MA === selectedId)?.CT.map(ct => ({
+                        CTDP_ID: ct.CTDP_ID,
+                        LP_TEN: ct.LOAI_PHONG.LP_TEN,
+                        SO_LUONG: ct.SO_LUONG,
+                    })) || []
+                }
             />
 
         </div>
