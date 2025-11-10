@@ -5,6 +5,12 @@ import DatePicker from '@/components/form/date-picker'; // bạn đã có
 import { Bang, Lich, ListPhong, PlusIcon, Search } from '@/icons';
 import BookingCreateModal from '../ui/modal/BookingCreateModal';
 import BookingCreateToolBarModal from '@/components/ui/modal/BookingCreateToolBarModal';
+import ReactDatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import { registerLocale } from "react-datepicker";
+import {vi} from "date-fns/locale/vi"; // ngôn ngữ tiếng Việt
+registerLocale("vi", vi);
+
 export type ViewMode = 'board' | 'list' | 'timeline';
 export type FilterState = {
     statuses: { prebook: boolean; inuse: boolean; checkout: boolean; available: boolean };
@@ -66,19 +72,37 @@ export default function BookingToolbar({
 
             <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2">
-                    <DatePicker
-                        id="dp-from"
-                        label=""
-                        placeholder="Từ ngày"
-                        onChange={(dates: any) => onFiltersChange({ ...filters, range: { ...filters.range, from: dates?.[0] || dates || null } })}
+                    <ReactDatePicker
+                        selected={filters.range.from}
+                        onChange={(date) =>
+                            onFiltersChange({
+                                ...filters,
+                                range: { ...filters.range, from: date },
+                            })
+                        }
+                        placeholderText="Từ ngày"
+                        locale="vi" 
+                        dateFormat="dd/MM/yyyy"
+                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                        isClearable
                     />
-                    <DatePicker
-                        id="dp-to"
-                        label=""
-                        placeholder="Đến ngày"
-                        onChange={(dates: any) => onFiltersChange({ ...filters, range: { ...filters.range, to: dates?.[0] || dates || null } })}
+
+                    <ReactDatePicker
+                        selected={filters.range.to}
+                        onChange={(date) =>
+                            onFiltersChange({
+                                ...filters,
+                                range: { ...filters.range, to: date },
+                            })
+                        }
+                        placeholderText="Đến ngày"
+                        locale="vi" 
+                        dateFormat="dd/MM/yyyy"
+                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                        isClearable
                     />
-                </div>   
+                </div>
+
 
                 <input
                     value={filters.search}

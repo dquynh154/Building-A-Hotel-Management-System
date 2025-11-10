@@ -81,7 +81,7 @@ async function getBookingFull(req, res, next) {
         const ctsd = await prisma.cHI_TIET_SU_DUNG.findMany({
             where: {
                 HDONG_MA: id,
-                CTSD_TRANGTHAI: { in: ['ACTIVE'] },
+                CTSD_TRANGTHAI: { in: ['ACTIVE','DOI_PHONG', 'INVOICED'] },
             },
             select: {
                 CTSD_STT: true,
@@ -92,6 +92,7 @@ async function getBookingFull(req, res, next) {
                 CTSD_SO_LUONG: true,
                 CTSD_DON_GIA: true,
                 CTSD_TONG_TIEN: true,
+                CTSD_TRANGTHAI: true,
                 PHONG: {
                     select: {
                         PHONG_TEN: true,
@@ -110,7 +111,7 @@ async function getBookingFull(req, res, next) {
         const allCtsdForTotal = await prisma.cHI_TIET_SU_DUNG.findMany({
             where: {
                 HDONG_MA: id,
-                CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+                CTSD_TRANGTHAI: { in: ['ACTIVE', 'DOI_PHONG', 'INVOICED'] },
             },
             select: { CTSD_TONG_TIEN: true },
         });
@@ -133,6 +134,7 @@ async function getBookingFull(req, res, next) {
                 so_luong: r.CTSD_SO_LUONG,
                 don_gia: Number(r.CTSD_DON_GIA),
                 tong_tien: Number(r.CTSD_TONG_TIEN),
+                CTSD_TRANGTHAI: r.CTSD_TRANGTHAI
             };
         });
 
@@ -140,7 +142,7 @@ async function getBookingFull(req, res, next) {
         const ctdv = await prisma.cHI_TIET_DICH_VU.findMany({
             where: {
                 HDONG_MA: id,
-                CTDV_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+                CTDV_TRANGTHAI: { in: ['ACTIVE', 'DOI_PHONG'] },
             },
             select: {
                 CTDV_STT: true,
@@ -825,7 +827,7 @@ async function changeRoom(req, res, next) {
                     },
                     data: {
                         CTSD_O_DEN_GIO: now,
-                        CTSD_TRANGTHAI: "INVOICED",
+                        CTSD_TRANGTHAI: "DOI_PHONG",
                     },
                 });
 
@@ -893,7 +895,7 @@ async function changeRoom(req, res, next) {
                         CTSD_TRANGTHAI: "ACTIVE",
                         CTSD_NGAY_DA_O: { gte: start },
                     },
-                    data: { CTSD_TRANGTHAI: "INVOICED" },
+                    data: { CTSD_TRANGTHAI: "DOI_PHONG" },
                 });
 
                 // b) Tạo CTSD mới

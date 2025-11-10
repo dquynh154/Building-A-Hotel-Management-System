@@ -67,7 +67,7 @@ export default function AdminDatTruocPage() {
                             </a>
                             <a
                                 className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50"
-                                href={`/admin/hop-dong/${r.HDONG_MA}`}
+                                href={`/admin/others-pages/chi-tiet/${r.HDONG_MA}`}
                             >
                                 Xem chi tiết HĐ
                             </a>

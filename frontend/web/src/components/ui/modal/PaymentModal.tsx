@@ -25,6 +25,7 @@ export default function PaymentModal({
     deposit = 0,
     paid = 0,
     due = 0,
+
 }: {
     open: boolean;
     onClose: () => void;
@@ -142,13 +143,20 @@ export default function PaymentModal({
                             )}
 
                             {/* Khách đã trả (từ các lần trước) */}
-                            {Number(paid) > 0 && (
+                            {/* {Number(paid) > 0 && (
+                                <div className="mb-1 flex items-center justify-between text-sm">
+                                    <span className="text-gray-600">Khách đã trả</span>
+                                    <span className="font-medium text-gray-700">- {vnd(paid)}</span>
+                                </div>
+                            )} */}
+                            {Number(paid) > 0 && Number(paid) !== Number(deposit) && (
                                 <div className="mb-1 flex items-center justify-between text-sm">
                                     <span className="text-gray-600">Khách đã trả</span>
                                     <span className="font-medium text-gray-700">- {vnd(paid)}</span>
                                 </div>
                             )}
 
+                            
                             {/* Giảm giá / Thu khác (kiểu gạch chân) */}
                             <div className="mb-2 grid grid-cols-2 gap-6">
                                 <div>
@@ -242,13 +250,28 @@ export default function PaymentModal({
                     {/* Footer */}
                     <div className="mt-4 flex justify-end gap-2">
                         <Button variant="outline" size="sm" onClick={onClose}>Đóng</Button>
-                        <Button
+                        {/* <Button
                             size="sm"
                             variant="primary"
                             onClick={() => onSubmit?.({ staffId: currentStaff.id, discount, extra, method, inputPaid, note })}
                         >
                             Xác nhận thanh toán
+                        </Button> */}
+                        <Button
+                            size="sm"
+                            variant="primary"
+                            disabled={inputPaid < needPay}   // 👈 khóa nút nếu chưa đủ tiền
+                            onClick={() => {
+                                if (inputPaid < needPay) {
+                                    alert(`Cần nhập đủ ${needPay.toLocaleString('vi-VN')} VND để thanh toán.`);
+                                    return;
+                                }
+                                onSubmit?.({ staffId: currentStaff.id, discount, extra, method, inputPaid, note });
+                            }}
+                        >
+                            Xác nhận thanh toán
                         </Button>
+
                     </div>
                 </div>
             </div>

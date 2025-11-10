@@ -43,6 +43,7 @@ type RoomLine = {
     so_luong: number;
     don_gia: number;
     tong_tien: number;
+    CTSD_TRANGTHAI?: string;
 };
 
 type ServiceLine = {
@@ -329,7 +330,7 @@ export default function BookingDetailPage() {
     // Gom theo PHONG_MA: 1 thẻ/phòng; thời gian hiển thị dùng booking.from → booking.to
     const roomGroups = useMemo(() => {
         // Lấy danh sách phòng duy nhất
-        const uniq = new Map<number, { PHONG_MA: number; roomName: string; roomType: string; tong_tien: number }>();
+        const uniq = new Map<number, { PHONG_MA: number; roomName: string; roomType: string; tong_tien: number; CTSD_TRANGTHAI?: string; }>();
         for (const r of rooms) {
             const cur = uniq.get(r.PHONG_MA);
             if (!cur) {
@@ -338,9 +339,13 @@ export default function BookingDetailPage() {
                     roomName: r.roomName,
                     roomType: r.roomType,
                     tong_tien: Number(r.tong_tien || 0),
+                    CTSD_TRANGTHAI: r.CTSD_TRANGTHAI,
                 });
             } else {
                 cur.tong_tien += Number(r.tong_tien || 0); // cộng tiền phòng nếu có nhiều CTSD dòng
+                if (r.CTSD_TRANGTHAI === "DOI_PHONG") {
+                    cur.CTSD_TRANGTHAI = "DOI_PHONG";
+                }
             }
         }
 
@@ -571,7 +576,7 @@ export default function BookingDetailPage() {
         (payGuests.find(g => g.LA_KHACH_CHINH)?.KH_HOTEN) ||
         booking?.khach?.ten || '—';
 
-    const dpCode = `DP${String(bookingId).padStart(6, '0')}`;
+    const dpCode = `HD${String(bookingId).padStart(6, '0')}`;
     const paymentDetails = (
         <div className="space-y-4">
             {/* Thông tin phòng */}
@@ -579,7 +584,7 @@ export default function BookingDetailPage() {
                 <div className="px-3 py-2">
                     <div className="text-mi font-semibold">
                         Đặt phòng {dpCode} – {mainGuestName}
-                        <span className="ml-2 align-middle rounded-full bg-emerald-50 px-2 py-[2px] text-xs font-medium text-emerald-700 dark:bg-emerald-500/10">
+                        <span className="ml-2 align-middle rounded-full bg-emerald-50 px-2 py-[2px] text-sm font-medium text-emerald-700 dark:bg-emerald-500/10">
                             Khách chính
                         </span>
                     </div>
@@ -593,10 +598,16 @@ export default function BookingDetailPage() {
                     {roomGroups.map((g, idx) => (
                         <div key={g.key} className="px-3 py-2 text-sm">
                             <div className="flex items-center justify-between">
-                                <div className="font-medium">{idx + 1}. {g.room.roomName}</div>
+                                <div className="font-medium">{idx + 1}. {g.room.roomName}
+                                    {g.room.CTSD_TRANGTHAI === "DOI_PHONG" && (
+                                        <span className="rounded bg-orange-100 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+                                            Đã đổi phòng
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="text-right text-gray-600">{vnd(g.room.tong_tien)}</div>
                             </div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-sm text-gray-500">
                                 {g.room.roomType || '—'} • {fmt(booking?.from)} → {fmt(booking?.to)}
                             </div>
                         </div>
@@ -615,7 +626,7 @@ export default function BookingDetailPage() {
                 <div className="divide-y dark:divide-slate-700">
                     {roomGroups.map((g) => (
                         <div key={`S-${g.key}`} className="px-3 py-2">
-                            <div className="mb-1 text-xs font-medium text-gray-500">{g.room.roomName}</div>
+                            <div className="mb-1 text-sm font-medium text-gray-500">{g.room.roomName}</div>
                             {(persistedByRoom[g.room.PHONG_MA] || []).map(row => (
                                 <div key={`${row.PHONG_MA}-${row.DV_MA}-${row.price}`}
                                     className="flex items-center justify-between text-sm">
@@ -624,7 +635,7 @@ export default function BookingDetailPage() {
                                 </div>
                             ))}
                             {(persistedByRoom[g.room.PHONG_MA] || []).length === 0 && (
-                                <div className="text-xs text-gray-500">—</div>
+                                <div className="text-sm text-gray-500">—</div>
                             )}
                         </div>
                     ))}
@@ -657,9 +668,9 @@ export default function BookingDetailPage() {
             // BE của bạn: nếu đã tồn tại hoá đơn link với hợp đồng thì trả lại hoá đơn cũ
             const invRes = await api.post(`/hoadon/from-booking/${bookingId}`, {
                 discount: p.discount,
-                fee: p.extra, // phí/thu khác
-                // overrideDeposit: ... // nếu muốn ghi đè tiền cọc trừ
-                // (nếu bạn muốn override giảm giá thay vì get from KHUYEN_MAI, xem Patch A bên dưới)
+                fee: p.extra,
+                overrideDeposit: booking?.tien_coc ?? 0,
+                inputPaid: p.inputPaid,
             });
             const inv = invRes.data;            // { HDON_MA, HDON_THANH_TIEN, ... , _payment: { paid, due } }
 
@@ -668,10 +679,17 @@ export default function BookingDetailPage() {
             const amountToCharge = Math.max(0, Math.min(Number(p.inputPaid || 0), due));
 
             // Nếu người dùng chưa nhập tiền thì không tạo payment
-            if (amountToCharge <= 0) {
-                alert('Vui lòng nhập số tiền khách thanh toán.');
+            // if (amountToCharge <= 0) {
+            //     alert('Vui lòng nhập số tiền khách thanh toán.');
+            //     return;
+            // }
+            // Nếu người dùng chưa nhập hoặc nhập thiếu số tiền cần trả -> chặn
+            const dueTotal = Math.max(0, Number(totals.grand) - Number(booking?.tien_coc ?? 0));
+            if (Number(p.inputPaid || 0) < dueTotal) {
+                alert(`Cần nhập đủ ${dueTotal.toLocaleString('vi-VN')} VND để thanh toán.2`);
                 return;
             }
+
 
             // 3) GHI NHẬN THANH TOÁN
             const methodMap = { cash: 'CASH', card: 'CARD', transfer: 'TRANSFER' } as const;
@@ -694,8 +712,8 @@ export default function BookingDetailPage() {
             // 4) Thông báo & refresh
             const paidAll = Number(pay?._payment?.due ?? 0) <= 1e-6;
             alert(
-                `Đã ghi nhận thanh toán ${amountToCharge.toLocaleString('vi-VN')}.\n` +
-                (p.method === 'cash' && pay?.TT_TIEN_THUA ? `Tiền thừa: ${Number(pay.TT_TIEN_THUA).toLocaleString('vi-VN')}\n` : '') +
+                `Đã ghi nhận thanh toán ${Number(pay.TT_TIEN_THUA).toLocaleString('vi-VN')}\n` +
+                (p.method === 'cash' && pay?.TT_TIEN_THUA ? `Tiền thừa: ${amountToCharge.toLocaleString('vi-VN')}.\n` : '') +
                 (paidAll ? 'Hóa đơn đã đủ tiền.' : `Còn thiếu: ${Number(pay?._payment?.due || 0).toLocaleString('vi-VN')}`)
             );
 
@@ -771,7 +789,7 @@ export default function BookingDetailPage() {
     function Stepper({ status }: { status?: string }) {
         const idx = Math.max(steps.findIndex(s => s.key === (status || '').toUpperCase()), 0);
         return (
-            <div className="flex items-center gap-2 text-xs">
+            <div className="flex items-center gap-2 text-sm">
                 {steps.map((s, i) => (
                     <div key={s.key} className="flex items-center gap-2">
                         <span className={`rounded-full px-2 py-0.5 ring-1
@@ -797,10 +815,16 @@ export default function BookingDetailPage() {
     const canCheckoutByStatus = status === 'CHECKED_IN';
 
     const [openAddRoomModal, setOpenAddRoomModal] = useState(false);
+    const STATUS_MAP: Record<string, { text: string; className: string }> = {
+        ACTIVE: { text: "Đang sử dụng", className: "text-green-600" },
+        CANCELLED: { text: "Đã hủy", className: "text-gray-500" },
+        INVOICED: { text: "Đã tính tiền", className: "text-blue-600" },
+        DOI_PHONG: { text: "Đã đổi phòng", className: "text-orange-500 font-medium" },
+    };
 
     return (
         <div className="min-h-screen">
-            <PageBreadcrumb_ct pageTitle={`Hợp đồng DP${String(bookingId).padStart(6, '0')}`} />
+            <PageBreadcrumb_ct pageTitle={`Hợp đồng HD${String(bookingId).padStart(6, '0')}`} />
             <div>
 
                 {/* 2 cột: danh mục DV | chi tiết HĐ gộp */}
@@ -826,8 +850,8 @@ export default function BookingDetailPage() {
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableCell isHeader className="px-3 py-2 text-xs text-gray-500">Tên</TableCell>
-                                            <TableCell isHeader className="px-3 py-2 text-xs text-gray-500">Giá</TableCell>
+                                            <TableCell isHeader className="px-3 py-2 text-sm text-gray-500">Tên</TableCell>
+                                            <TableCell isHeader className="px-3 py-2 text-sm text-gray-500">Giá</TableCell>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -846,7 +870,7 @@ export default function BookingDetailPage() {
                                             >
                                                 <TableCell className="px-3 py-2">
                                                     <div className="text-sm font-medium">{p.DV_TEN}</div>
-                                                    <div className="text-xs text-gray-500">{p.LDV_TEN || "—"}</div>
+                                                    <div className="text-sm text-gray-500">{p.LDV_TEN || "—"}</div>
                                                 </TableCell>
                                                 <TableCell className="w-24 px-3 py-2 text-center text-sm">{vnd(p.PRICE)}</TableCell>
                                             </TableRow>
@@ -1012,25 +1036,31 @@ export default function BookingDetailPage() {
                                                                 alert(e?.response?.data?.message || 'Xóa phòng thất bại.');
                                                             }
                                                         }}
-                                                        className="ml-2 text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700"
+                                                        className="ml-2 text-sm px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700"
                                                     >
                                                         {<TrashBinIcon />}
                                                     </button>
                                                 )}
 
-                                                <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border text-xs font-medium dark:border-slate-700">
+                                                <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border text-sm font-medium dark:border-slate-700">
                                                     {idx + 1}
                                                 </span>
                                                 <div>
-                                                    <div className="text-sm font-semibold">{g.room.roomName}</div>
-                                                    <div className="text-xs text-gray-500">
+                                                    <div className="text-m font-semibold">{g.room.roomName}
+                                                        {g.room.CTSD_TRANGTHAI === "DOI_PHONG" && (
+                                                            <span className="rounded bg-orange-100 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+                                                                Đã đổi phòng
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-sm text-gray-500">
                                                         {g.room.roomType || "—"} • {fmt(booking?.from)} → {fmt(booking?.to)}
                                                     </div>
                                                 </div>
                                             </div>
 
                                             <div className="text-right">
-                                                <div className="text-xs text-gray-500">Tiền phòng</div>
+                                                <div className="text-sm text-gray-500">Tiền phòng</div>
                                                 <div className="text-sm font-medium">{vnd(g.room.tong_tien)}</div>
                                             </div>
                                         </div>
@@ -1048,12 +1078,12 @@ export default function BookingDetailPage() {
                                                         <div className="text-[11px] text-gray-500">đã lưu</div>
                                                     </div>
 
-                                                    <div className="text-xs text-gray-500">
+                                                    <div className="text-sm text-gray-500">
                                                         {fmtDate(row.ngay)}
                                                     </div>
 
                                                     <div className="flex items-center gap-1">
-                                                        <span className="text-xs text-gray-500">SL</span>
+                                                        <span className="text-sm text-gray-500">SL</span>
                                                         <Input
 
                                                             type="number"
@@ -1064,7 +1094,7 @@ export default function BookingDetailPage() {
                                                     </div>
 
                                                     <div className="flex items-center gap-1">
-                                                        <span className="text-xs text-gray-500">ĐG</span>
+                                                        <span className="text-sm text-gray-500">ĐG</span>
                                                         <Input
 
                                                             type="number"
@@ -1093,10 +1123,10 @@ export default function BookingDetailPage() {
                                                         </div>
                                                     </div>
 
-                                                    <div className="text-xs text-gray-500">{new Date().toLocaleDateString('vi-VN')}</div>
+                                                    <div className="text-sm text-gray-500">{new Date().toLocaleDateString('vi-VN')}</div>
 
                                                     <div className="flex items-center gap-1">
-                                                        <span className="text-xs text-gray-500">SL</span>
+                                                        <span className="text-sm text-gray-500">SL</span>
                                                         <Input
                                                             type="number"
                                                             min="1"
@@ -1107,7 +1137,7 @@ export default function BookingDetailPage() {
                                                     </div>
 
                                                     <div className="flex items-center gap-1">
-                                                        <span className="text-xs text-gray-500">ĐG</span>
+                                                        <span className="text-sm text-gray-500">ĐG</span>
                                                         <Input
                                                             type="number"
                                                             min="0"
@@ -1129,7 +1159,7 @@ export default function BookingDetailPage() {
 
 
                                             {g.services.length === 0 && (
-                                                <div className="rounded-md border p-2 text-xs text-gray-500 dark:border-slate-700">
+                                                <div className="rounded-md border p-2 text-sm text-gray-500 dark:border-slate-700">
                                                     Chưa có dịch vụ cho phòng này.
                                                 </div>
                                             )}
@@ -1141,10 +1171,16 @@ export default function BookingDetailPage() {
                                                 size="sm"
                                                 variant={targetRoomKey === g.key ? "primary" : "outline"}
                                                 onClick={() => setSelectedRoomId(g.room.PHONG_MA)}
+                                                disabled={g.room.CTSD_TRANGTHAI === "DOI_PHONG"} // 👈 khóa nút nếu phòng đã đổi
                                             >
-                                                {selectedRoomId === g.room.PHONG_MA ? "Đang thêm vào phòng này" : "Chọn để thêm dịch vụ"}
+                                                {g.room.CTSD_TRANGTHAI === "DOI_PHONG"
+                                                    ? "Phòng đã đổi, không thể thêm dịch vụ"
+                                                    : selectedRoomId === g.room.PHONG_MA
+                                                        ? "Đang thêm vào phòng này"
+                                                        : "Chọn để thêm dịch vụ"}
                                             </Button>
                                         </div>
+
                                     </div>
                                 );
                             })}
@@ -1175,11 +1211,11 @@ export default function BookingDetailPage() {
 
                                             {invStatus?.hasInvoice && (
                                                 invStatus.due <= 0 ? (
-                                                    <span className="ml-3 inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-                                                        ĐÃ THANH TOÁN
+                                                    <span className="ml-3 inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-sm font-medium text-emerald-700">
+                                                        ĐÃ XUẤT HÓA ĐƠN & ĐÃ THANH TOÁN
                                                     </span>
                                                 ) : (
-                                                    <span className="ml-3 inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                                                    <span className="ml-3 inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-sm font-medium text-amber-700">
                                                         Đã thanh toán {vnd(Number(invStatus.paid || 0))}
                                                     </span>
                                                 )
@@ -1311,6 +1347,8 @@ export default function BookingDetailPage() {
                         occAppendRef.current = append;
                         setOccCreateOpen(true);
                     }}
+                    bookingId={bookingId}
+                    editable
                 />
                 <KhachHangCreateModal
                     open={occCreateOpen}
@@ -1352,32 +1390,46 @@ export default function BookingDetailPage() {
                     onClose={() => setPayOpen(false)}
                     total={totals.grand}
                     deposit={Number(booking?.tien_coc ?? 0)}
-                    paid={Number(invStatus?.paid ?? 0)}       // ✅ đã trả
+                    //paid={Number(invStatus?.paid ?? 0)}       // ✅ đã trả
+                    paid={Math.max(0, Number(invStatus?.paid ?? 0) - Number(booking?.tien_coc ?? 0))}
                     due={Number(invStatus?.due ?? 0)}
                     currentStaff={me ? { id: me.NV_MA, name: me.NV_HOTEN } : { id: '', name: '—' }}
                     details={paymentDetails}          // 👈 slot chi tiết bên trái
                     onSubmit={async (p) => {
-                        // 1) gọi lại logic thu tiền y như nút “Thanh toán”
-                        await handleConfirmPayment(p);
-
-                        // 2) Nếu đang ở chế độ “Thanh toán & trả phòng”, kiểm tra lại due rồi checkout
-                        if (payForCheckout) {
-                            try {
-                                // lấy lại invoice-status thật mới
-                                const r = await api.get(`/bookings/${bookingId}/invoice-status`, { params: { _: Date.now() } });
-                                const due = Number(r.data?.due ?? 0);
-                                if (due > 0) {
-                                    alert(`Vẫn còn thiếu ${due.toLocaleString('vi-VN')}. Cần tất toán đủ để trả phòng.`);
-                                    return; // giữ modal mở để thanh toán tiếp
-                                }
-                                setPayOpen(false);        // đóng modal
-                                await doCheckout();       // trả phòng
-                            } catch (e: any) {
-                                alert(e?.response?.data?.message || 'Không kiểm tra được số tiền sau thanh toán');
+                        try {
+                            // ✅ 1️⃣ Ghi hóa đơn & thanh toán ngay
+                            const pay = await api.post(`/hoadon/from-booking/${bookingId}`, p);
+                            if (!pay || pay.status !== 201) {
+                                alert('Không tạo được hóa đơn / ghi thanh toán.');
+                                return;
                             }
-                        } else {
-                            // thanh toán thường: đóng modal là xong
-                            setPayOpen(false);
+
+                            const paidAll = Number(pay.data?._payment?.due ?? 0) <= 1e-6;
+                            const amountPaid = Number(pay.data?._payment?.paid ?? 0);
+                            const due = Number(pay.data?._payment?.due ?? 0);
+                            const over = Number(pay.data?.TT_TIEN_THUA ?? 0); // nếu có tiền thừa
+
+                            // ✅ 2️⃣ Hiển thị thông báo rõ ràng
+                            let msg = `Đã ghi nhận thanh toán ${amountPaid.toLocaleString('vi-VN')} VND.\n`;
+                            if (over > 0) msg += `Tiền thừa: ${over.toLocaleString('vi-VN')} VND.\n`;
+                            msg += paidAll
+                                ? '💰 Hóa đơn đã đủ tiền.'
+                                : `Còn thiếu: ${due.toLocaleString('vi-VN')} VND.`;
+
+                            alert(msg);
+
+                            // ✅ 3️⃣ Nếu còn thiếu tiền, dừng lại
+                            if (!paidAll) return;
+
+                            // ✅ 4️⃣ Nếu trả phòng kèm thanh toán → checkout
+                            if (payForCheckout) {
+                                setPayOpen(false);
+                                await doCheckout();
+                            } else {
+                                setPayOpen(false);
+                            }
+                        } catch (e: any) {
+                            alert(e?.response?.data?.message || 'Lỗi khi xử lý thanh toán.');
                         }
 
 

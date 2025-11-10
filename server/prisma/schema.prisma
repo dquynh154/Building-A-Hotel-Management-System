@@ -84,12 +84,19 @@ enum CTSD_TrangThai {
   ACTIVE
   CANCELLED
   INVOICED
+  DOI_PHONG
 }
 
 enum CTDV_TrangThai {
   ACTIVE
   CANCELLED
   INVOICED
+  DOI_PHONG
+}
+
+enum LOAI_HOA_DON {
+  DEPOSIT
+  MAIN
 }
 
 // ---------- DANH MỤC PHÒNG ----------
@@ -495,6 +502,7 @@ model PHAN_HOI {
 model HOA_DON {
   HDON_MA           Int              @id @default(autoincrement())
   NV_MA             Int
+  HDON_LOAI         LOAI_HOA_DON     @default(MAIN) 
   HDON_TONG_TIEN    Decimal          @default(0) @db.Decimal(12, 2)
   HDON_GIAM_GIA     Decimal          @default(0) @db.Decimal(12, 2)
   HDON_PHI          Decimal          @default(0) @db.Decimal(12, 2)

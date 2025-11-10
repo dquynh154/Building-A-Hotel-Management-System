@@ -18,5 +18,8 @@ r.post('/bookings/:id/checkin1', staffOrAdmin, ctl.checkin1);
 r.post('/bookings/:id/checkout', staffOrAdmin, ctl.checkout);
 r.post('/bookings/:id/cancel', staffOrAdmin, ctl.cancel);
 // r.post('/bookings/checkin-now', staffOrAdmin, ctl.checkinNow);
+// DELETE /bookings/:id/guests/:khId
+r.delete('/bookings/:id/guests/:khId', staffOrAdmin, ctl.delete_kh);
+r.post('/bookings/:id/guests', staffOrAdmin, ctl.add_guest);
 
 module.exports = r;

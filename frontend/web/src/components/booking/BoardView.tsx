@@ -91,7 +91,11 @@ export default function BoardView({
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {f.items.map(r => {
-                            const bsAll = bookingByRoom.get(r.PHONG_MA) || [];
+                            const excludedStatuses = ['CHECKED_OUT', 'PAID', 'CANCELLED', 'NO_SHOW'];
+
+                            const bsAll = (bookingByRoom.get(r.PHONG_MA) || []).filter(
+                                b => !excludedStatuses.includes(b.TRANG_THAI)
+                            );
                             let bs: BookingLite[] = [];
 
                             if (r.PHONG_TRANGTHAI === 'OCCUPIED') {
@@ -214,7 +218,7 @@ export default function BoardView({
 
                                                         <div><b>Khách:</b> {b.KH_TEN || "Khách lẻ"}</div>
                                                         <div><b>Thời gian:</b> {fmt(b.TU_LUC)} → {fmt(b.DEN_LUC)}</div>
-                                                        <div><b>Giá:</b> {vnd(b.HDONG_MA)}</div>
+                                                        <div><b>Mã hợp đồng:</b> HD000{vnd(b.HDONG_MA)}</div>
 
                                                         <div className="flex justify-end gap-2 pt-3">
                                                             <button

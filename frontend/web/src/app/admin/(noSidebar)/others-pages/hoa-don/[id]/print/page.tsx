@@ -103,6 +103,7 @@ export default function InvoicePrintPage() {
                 </div>
                 <div className="text-right">
                     <div><span className="opacity-70">Mã HĐ:</span> <b>{b.HDONG_MA ?? '—'}</b></div>
+                    <div><span className="opacity-70">Đặt:</span> {fmt(b.HDONG_NGAYDAT)} → {fmt(b.HDONG_NGAYTRA)}</div>
                     <div><span className="opacity-70">Ở:</span> {fmt(b.HDONG_NGAYTHUCNHAN)} → {fmt(b.HDONG_NGAYTHUCTRA)}</div>
                 </div>
             </div>

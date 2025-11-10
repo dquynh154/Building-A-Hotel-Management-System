@@ -53,7 +53,8 @@ function toSqlUTC(dt /* Date in UTC */) {
 // POST /public/dat-truoc/prepare
 pub.post('/dat-truoc/prepare', async (req, res) => {
     try {
-        const { from, to, adults = 1, items = [], kh_ma } = req.body || {};
+        // const { from, to, adults = 1, items = [], kh_ma } = req.body || {};
+        const { from, to, adults = 1, items = [], kh_ma, stay_guests = [] } = req.body || {};
         if (!from || !to) return res.status(400).json({ message: 'from/to bắt buộc (YYYY-MM-DD)' });
         if (!kh_ma) return res.status(400).json({ message: 'Thiếu kh_ma (khách phải đăng nhập trước khi đặt)' });
         if (!Array.isArray(items) || items.length === 0)
@@ -89,7 +90,7 @@ pub.post('/dat-truoc/prepare', async (req, res) => {
           JOIN HOP_DONG_DAT_PHONG H ON H.HDONG_MA = CT.HDONG_MA
           JOIN PHONG P ON P.PHONG_MA = CT.PHONG_MA
           WHERE P.LP_MA = ${lp}
-            AND H.HDONG_TRANG_THAI NOT IN ('CANCELLED','NO_SHOW')
+            AND H.HDONG_TRANG_THAI IN ('PENDING','CONFIRMED','CHECKED_IN')
             AND COALESCE(H.HDONG_NGAYTHUCNHAN, H.HDONG_NGAYDAT) < ${toDt}
             AND COALESCE(H.HDONG_NGAYTHUCTRA,  H.HDONG_NGAYTRA)  > ${fromDt}
         `;
@@ -102,6 +103,7 @@ pub.post('/dat-truoc/prepare', async (req, res) => {
           JOIN HOP_DONG_DAT_PHONG H ON H.HDONG_MA = CT.HDONG_MA
           WHERE CT.LP_MA = ${lp}
             AND CT.TRANG_THAI IN ('CONFIRMED','ALLOCATED')
+            AND H.HDONG_TRANG_THAI IN ('PENDING','CONFIRMED','CHECKED_IN') 
             AND COALESCE(H.HDONG_NGAYTHUCNHAN, H.HDONG_NGAYDAT) < ${toDt}
             AND COALESCE(H.HDONG_NGAYTHUCTRA,  H.HDONG_NGAYTRA)  > ${fromDt}
         `;
@@ -123,7 +125,7 @@ pub.post('/dat-truoc/prepare', async (req, res) => {
                 details.push({ LP_MA: lp, QTY: qty, UNIT_PRICE: unit, SUBTOTAL: sub });
             }
             const deposit = Math.round(total * tileCoc / 100);
-
+            
             // 3) TẠO HỢP ĐỒNG (đủ cột NOT NULL)
             const hopdong = await tx.hOP_DONG_DAT_PHONG.create({
                 data: {
@@ -139,6 +141,54 @@ pub.post('/dat-truoc/prepare', async (req, res) => {
                 select: { HDONG_MA: true },
             });
 
+            if (Array.isArray(stay_guests) && stay_guests.length) {
+                for (const g of stay_guests) {
+                    if (g.role === 'guest_primary') {
+                        let newKH;
+                        const exist = await tx.kHACH_HANG.findFirst({
+                            where: { KH_SDT: g.phone },
+                            select: { KH_MA: true },
+                        });
+                        if (exist) newKH = exist;
+                        else newKH = await tx.kHACH_HANG.create({
+                            data: {
+                                KH_HOTEN: `${g.firstName} ${g.lastName}`.trim(),
+                                KH_SDT: g.phone || null,
+                                KH_EMAIL: g.email || null,
+                            },
+                        });
+                        await tx.lUU_TRU_KHACH.create({
+                            data: {
+                                HDONG_MA: hopdong.HDONG_MA,
+                                KH_MA: newKH.KH_MA,
+                                LA_KHACH_CHINH: true,
+                                LA_KHACH_DAT: false,
+                            },
+                        });
+                    } else if (g.role === 'booker_primary') {
+                        // Người đăng nhập vừa là khách chính + khách đặt
+                        await tx.lUU_TRU_KHACH.create({
+                            data: {
+                                HDONG_MA: hopdong.HDONG_MA,
+                                KH_MA: Number(kh_ma),
+                                LA_KHACH_CHINH: true,
+                                LA_KHACH_DAT: true,
+                            },
+                        });
+                    } else if (g.role === 'booker') {
+                        // Người đặt (đặt cho người khác)
+                        await tx.lUU_TRU_KHACH.create({
+                            data: {
+                                HDONG_MA: hopdong.HDONG_MA,
+                                KH_MA: Number(kh_ma),
+                                LA_KHACH_CHINH: false,
+                                LA_KHACH_DAT: true,
+                            },
+                        });
+                    }
+                }
+            }
+
             // 4) TẠO HÓA ĐƠN (đặt cọc)
             const invoice = await tx.hOA_DON.create({
                 data: {
@@ -148,6 +198,8 @@ pub.post('/dat-truoc/prepare', async (req, res) => {
                     HDON_PHI: new Prisma.Decimal(0),
                     HDON_COC_DA_TRU: new Prisma.Decimal(0),
                     HDON_THANH_TIEN: new Prisma.Decimal(deposit),
+                    HDON_TRANG_THAI: 'ISSUED',
+                    HDON_LOAI: "DEPOSIT",
                     HDON_CHITIET_JSON: {
                         type: 'DEPOSIT',
                         hdong_ma: hopdong.HDONG_MA,
@@ -385,7 +437,7 @@ pub.post('/pay/mock/confirm', async (req, res, next) => {
                 });
                 await prisma.hOA_DON.update({
                     where: { HDON_MA: Number(hdon_ma) },
-                    data: { HDON_COC_DA_TRU: last.TT_SO_TIEN }, // cộng tiền cọc vào hóa đơn
+                    data: { HDON_TRANG_THAI: 'PAID' , HDON_COC_DA_TRU: last.TT_SO_TIEN }, // cộng tiền cọc vào hóa đơn
                 });
             }
             

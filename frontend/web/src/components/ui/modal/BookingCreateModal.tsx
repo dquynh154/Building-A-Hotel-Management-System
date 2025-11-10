@@ -1043,7 +1043,7 @@ export default function BookingCreateModal({
                     }
                 />
 
-                <button
+                {/* <button
                     type="button"
                     onClick={() => setOccOpen(true)}
                     className="inline-flex h-[36px] items-center gap-3 rounded-lg border px-3 text-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
@@ -1060,7 +1060,7 @@ export default function BookingCreateModal({
                     <span className="inline-flex items-center gap-1">
                         <span>🪪</span><b>{occDocs}</b>
                     </span>
-                </button>
+                </button> */}
             </div>
 
             {/* Bảng 7 cột */}
@@ -1338,7 +1338,7 @@ export default function BookingCreateModal({
             />
 
 
-            <OccupantsModal
+            {/* <OccupantsModal
                 open={occOpen}
                 onClose={() => setOccOpen(false)}
                 value={occupants}
@@ -1348,7 +1348,7 @@ export default function BookingCreateModal({
                     occAppendRef.current = append;
                     setOccCreateOpen(true);
                 }}
-            />
+            /> */}
             {/* Modal tạo KH khi bấm + Người lớn trong OccupantsModal */}
             <KhachHangCreateModal
                 open={occCreateOpen}

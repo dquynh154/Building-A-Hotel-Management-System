@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useGuest } from '@/hooks/useGuest';
+import BookingDetailModal from '@/components/ui/modal/BookingDetaiModal';
 
 type CTLine = {
     CTDP_ID: number;
@@ -52,6 +53,8 @@ export default function QuanLyDatPhongPage() {
     const [rows, setRows] = useState<Row[]>([]);
     const [loading, setLoading] = useState(true);
     const { guest, loading: guestLoading } = useGuest();
+    const [detailOpen, setDetailOpen] = useState(false);
+    const [selectedId, setSelectedId] = useState<number | null>(null);
 
     useEffect(() => {
         if (guestLoading) return;
@@ -78,123 +81,155 @@ export default function QuanLyDatPhongPage() {
 
     return (
         <div className="mx-auto max-w-5xl px-4 py-8">
-            {/* Card bọc toàn trang */}
             <div className="rounded-2xl border bg-white shadow-sm">
-                {/* Header của card */}
                 <div className="flex items-center justify-between border-b px-6 py-4">
-                    <h1 className="text-xl md:text-2xl font-bold text-slate-900">Đơn đặt phòng của tôi</h1>
+                    <h1 className="text-xl md:text-2xl font-bold text-slate-900">
+                        Đơn đặt phòng của tôi
+                    </h1>
+                    
                 </div>
 
-                {/* Body của card */}
                 <div className="p-6">
                     {loading && (
-                        <div className="rounded-lg border bg-white p-4 text-sm text-slate-600">Đang tải…</div>
+                        <div className="rounded-lg border bg-white p-4 text-sm text-slate-600">
+                            Đang tải danh sách đơn đặt phòng…
+                        </div>
                     )}
 
                     {!loading && rows.length === 0 && (
                         <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-center text-amber-800">
                             Bạn chưa có đặt phòng nào.
                             <div className="mt-3">
-                                <Link href="/khachhang" className="font-semibold text-rose-700 hover:underline">
+                                <Link
+                                    href="/khachhang"
+                                    className="font-semibold text-rose-700 hover:underline"
+                                >
                                     Đặt phòng ngay
                                 </Link>
                             </div>
                         </div>
                     )}
 
+                    {/* Danh sách đơn */}
                     <div className="space-y-4">
                         {rows.map((r) => {
-                            const status = r.HDONG_TRANG_THAI;
-                            const canPayDeposit =
-                                status === 'PENDING' &&
-                                r.DEPOSIT_INVOICE &&
-                                r.DEPOSIT_INVOICE.HDON_TRANG_THAI !== 'PAID';
-
+                            const badge = statusBadge(r.HDONG_TRANG_THAI);
                             const depositAmount =
-                                (r.DEPOSIT_INVOICE?.HDON_THANH_TIEN ?? r.HDONG_TIENCOCYEUCAU) as number;
+                                (r.DEPOSIT_INVOICE?.HDON_THANH_TIEN ??
+                                    r.HDONG_TIENCOCYEUCAU) as number;
+                            const canPay =
+                                r.HDONG_TRANG_THAI === "PENDING" &&
+                                r.DEPOSIT_INVOICE?.HDON_TRANG_THAI !== "PAID";
 
-                            const returnUrl = encodeURIComponent('/khachhang/quan-ly-dat-phong');
-                            const payHref = canPayDeposit
-                                ? `/khachhang/pay-mock?hdon_ma=${r.DEPOSIT_INVOICE!.HDON_MA}&amount=${depositAmount}&return=${returnUrl}`
+                            const totalAmount = Number(r.HDONG_TONGTIENDUKIEN || 0);
+                            const remain = Math.max(totalAmount - depositAmount, 0);
+
+                            const payHref = canPay
+                                ? `/khachhang/pay-mock?hdon_ma=${r.DEPOSIT_INVOICE?.HDON_MA}&amount=${depositAmount}&return=/khachhang/quan-ly-dat-phong`
                                 : undefined;
 
-                            const contractHref = `/khachhang/dat-phong/chi-tiet?hd=${r.HDONG_MA}`;
-                            const badge = statusBadge(status);
-                            const detailHref = r.DEPOSIT_INVOICE
+                            const detailHref = `/khachhang/dat-phong/chi-tiet?hd=${r.HDONG_MA}`;
+                            const invoiceHref = r.DEPOSIT_INVOICE
                                 ? `/khachhang/dat-phong/ket-qua?hdon_ma=${r.DEPOSIT_INVOICE.HDON_MA}`
-                                : `/khachhang/dat-phong/ket-qua?hd=${r.HDONG_MA}`;
-                            const receiptHref = r.DEPOSIT_INVOICE
-                                ? `/khachhang/dat-phong/ket-qua?hdon_ma=${r.DEPOSIT_INVOICE.HDON_MA}`
-                                : undefined; 
+                                : undefined;
+
                             return (
                                 <div
                                     key={r.HDONG_MA}
-                                    className="rounded-xl border bg-white p-4 md:p-5 shadow-[0_1px_0_0_rgba(0,0,0,0.02)]"
+                                    className="rounded-xl border bg-white p-4 md:p-5 shadow-[0_1px_0_0_rgba(0,0,0,0.03)]"
                                 >
-                                    {/* Top row: mã + trạng thái */}
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div className="text-base font-semibold text-slate-900">MÃ HỢP ĐỒNG: HD000{r.HDONG_MA}</div>
-                                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badge.cls}`}>
+                                    {/* Header */}
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="font-semibold text-slate-900">
+                                            MÃ HỢP ĐỒNG: HD{r.HDONG_MA.toString().padStart(6, "0")}
+                                        </div>
+                                        <span
+                                            className={`rounded-full px-3 py-1 text-xs font-semibold ${badge.cls}`}
+                                        >
                                             {badge.text}
                                         </span>
                                     </div>
 
-                                    {/* Ngày nhận/trả */}
-                                    <div className="mt-1 text-sm text-slate-600">
-                                        <div className='text-base'>Thời gian: 
-                                        14:00   {fmtDateVN(r.HDONG_NGAYDAT)} <span className="mx-1 text-slate-400">→</span>{' '}
-                                        12:00   {fmtDateVN(r.HDONG_NGAYTRA)}
-                                        </div>
+                                    <div className="text-sm text-slate-600 mb-1">
+                                        Thời gian:{" "}
+                                        <b>
+                                            14:00 {fmtDateVN(r.HDONG_NGAYDAT)} → 12:00{" "}
+                                            {fmtDateVN(r.HDONG_NGAYTRA)}
+                                        </b>
                                     </div>
 
-                                    {/* Dòng loại phòng */}
-                                    {r.CT.length > 0 && (
-                                        <div className="mt-3 space-y-1 text-sm">
-                                            {r.CT.map((c) => (
-                                                <div key={c.CTDP_ID} className="flex items-center justify-between">
-                                                    <span className="text-slate-700">
-                                                        {c.LOAI_PHONG.LP_TEN}{' '}
-                                                        <span className="text-slate-500">× {c.SO_LUONG}</span>
+                                    {/* Chi tiết phòng */}
+                                    {r.CT?.length > 0 && (
+                                        <ul className="mt-2 text-sm text-slate-700 divide-y">
+                                            {r.CT.map((ct) => (
+                                                <li
+                                                    key={ct.CTDP_ID}
+                                                    className="flex justify-between py-1.5"
+                                                >
+                                                    <span>
+                                                        {ct.LOAI_PHONG.LP_TEN}{" "}
+                                                        <span className="text-slate-500">
+                                                            × {ct.SO_LUONG}
+                                                        </span>
                                                     </span>
-                                                    <span className="font-medium text-slate-900">{fmtVND(c.TONG_TIEN)} đ</span>
-                                                </div>
+                                                    <span className="font-medium">
+                                                        {fmtVND(ct.TONG_TIEN)} ₫
+                                                    </span>
+                                                </li>
                                             ))}
-                                        </div>
+                                        </ul>
                                     )}
 
-                                    {/* Cọc + hành động */}
-                                    <div className="mt-4 flex flex-col items-stretch gap-3 md:flex-row md:items-center md:justify-between">
-                                        <div className="text-sm text-slate-600">
-                                            Cọc yêu cầu:&nbsp;
-                                            <b className="text-rose-700">{fmtVND(depositAmount)} đ</b>
+                                    {/* Tổng hợp thanh toán */}
+                                    <div className="mt-3 text-sm text-slate-700 space-y-1">
+                                        <div>
+                                            Cọc yêu cầu:{" "}
+                                            <b className="text-rose-700">
+                                                {fmtVND(depositAmount)} ₫
+                                            </b>
                                         </div>
+                                        <div>
+                                            Tổng dự kiến:{" "}
+                                            <b className="text-slate-800">
+                                                {fmtVND(totalAmount)} ₫
+                                            </b>
+                                        </div>
+                                        {remain > 0 && (
+                                            <div>
+                                                Còn lại khi nhận phòng:{" "}
+                                                <b className="text-emerald-700">{fmtVND(remain)} ₫</b>
+                                            </div>
+                                        )}
+                                    </div>
 
-                                        <div className="flex gap-2">
+                                    {/* Footer hành động */}
+                                    <div className="mt-4 flex flex-wrap justify-end gap-2">
+                                        <button
+                                            onClick={() => {
+                                                setSelectedId(r.HDONG_MA);
+                                                setDetailOpen(true);
+                                            }}
+                                            className="rounded-md border px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                        >
+                                            Xem chi tiết
+                                        </button>
+
+
+                                        {canPay ? (
                                             <Link
-                                                href={contractHref}
-                                                className="rounded-md border px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                                href={payHref!}
+                                                className="rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
                                             >
-                                                Xem chi tiết
+                                                Thanh toán cọc
                                             </Link>
-
-                                            {canPayDeposit ? (
-                                                <Link
-                                                    href={payHref!}
-                                                    className="rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
-                                                >
-                                                    Thanh toán cọc
-                                                </Link>
-                                            ) : (
-                                                    receiptHref && (
-                                                        <Link
-                                                            href={receiptHref}
-                                                            className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700"
-                                                        >
-                                                            Xem biên nhận
-                                                        </Link>
-                                                    )
-                                            )}
-                                        </div>
+                                        ) : invoiceHref ? (
+                                            <Link
+                                                href={invoiceHref}
+                                                className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+                                            >
+                                                Xem biên nhận
+                                            </Link>
+                                        ) : null}
                                     </div>
                                 </div>
                             );
@@ -202,7 +237,17 @@ export default function QuanLyDatPhongPage() {
                     </div>
                 </div>
             </div>
+            <BookingDetailModal
+                open={detailOpen}
+                bookingId={selectedId}
+                onClose={() => {
+                    setDetailOpen(false);
+                    setSelectedId(null);
+                }}
+            />
+
         </div>
     );
+
 
 }

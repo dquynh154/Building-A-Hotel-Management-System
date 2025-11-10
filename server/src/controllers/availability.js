@@ -50,6 +50,29 @@ async function roomTypeAvailability(req, res, next) {
                 .map(x => x.PHONG_MA)
         );
 
+
+        // 3b) Tính cả các đặt trực tuyến chưa xếp phòng (CT_DAT_TRUOC)
+        const prebooked = await prisma.cT_DAT_TRUOC.findMany({
+            where: {
+                HOP_DONG_DAT_PHONG: {
+                    HDONG_TRANG_THAI: { in: ['PENDING', 'CONFIRMED'] },
+                    AND: [
+                        { HDONG_NGAYDAT: { lt: to } },
+                        { HDONG_NGAYTRA: { gt: from } },
+                    ],
+                },
+            },
+            select: { LP_MA: true, SO_LUONG: true },
+        });
+
+        // cộng dồn số lượng phòng "đặt trước" theo loại
+        const prebookedByLP = new Map();
+        prebooked.forEach(p => {
+            const old = prebookedByLP.get(p.LP_MA) || 0;
+            prebookedByLP.set(p.LP_MA, old + (p.SO_LUONG || 0));
+        });
+
+
         // 3) Đếm bận theo LP
         const busyByLP = new Map();
         allRooms.forEach(r => {
@@ -57,7 +80,9 @@ async function roomTypeAvailability(req, res, next) {
                 busyByLP.set(r.LP_MA, (busyByLP.get(r.LP_MA) || 0) + 1);
             }
         });
-
+        prebookedByLP.forEach((qty, lp) => {
+            busyByLP.set(lp, (busyByLP.get(lp) || 0) + qty);
+        });
         // 4) Giá base theo HT + TD_BASE
         const basePrices = await prisma.dON_GIA.findMany({
             where: { TD_MA: TD_BASE, HT_MA: HT_MA },

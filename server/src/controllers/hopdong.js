@@ -498,27 +498,98 @@ async function checkin1(req, res, next) {
 //     } catch (e) { next(e); }
 // }
 // ===== Helper: tính trạng thái hóa đơn theo HĐ (total/paid/due/over) =====
+// async function computeInvoiceStatusByBooking(hdId) {
+//     // Link hóa đơn ↔ hợp đồng
+//     const link = await prisma.hOA_DON_HOP_DONG.findFirst({
+//         where: { HDONG_MA: hdId },
+//         select: { HDON_MA: true },
+//     });
+
+//     // Chưa có hóa đơn ⇒ coi như chưa thu, due = tổng hiện tại (CTSD + CTDV)
+//     if (!link) {
+//         const roomAgg = await prisma.cHI_TIET_SU_DUNG.aggregate({
+//             _sum: { CTSD_TONG_TIEN: true },
+//             where: { HDONG_MA: hdId },
+//         });
+//         const roomTotal = Number(roomAgg._sum.CTSD_TONG_TIEN || 0);
+
+//         // Tổng tiền dịch vụ (tính thủ công)
+//         const svcRows = await prisma.cHI_TIET_DICH_VU.findMany({
+//             where: { HDONG_MA: hdId, CTDV_TRANGTHAI: { in: ['ACTIVE', 'DOI_PHONG'] } },
+//             select: { CTDV_SOLUONG: true, CTDV_DONGIA: true },
+//         });
+//         const svcTotal = svcRows.reduce(
+//             (sum, r) => sum + Number(r.CTDV_SOLUONG || 0) * Number(r.CTDV_DONGIA || 0),
+//             0
+//         );
+
+//         const total = roomTotal + svcTotal;
+
+//         return {
+//             hasInvoice: false,
+//             invoiceId: null,
+//             status: 'NO_INVOICE',
+//             total,
+//             paid: 0,
+//             due: total,
+//             over: 0,
+//         };
+//     }
+
+//     // Có hóa đơn ⇒ lấy tổng + cộng tiền đã thu thành công
+//     const invoice = await prisma.hOA_DON.findUnique({
+//         where: { HDON_MA: link.HDON_MA },
+//         select: { HDON_MA: true, HDON_TRANG_THAI: true, HDON_THANH_TIEN: true },
+//     });
+
+//     const paidAgg = await prisma.tHANH_TOAN.aggregate({
+//         _sum: { TT_SO_TIEN: true },
+//         where: {
+//             HDON_MA: link.HDON_MA,
+//             TT_TRANG_THAI_GIAO_DICH: 'SUCCEEDED',
+//         },
+//     });
+
+//     const total = Number(invoice?.HDON_THANH_TIEN || 0);
+//     const paid = Number(paidAgg._sum.TT_SO_TIEN || 0);
+//     const due = Math.max(0, total - paid);
+//     const over = Math.max(0, paid - total);
+
+//     return {
+//         hasInvoice: true,
+//         invoiceId: invoice?.HDON_MA ?? null,
+//         status: invoice?.HDON_TRANG_THAI ?? 'UNKNOWN',
+//         total,
+//         paid,
+//         due,
+//         over,
+//     };
+// }
 async function computeInvoiceStatusByBooking(hdId) {
-    // Link hóa đơn ↔ hợp đồng
-    const link = await prisma.hOA_DON_HOP_DONG.findFirst({
+    // 🔹 Lấy tất cả hóa đơn của hợp đồng (thay vì chỉ 1)
+    const links = await prisma.hOA_DON_HOP_DONG.findMany({
         where: { HDONG_MA: hdId },
         select: { HDON_MA: true },
     });
 
-    // Chưa có hóa đơn ⇒ coi như chưa thu, due = tổng hiện tại (CTSD + CTDV)
-    if (!link) {
+    if (!links.length) {
+        // Chưa có hóa đơn ⇒ tính trực tiếp từ CTSD + CTDV
         const roomAgg = await prisma.cHI_TIET_SU_DUNG.aggregate({
-            _sum: { CTSD_THANH_TIEN: true },
+            _sum: { CTSD_TONG_TIEN: true },
             where: { HDONG_MA: hdId },
         });
-        const svcAgg = await prisma.cHI_TIET_DICH_VU.aggregate({
-            _sum: { THANH_TIEN: true },
-            where: { HDONG_MA: hdId },
-        });
+        const roomTotal = Number(roomAgg._sum.CTSD_TONG_TIEN || 0);
 
-        const total =
-            Number(roomAgg._sum.CTSD_THANH_TIEN || 0) +
-            Number(svcAgg._sum.THANH_TIEN || 0);
+        const svcRows = await prisma.cHI_TIET_DICH_VU.findMany({
+            where: { HDONG_MA: hdId, CTDV_TRANGTHAI: { in: ['ACTIVE', 'DOI_PHONG'] } },
+            select: { CTDV_SOLUONG: true, CTDV_DONGIA: true },
+        });
+        const svcTotal = svcRows.reduce(
+            (sum, r) => sum + Number(r.CTDV_SOLUONG || 0) * Number(r.CTDV_DONGIA || 0),
+            0
+        );
+
+        const total = roomTotal + svcTotal;
 
         return {
             hasInvoice: false,
@@ -531,29 +602,36 @@ async function computeInvoiceStatusByBooking(hdId) {
         };
     }
 
-    // Có hóa đơn ⇒ lấy tổng + cộng tiền đã thu thành công
-    const invoice = await prisma.hOA_DON.findUnique({
-        where: { HDON_MA: link.HDON_MA },
-        select: { HDON_MA: true, HDON_TRANG_THAI: true, HDON_THANH_TIEN: true },
+    // 🔹 Lấy tất cả hóa đơn liên quan
+    const invoices = await prisma.hOA_DON.findMany({
+        where: { HDON_MA: { in: links.map(l => l.HDON_MA) } },
+        select: { HDON_MA: true, HDON_TRANG_THAI: true, HDON_THANH_TIEN: true, HDON_LOAI: true },
     });
 
+    const allIds = invoices.map(inv => inv.HDON_MA);
+
+    // 🔹 Tổng tiền hóa đơn
+    const total = invoices.reduce((s, inv) => s + Number(inv.HDON_THANH_TIEN || 0), 0);
+
+    // 🔹 Tổng tiền thanh toán thành công cho các hóa đơn đó
     const paidAgg = await prisma.tHANH_TOAN.aggregate({
         _sum: { TT_SO_TIEN: true },
         where: {
-            HDON_MA: link.HDON_MA,
+            HDON_MA: { in: allIds },
             TT_TRANG_THAI_GIAO_DICH: 'SUCCEEDED',
         },
     });
-
-    const total = Number(invoice?.HDON_THANH_TIEN || 0);
     const paid = Number(paidAgg._sum.TT_SO_TIEN || 0);
     const due = Math.max(0, total - paid);
     const over = Math.max(0, paid - total);
 
+    // 🔹 Nếu có MAIN → ưu tiên trả về ID đó
+    const mainInvoice = invoices.find(i => i.HDON_LOAI === 'MAIN');
+
     return {
         hasInvoice: true,
-        invoiceId: invoice?.HDON_MA ?? null,
-        status: invoice?.HDON_TRANG_THAI ?? 'UNKNOWN',
+        invoiceId: mainInvoice?.HDON_MA || invoices[0].HDON_MA,
+        status: mainInvoice?.HDON_TRANG_THAI || invoices[0].HDON_TRANG_THAI,
         total,
         paid,
         due,
@@ -675,4 +753,36 @@ async function cancel(req, res, next) {
     } catch (e) { next(e); }
 }
 
-module.exports = { list, get, create, update, remove, checkin, checkin1, checkout, cancel };
+// DELETE /bookings/:id/guests/:khId
+async function delete_kh(req, res, next) {
+    try{
+        const HDONG_MA = Number(req.params.id);
+        const KH_MA = Number(req.params.khId);
+        await prisma.lUU_TRU_KHACH.delete({
+            where: { HDONG_MA_KH_MA: { HDONG_MA, KH_MA } },
+        });
+        res.json({ ok: true });
+    }
+    catch (e) { next(e); }
+}
+// POST /bookings/:id/guests
+async function add_guest(req, res, next) {
+    try {
+        const id = Number(req.params.id);
+        const { guests = [] } = req.body;
+        for (const g of guests) {
+            await prisma.lUU_TRU_KHACH.create({
+                data: {
+                    HDONG_MA: id,
+                    KH_MA: g.KH_MA,
+                    LA_KHACH_CHINH: !!g.LA_KHACH_CHINH,
+                    LA_KHACH_DAT: false,
+                },
+            });
+        }
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+}
+
+
+module.exports = { list, get, create, update, remove, checkin, checkin1, checkout, cancel, delete_kh , add_guest};

@@ -350,7 +350,10 @@ async function availableRoomsByBooking(req, res, next) {
         const lp = req.query.lp ? Number(req.query.lp) : lpAuto;
 
         // 👇 nếu có ?all=true thì bỏ lọc theo loại phòng
-        const showAll = String(req.query.all || '').toLowerCase() === 'true';
+        // const showAll = String(req.query.all || '').toLowerCase() === 'true';
+        const showAll =
+            booking.HDONG_TRANG_THAI === 'CHECKED_IN' ||
+            String(req.query.all || '').toLowerCase() === 'true';
         // Các trạng thái hợp đồng giữ phòng
         const HOLD_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN'];
 

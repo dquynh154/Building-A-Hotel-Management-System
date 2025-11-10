@@ -92,7 +92,7 @@ export default function ChangeRoomModal({ booking, onClose }: {
             </select>
 
             {/* 3️⃣ Giữ giá hay áp dụng giá mới */}
-            <div className="mb-4">
+            {/* <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                     Có thay đổi về hạng phòng, bạn muốn:
                 </label>
@@ -114,7 +114,7 @@ export default function ChangeRoomModal({ booking, onClose }: {
                         Áp dụng giá hạng phòng mới
                     </label>
                 </div>
-            </div>
+            </div> */}
 
             {/* 4️⃣ Nút hành động */}
             <div className="flex justify-end gap-2">

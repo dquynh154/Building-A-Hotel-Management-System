@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useGuest } from '@/hooks/useGuest';
+import Checkbox from '@/components/form/input/Checkbox';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
@@ -172,7 +173,9 @@ export default function ThongTinLuuTruPage() {
     const isNonEmpty = (s?: string) => !!(s && s.trim().length > 0);
     const isEmail = (s?: string) => !!s && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
     const isPhone = (s?: string) => !!s && /^[0-9]{10,11}$/.test(s.replace(/\D/g, ''));
-
+    const [errors1, setErrors1] = useState({
+        isChecked: "",
+    });
     const validateForm = () => {
         const be: Record<string, string> = {};
         const ge: Record<string, string> = {};
@@ -193,7 +196,7 @@ export default function ThongTinLuuTruPage() {
         return !hasError;
     };
     const [method, setMethod] = useState<'bank' | 'cod' | 'momo'>('bank');
-
+    const [isChecked, setIsChecked] = useState(false);
     return (
         <div className="mx-auto max-w-6xl px-4 py-6 text-slate-800">
             {/* KHUNG BỌC CHUNG */}
@@ -223,7 +226,25 @@ export default function ThongTinLuuTruPage() {
                             </div>
 
                             <div className="px-5 py-5">
-
+                                <div className="mb-4 border-b pb-4">
+                                    <div className="mb-2 text-sm text-gray-600">Tôi đang đặt</div>
+                                    <div className="inline-flex rounded-md border">
+                                        <button
+                                            type="button"
+                                            onClick={() => setBookingFor('me')}
+                                            className={`px-4 py-2 text-sm ${bookingFor === 'me' ? 'bg-rose-600 text-white' : 'bg-white text-rose-700 hover:bg-rose-50'}`}
+                                        >
+                                            Cho tôi
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setBookingFor('other')}
+                                            className={`px-4 py-2 text-sm border-l ${bookingFor === 'other' ? 'bg-rose-600 text-white' : 'bg-white text-rose-700 hover:bg-rose-50'}`}
+                                        >
+                                            Cho người khác
+                                        </button>
+                                    </div>
+                                </div>
 
                                 {/* Thông tin người đặt (liên hệ) */}
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -275,17 +296,69 @@ export default function ThongTinLuuTruPage() {
                                             {errors.booker?.email && <p className="mt-1 text-xs text-red-600 md:col-span-2">{errors.booker.email}</p>}
                                         </div>
                                     </div>
-
-
                                 </div>
                             </div>
                         </div>
 
+                        {/* <div className="md:col-span-8 rounded-xl border bg-white p-0 overflow-hidden"> */}
+                        {/* Nếu đặt cho người khác → hiển thị form khách ở chính */}
+                        {bookingFor === 'other' && (
+                            <div className="md:col-span-8 rounded-xl border bg-white p-0 overflow-hidden">
+                                <div className="border-b bg-rose-50/30 px-5 py-4">
+                                    <div className="text-lg font-semibold">Nhập thông tin chi tiết của khách ở chính</div>
+                                </div>
 
-                        <div className="">
+                                <div className="px-5 py-5">
+                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                        <div className="space-y-1">
+                                            <div className="relative">
+                                                <input
+                                                    className={`w-full rounded-md border px-3 py-2 ${errors.guest?.firstName ? 'border-red-500' : ''}`}
+                                                    placeholder="Tên"
+                                                    value={guestInfo.firstName}
+                                                    onChange={e => setGuestInfo(v => ({ ...v, firstName: e.target.value }))}
+                                                />
+                                                {errors.guest?.firstName && <p className="mt-1 text-xs text-red-600">{errors.guest.firstName}</p>}
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <div className="relative">
+                                                <input
+                                                    className={`w-full rounded-md border px-3 py-2 ${errors.guest?.lastName ? 'border-red-500' : ''}`}
+                                                    placeholder="Họ"
+                                                    value={guestInfo.lastName}
+                                                    onChange={e => setGuestInfo(v => ({ ...v, lastName: e.target.value }))}
+                                                />
+                                                {errors.guest?.lastName && <p className="mt-1 text-xs text-red-600">{errors.guest.lastName}</p>}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <div className="relative">
+                                                <input
+                                                    className={`w-full rounded-md border px-3 py-2 ${errors.guest?.phone ? 'border-red-500' : ''}`}
+                                                    placeholder="SĐT"
+                                                    value={guestInfo.phone}
+                                                    onChange={e => setGuestInfo(v => ({ ...v, phone: e.target.value }))}
+                                                />
+                                                {errors.guest?.phone && <p className="mt-1 text-xs text-red-600 md:col-span-2">{errors.guest.phone}</p>}
+
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        {/* </div> */}
+
+
+                        <div className="md:col-span-8 rounded-xl border bg-white p-0 overflow-hidden">
                             {/* Phương thức thanh toán */}
-                            <div className="md:col-span-8 rounded-xl border bg-white p-5">
-                                <div className="text-lg font-semibold mb-4">Chọn phương thức thanh toán</div>
+                            <div className="border-b bg-rose-50/30 px-5 py-4">
+                                <div className="text-lg font-semibold">Chọn phương thức thanh toán</div>
+                            </div>
+                            <div className="px-5 py-5">
 
                                 <div className="space-y-3">
                                     <label className="flex items-center gap-3">
@@ -303,70 +376,95 @@ export default function ThongTinLuuTruPage() {
                                         Bạn cần <Link href={loginHref} className="font-semibold underline">đăng nhập</Link> để tiếp tục đặt phòng thanh toán cọc.
                                     </div>
                                 )}
+                            </div>
+                        </div>
 
-                                <button
-                                    onClick={async () => {
-                                        if (!guest && !guestLoading) {
-                                            setShowLoginNotice(true);
-                                            return;
-                                        }
-                                        if (!validateForm()) {
-                                            document.getElementById('form-root')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                            return;
-                                        }
-
-                                        // Lưu thông tin khách ở chính
-                                        sessionStorage.setItem('stay_guests', JSON.stringify(buildStayGuests()));
-
-                                        // 1) PREPARE: recheck tồn + tạo HĐ/HĐ cọc (trả hdon_ma + deposit)
-                                        const items = rows.map(r => ({ lp_ma: r.LP_MA, qty: r.qty }));
-                                        const prepRes = await fetch(`${API_BASE}/public/dat-truoc/prepare`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            credentials: 'include',
-                                            body: JSON.stringify({ from, to, adults, items, kh_ma: guest?.KH_MA || null, })
-                                        });
-                                        if (!prepRes.ok) {
-                                            const e = await prepRes.json().catch(() => ({}));
-                                            alert(e?.message || 'Không chuẩn bị đơn được.');
-                                            return;
-                                        }
-                                        const prep = await prepRes.json();
-                                        const hdon_ma = prep.hdon_ma;
-                                        const dep = Math.round(Number(prep.deposit || deposit));
-
-                                        // 2) CREATE pay url
-                                        const payRes = await fetch(`${API_BASE}/public/pay/vnpay/create`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            credentials: 'include',
-                                            body: JSON.stringify({
-                                                hdon_ma,
-                                                amount: dep, // 50% từ server
-                                                returnUrl: `${window.location.origin}/khachhang/dat-phong/ket-qua`,
-                                            }),
-                                        });
-                                        
-                                        // const js = await payRes.json();
-                                        // if (js?.pay_url) window.location.href = js.pay_url;
-                                        const js = await payRes.json();
-                                        if (js?.pay_url) {
-                                            // gắn email người đặt vào query string
-                                            const payUrlWithEmail = `${js.pay_url}&email=${encodeURIComponent(booker.email ?? "")}`;
-                                            window.location.href = payUrlWithEmail;
-                                        }
-                                    }}
-
-
-                                    disabled={!rows.length}
-                                    className="mt-6 h-12 w-full rounded-md bg-rose-600 text-white font-semibold disabled:opacity-40"
-                                >
-                                    Đặt phòng & Thanh toán cọc {depositPercent}% ({fmtVND(deposit)})
-                                </button>
+                        <div className="md:col-span-8 rounded-xl border bg-white p-0 overflow-hidden">
+                            {/* Phương thức thanh toán */}
+                            <div className="border-b bg-rose-50/30 px-5 py-4">
+                                <div className="text-lg font-semibold">Ghi chú</div>
+                            </div>
+                            <div className="px-5 py-5">
+                                <input type="text" />
                             </div>
 
                         </div>
+                        <div className="flex items-center gap-3">
+                            <Checkbox className="w-5 h-5" checked={isChecked} onChange={setIsChecked} />
+                            <p className="inline-block font-normal text-gray-500 dark:text-gray-400">
+                                Tôi đồng ý xử lý dữ liệu cá nhân và xác nhận rằng tôi đã đọc{" "}
+                                <span className="text-gray-800 dark:text-white/90">Quy tắc đặt phòng online </span> và{" "}
+                                <span className="text-gray-800 dark:text-white">Chính sách quyền riêng tư</span>.
+                                 
+                            </p>
+                        </div>
+                        {errors1.isChecked && <p className="text-sm text-red-500 mt-1">{errors1.isChecked}</p>}
+                        <button
+                            onClick={async () => {
+                                if (!guest && !guestLoading) {
+                                    setShowLoginNotice(true);
+                                    return;
+                                }
+                                if (!validateForm()) {
+                                    document.getElementById('form-root')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                    return;
+                                }
 
+                                // Lưu thông tin khách ở chính
+                                sessionStorage.setItem('stay_guests', JSON.stringify(buildStayGuests()));
+
+                                // 1) PREPARE: recheck tồn + tạo HĐ/HĐ cọc (trả hdon_ma + deposit)
+                                const items = rows.map(r => ({ lp_ma: r.LP_MA, qty: r.qty }));
+                                const stayGuests = buildStayGuests();
+                                const prepRes = await fetch(`${API_BASE}/public/dat-truoc/prepare`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    credentials: 'include',
+                                    // đã có sẵn function buildStayGuests()
+                                    body: JSON.stringify({
+                                        from, to, adults, items,
+                                        kh_ma: guest?.KH_MA || null,
+                                        stay_guests: stayGuests,
+                                    }),
+
+                                });
+                                if (!prepRes.ok) {
+                                    const e = await prepRes.json().catch(() => ({}));
+                                    alert(e?.message || 'Không chuẩn bị đơn được.');
+                                    return;
+                                }
+                                const prep = await prepRes.json();
+                                const hdon_ma = prep.hdon_ma;
+                                const dep = Math.round(Number(prep.deposit || deposit));
+
+                                // 2) CREATE pay url
+                                const payRes = await fetch(`${API_BASE}/public/pay/vnpay/create`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    credentials: 'include',
+                                    body: JSON.stringify({
+                                        hdon_ma,
+                                        amount: dep, // 50% từ server
+                                        returnUrl: `${window.location.origin}/khachhang/dat-phong/ket-qua`,
+                                    }),
+                                });
+
+                                // const js = await payRes.json();
+                                // if (js?.pay_url) window.location.href = js.pay_url;
+                                const js = await payRes.json();
+                                if (js?.pay_url) {
+                                    // gắn email người đặt vào query string
+                                    const payUrlWithEmail = `${js.pay_url}&email=${encodeURIComponent(booker.email ?? "")}`;
+                                    window.location.href = payUrlWithEmail;
+                                }
+                            }}
+
+
+                            disabled={!rows.length}
+                            className="mt-6 h-12 w-full rounded-md bg-rose-600 text-white font-semibold disabled:opacity-40"
+                        >
+                            Đặt phòng & Thanh toán cọc {depositPercent}% ({fmtVND(deposit)})
+                        </button>
                     </div>
 
 
