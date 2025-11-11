@@ -5,6 +5,7 @@ import Image from 'next/image';
 import DatePicker from '@/components/form/date-picker';
 import { useGuest } from '@/hooks/useGuest';
 import { clearToken } from '@/lib/auth-guest';
+import { Clock, BedDouble, Window, KeyRound, Dog, ShowerHead, Wifi, Tv, MailIcon, Phone, Map } from "@/icons";
 
 const ymd = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -100,7 +101,7 @@ export default function Home() {
 
     const ROOM_STATIC: Record<number, RoomStatic> = {
         // Ví dụ: LP_MA = 7 (bạn đổi theo ID thật trong DB)
-        7: {
+        3: {
             subtitle: 'GIƯỜNG QUEEN/TWIN + GIƯỜNG PHỤ',
             meta: [
                 { icon: 'area', text: '30 m²' },
@@ -113,7 +114,7 @@ export default function Home() {
         },
 
         // Ví dụ: LP_MA = 37
-        37: {
+        1: {
             subtitle: 'GIƯỜNG QUEEN/TWIN',
             meta: [
                 { icon: 'area', text: '28 m²' },
@@ -123,7 +124,7 @@ export default function Home() {
             desc:
                 'Phòng tiêu chuẩn chú trọng trải nghiệm gọn gàng, ấm cúng với đầy đủ tiện nghi cần thiết.',
         },
-        1: {
+        2: {
             subtitle: '1 Giường đôi',
             meta: [
                 { icon: 'area', text: '28 m²' },
@@ -167,9 +168,83 @@ export default function Home() {
     };
 
 
+    // --- Rooms slider state ---
+    const [slide, setSlide] = useState(0);
+    const [perView, setPerView] = useState(3);
+
+    // Cập nhật perView theo màn hình, đồng thời không vượt quá số phòng hiện có
+    useEffect(() => {
+        const calc = () => {
+            const base = window.innerWidth >= 1024 ? 3 : (window.innerWidth >= 640 ? 2 : 1);
+            const len = rooms?.length ?? 0;
+            setPerView(Math.max(1, Math.min(base, len || base))); // nếu có 3 phòng thì perView=3
+            setSlide(0); // reset về đầu khi đổi kích thước / dữ liệu
+        };
+        calc();
+        window.addEventListener('resize', calc);
+        return () => window.removeEventListener('resize', calc);
+    }, [rooms?.length]);
+
+    const maxSlide = Math.max(0, (rooms?.length ?? 0) - perView);
+    const nextSlide = () => setSlide(s => Math.min(maxSlide, s + 1));
+    const prevSlide = () => setSlide(s => Math.max(0, s - 1));
+    const atStart = slide === 0;
+    const atEnd = slide === maxSlide;
+    const AMENITIES = [
+        { icon: Clock, text: "Lưu trú trọn vẹn 24 giờ" },
+        { icon: BedDouble, text: "Bộ drap trải giường và gối ngủ cao cấp" },
+        { icon: Window, text: "Cửa sổ kính từ trần đến sàn" },
+        { icon: KeyRound, text: "Khoá phòng điện tử" },
+        { icon: Dog, text: "Thân thiện với thú cưng" },
+        { icon: ShowerHead, text: "Vòi sen điều chỉnh áp suất nước" },
+        { icon: Wifi, text: "Wi-Fi tốc độ cao" },
+        { icon: Tv, text: "TV thông minh" },
+    ];
+
+    // --- Reviews: có thể fetch từ BE, còn không thì dùng fallback dưới ---
+    type Review = { id: number; name: string; rating: number; content: string };
+
+    const REVIEWS_FALLBACK: Review[] = [
+        { id: 1, name: "Mai", rating: 5, content: "Khách sạn phục vụ rất tốt, chúng tôi rất hài lòng." },
+        { id: 2, name: "Long", rating: 4, content: "Phòng sạch, view đẹp, nhân viên thân thiện." },
+        { id: 3, name: "Hà", rating: 5, content: "Bữa sáng ngon, tiện nghi đầy đủ, sẽ quay lại." },
+    ];
+
+    const [reviews, setReviews] = useState<Review[]>(REVIEWS_FALLBACK);
+    const [idx, setIdx] = useState(0);
+
+    // Nếu đã có API public, bật fetch này (đổi URL cho đúng):
+    useEffect(() => {
+        (async () => {
+            try {
+                const r = await fetch('/public/danh-gia?status=PUBLISHED&take=10'); // <— chỉnh endpoint nếu khác
+                const j = await r.json();
+                if (Array.isArray(j.items) && j.items.length) {
+                    setReviews(j.items.map((x: any, i: number) => ({
+                        id: x.DG_ID ?? i,
+                        name: x.KH_TEN ?? x.KHACH_HANG?.KH_HOTEN ?? "Khách ẩn danh",
+                        rating: Number(x.DG_SAO ?? 5),
+                        content: x.DG_NOI_DUNG || x.DG_TIEU_DE || "Rất tuyệt vời!",
+                    })));
+                    setIdx(0);
+                }
+            } catch { /* im lặng dùng fallback */ }
+        })();
+    }, []);
+
+    // Tự chạy slide mỗi 5s
+    useEffect(() => {
+        if (reviews.length <= 1) return;
+        const t = setInterval(() => setIdx(i => (i + 1) % reviews.length), 5000);
+        return () => clearInterval(t);
+    }, [reviews.length]);
+
+    const prevReview = () => setIdx(i => (i - 1 + reviews.length) % reviews.length);
+    const nextReview = () => setIdx(i => (i + 1) % reviews.length);
+
 
     return (
-        <div className="min-h-screen bg-[#F9F5EF] text-white">
+        <div className="min-h-screen bg-[#FDFCF9] text-white">
             {/* Top bar */}
 
 
@@ -272,7 +347,7 @@ export default function Home() {
                 </div>
             </section>
             {/* ABOUT */}
-            <section id="about" className="bg-[#F9F5EF]">
+            <section id="about" className="bg-[#FDFCF9]">
                 <div className="mx-auto max-w-7xl px-4 py-16 md:py-24">
                     <div className="grid items-center gap-10 md:grid-cols-2">
                         {/* Text */}
@@ -320,90 +395,278 @@ export default function Home() {
                 </div>
             </section>
             {/* ROOMS & SUITES */}
-            <section id="rooms" className="bg-[#F9F5EF]">
-                <div className="mx-auto max-w-7xl px-4 py-16 md:py-24">
-                    <div className="mb-10 flex items-end justify-between">
-                        <div>
-                            <h2 className="text-3xl font-extrabold tracking-tight text-slate-900 md:text-5xl">
-                                PHÒNG &amp; HẠNG PHÒNG
-                            </h2>
-                            <p className="mt-3 text-slate-600">Chọn hạng phòng phù hợp cho kỳ nghỉ của bạn.</p>
-                        </div>
+            {/* ROOMS & SUITES */}
+            <section
+                id="rooms"
+                className="relative"
+                style={{
+                    backgroundImage: "url('/images/hero/hero-1.jpg')", // đổi path ảnh nền trời
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                }}
+            >
+                {/* overlay làm dịu */}
+                <div className="absolute inset-0 bg-black/40"></div>
+
+                <div className="relative mx-auto max-w-7xl px-4 py-16 md:py-24">
+                    {/* Heading giữa như ảnh mẫu */}
+                    <div className="mb-10 text-center">
+                        <h2 className="text-3xl font-extrabold tracking-tight text-white md:text-5xl">
+                            HỆ THỐNG PHÒNG
+                        </h2>
+                        <p className="mx-auto mt-4 max-w-4xl text-base leading-7 text-white/90 md:text-lg">
+                            223 phòng nghỉ từ tiêu chuẩn đến cao cấp được bố trí hài hòa trong khuôn viên khách sạn...
+                        </p>
                     </div>
 
-                    {/* Grid cards */}
-                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                        {(roomsLoading ? Array.from({ length: 3 }) : rooms).map((r: any, idx: number) => (
-                            <article
-                                key={r?.LP_MA ?? idx}
-                                className="overflow-hidden rounded-2xl border border-amber-100 bg-white shadow-sm transition hover:shadow-lg"
+                    {/* Slider khung ngoài */}
+                    <div className="relative">
+                        <div className="relative overflow-hidden px-12">
+
+
+                            {/* Nút điều hướng */}
+                            <button
+                                onClick={prevSlide}
+                                aria-label="Prev"
+                                className="absolute left-0 top-1/2 z-20 -translate-y-1/2 rounded bg-black/50 p-3 text-white hover:bg-black/70"
                             >
-                                {/* Ảnh đại diện */}
-                                {roomsLoading ? (
-                                    <div className="aspect-[4/3] w-full animate-pulse bg-amber-100/60" />
-                                ) : (
-                                    <img
-                                        src={absUrl(r.IMG_URL) || "/images/hero/hero-2.jpg"}
-                                        alt={r.LP_TEN || "Loại phòng"}
-                                        className="aspect-[4/3] w-full object-cover"
-                                    />
-                                )}
+                                ‹
+                            </button>
+                            <button
+                                onClick={nextSlide}
+                                aria-label="Next"
+                                className="absolute right-0 top-1/2 z-20 -translate-y-1/2 rounded bg-black/50 p-3 text-white hover:bg-black/70"
+                            >
+                                ›
+                            </button>
 
-                                {/* Nội dung */}
-                                <div className="space-y-3 p-5">
-                                    <h3 className="text-xl font-extrabold text-slate-900">
-                                        {roomsLoading ? "Đang tải…" : r.LP_TEN || "Loại phòng"}
-                                    </h3>
+                            {/* Viewport */}
+                            <div className="overflow-hidden px-16">
+                                {/* Track */}
+                                <div
+                                    className="flex gap-6 transition-transform duration-500 ease-out"
+                                    style={{ transform: `translateX(-${(100 / perView) * slide}%)` }}
+                                >
+                                    {(roomsLoading ? Array.from({ length: 3 }) : rooms).map((r: any, idx: number) => (
+                                        <div
+                                            key={r?.LP_MA ?? idx}
+                                            style={{ flex: `0 0 ${100 / perView}%`, maxWidth: `${100 / perView}%` }}
+                                        >
+                                            {/* Card như ảnh mẫu: ảnh trên + khung trắng dưới */}
+                                            <article className="flex h-full flex-col rounded-lg bg-white shadow-lg">
+                                                {/* Ảnh */}
+                                                {roomsLoading ? (
+                                                    <div className="aspect-[4/3] animate-pulse rounded-t-lg bg-gray-200" />
+                                                ) : (
+                                                    <img
+                                                        src={absUrl(r.IMG_URL) || "/images/hero/hero-2.jpg"}
+                                                        alt={r?.LP_TEN || "Loại phòng"}
+                                                        className="aspect-[4/3] w-full rounded-t-lg object-cover"
+                                                    />
+                                                )}
 
-                                    {/* Tag thông số: sức chứa + (tuỳ chọn) số phòng thuộc loại */}
-                                    {!roomsLoading && (() => {
-                                        const st = ROOM_STATIC[r.LP_MA];
-                                        const metas = st?.meta ?? [];
-                                        return (
-                                            <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-                                                {metas.map((m, i) => (
-                                                    <span key={i} className="rounded-full border border-amber-200 px-2 py-1">
-                                                        {m.text}
-                                                    </span>
-                                                ))}
+                                                {/* Nội dung */}
+                                                <div className="flex grow flex-col p-6">
+                                                    <h3 className="text-2xl font-extrabold text-[#d39a2a]">
+                                                        {roomsLoading ? "Đang tải…" : (r?.LP_TEN || "Loại phòng")}
+                                                    </h3>
 
-                                                {/* luôn có fallback số khách từ DB */}
-                                                <span className="rounded-full border border-amber-200 px-2 py-1">
-                                                    Tối đa {r.LP_SONGUOI} khách
-                                                </span>
-                                            </div>
-                                        );
-                                    })()}
-                                    {/* Mô tả tĩnh (nếu có) */}
-                                    {!roomsLoading && ROOM_STATIC[r.LP_MA]?.desc && (
-                                        <p className="text-sm leading-6 text-slate-700">
-                                            {ROOM_STATIC[r.LP_MA]?.desc}
-                                        </p>
-                                    )}
+                                                    {/* mô tả rút gọn: 3 dòng + ellipsis, giữ chiều cao đều */}
+                                                    {!roomsLoading && (
+                                                        <p
+                                                            className="mt-3 text-slate-700 overflow-hidden text-ellipsis
+                   [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical]"
+                                                        >
+                                                            {ROOM_STATIC[r?.LP_MA]?.desc ||
+                                                                `Nằm ở tầng tiện nghi, tối đa ${r?.LP_SONGUOI ?? 2} khách, nội thất hiện đại, tiện nghi đầy đủ.`}
+                                                        </p>
+                                                    )}
 
-                                    {/* CTA */}
-                                    {!roomsLoading && (
-                                        <div className="pt-2">
-                                            <a
-                                                href={`/dat-phong/ket-qua?lp=${r.LP_MA}&from=${from}&to=${to}&adults=${adults}`}
-                                                className="inline-flex items-center gap-2 rounded-md bg-[#D22F27] px-4 py-2 text-sm font-semibold text-white hover:bg-[#b82821] focus:outline-none focus:ring-4 focus:ring-rose-300"
-                                            >
-                                                XEM CHI TIẾT
-                                                <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
-                                                    <path d="M12.293 4.293a1 1 0 011.414 0l4 4a1 1 0 01.083.094 1 1 0 01.207.61 1 1 0 01-.207.61l-4 4a1 1 0 11-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-2.293-2.293a1 1 0 010-1.414z" />
-                                                </svg>
-                                            </a>
+                                                    {/* CTA đẩy xuống đáy để các card cao bằng nhau */}
+                                                    {!roomsLoading && (
+                                                        <div className="mt-auto pt-4">
+                                                            <a
+                                                                href={`/dat-phong/ket-qua?lp=${r.LP_MA}&from=${from}&to=${to}&adults=${adults}`}
+                                                                className="inline-flex items-center gap-2 font-semibold text-[#d39a2a] hover:underline"
+                                                            >
+                                                                XEM CHI TIẾT
+                                                                <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path d="M12.293 4.293a1 1 0 011.414 0l4 4a1 1 0 01.083.094 1 1 0 01.207.61 1 1 0 01-.207.61l-4 4a1 1 0 11-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-2.293-2.293a1 1 0 010-1.414z" />
+                                                                </svg>
+                                                            </a>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </article>
+
                                         </div>
-                                    )}
+                                    ))}
                                 </div>
-                            </article>
-                        ))}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
 
 
-            {/* Footer khớp vibe ảnh mẫu (giản lược) */}
+            {/* TIỆN ÍCH PHÒNG */}
+            <section className="">
+                <div className="mx-auto max-w-7xl px-4 py-16 md:py-20">
+                    <h2 className="mb-10 text-3xl font-extrabold tracking-tight md:text-5xl text-slate-900">
+                        Tiện Ích Phòng
+                    </h2>
+
+                    <div className="grid gap-6 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4">
+                        {AMENITIES.map((it, i) => {
+                            const Icon = it.icon;
+                            return (
+                                <div
+                                    key={i}
+                                    className="rounded-md border border-gray-200 bg-white p-10 text-center transition-shadow hover:shadow-md"
+                                >
+                                    <Icon className="mx-auto h-10 w-10" strokeWidth={2.2} />
+                                    <div
+                                        className="mt-6 text-xs font-extrabold uppercase tracking-wide text-gray-900
+                         overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]"
+                                        title={it.text}
+                                    >
+                                        {it.text}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </section>
+            {/* ĐÁNH GIÁ KHÁCH HÀNG */}
+            <section className="bg-[#d39a2a] text-white">
+                <div className="mx-auto max-w-4xl px-4 py-10 md:py-14">
+                    {/* stars */}
+                    <div className="mb-3 flex justify-center gap-1 text-lg">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                            <span key={i} className={i < (reviews[idx]?.rating ?? 5) ? 'opacity-100' : 'opacity-40'}>★</span>
+                        ))}
+                    </div>
+
+                    {/* slider viewport */}
+                    <div className="relative">
+                        {/* nút trái/phải */}
+                        <button
+                            onClick={prevReview}
+                            aria-label="Trước"
+                            className="absolute left-0 top-1/2 -translate-y-1/2 rounded bg-black/20 px-3 py-2 backdrop-blur hover:bg-black/30"
+                        >‹</button>
+                        <button
+                            onClick={nextReview}
+                            aria-label="Sau"
+                            className="absolute right-0 top-1/2 -translate-y-1/2 rounded bg-black/20 px-3 py-2 backdrop-blur hover:bg-black/30"
+                        >›</button>
+
+                        {/* track (fade) */}
+                        <div className="overflow-hidden px-10">
+                            <div className="relative h-[120px] md:h-[150px]">
+                                {reviews.map((rv, i) => (
+                                    <div
+                                        key={rv.id}
+                                        className={`absolute inset-0 flex flex-col items-center justify-center text-center transition-opacity duration-700
+                          ${i === idx ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                                    >
+                                        <blockquote className="mx-auto max-w-2xl text-lg md:text-2xl leading-relaxed italic overflow-hidden [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical]">
+                                            &ldquo;{rv.content}&rdquo;
+                                        </blockquote>
+                                        <div className="mt-6 text-sm tracking-[0.25em]">{rv.name?.toUpperCase()}</div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* dots */}
+                            <div className="mt-6 flex justify-center gap-2">
+                                {reviews.map((_, i) => (
+                                    <button
+                                        key={i}
+                                        onClick={() => setIdx(i)}
+                                        aria-label={`Chuyển tới đánh giá ${i + 1}`}
+                                        className={`h-1 rounded-full transition-all ${i === idx ? 'w-8 bg-white' : 'w-4 bg-white/60'}`}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* CTA đọc thêm */}
+                    <div className="mt-10 flex justify-center">
+                        <a
+                            href="khachhang/danh-gia"
+                            className="inline-flex items-center gap-2 rounded-full border border-white/80 px-5 py-2 text-sm font-semibold hover:bg-white hover:text-[#d39a2a]"
+                        >
+                            Đọc thêm
+                            <span aria-hidden>→</span>
+                        </a>
+                    </div>
+                </div>
+            </section>
+
+
+            {/* VỊ TRÍ & LIÊN HỆ */}
+            <section id="contact" className="bg-[#FDFCF9]">
+                <div className="mx-auto grid max-w-7xl grid-cols-1 items-stretch gap-8 px-4 py-14 md:grid-cols-2">
+
+                    {/* Bản đồ */}
+                    <div className="relative overflow-hidden rounded-xl shadow">
+                        <iframe
+                            title="Bản đồ"
+                            src={
+                                "https://www.google.com/maps?q=" +
+                                encodeURIComponent("14 Phan Đình Phùng, Ninh Kiều, Cần Thơ") +
+                                "&output=embed"
+                            }
+                            className="h-[360px] w-full md:h-[420px] border-0"
+                            loading="lazy"
+                            referrerPolicy="no-referrer-when-downgrade"
+                        />
+                    </div>
+
+                    {/* Thông tin liên hệ */}
+                    <div className="flex flex-col justify-center">
+                        <div className="text-[13px] tracking-[0.3em] text-yellow-600">LOCATION</div>
+                        <h2 className="mt-2 text-3xl font-extrabold md:text-5xl text-gray-900">Vị trí & liên hệ</h2>
+
+                        <p className="mt-6 text-lg text-slate-700">
+                            14 Phan Đình Phùng, phường An Lạc (hoặc phường phù hợp), quận Ninh Kiều, thành phố Cần Thơ
+                        </p>
+
+                        <div className="mt-8 space-y-4 text-slate-800">
+                            <div className="flex items-center gap-3">
+                                <Phone className="h-6 w-6 text-yellow-700" />
+                                <div>
+                                    <div>(+84) 987654321</div>
+
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <MailIcon className="h-6 w-6 text-yellow-700" />
+                                <div>
+                                    <div><a href="mailto:info@wendyhotel.com" className="hover:underline">info@wendyhotel.com</a></div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <Map className="h-6 w-6 text-yellow-700" />
+                                <a
+                                    href={
+                                        "https://www.google.com/maps/dir/?api=1&destination=" +
+                                        encodeURIComponent("14 Phan Đình Phùng, Ninh Kiều, Cần Thơ")
+                                    }
+                                    target="_blank" rel="noopener"
+                                    className="font-semibold text-yellow-700 hover:underline"
+                                >
+                                    Xem chỉ đường →
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
 
         </div>
     );

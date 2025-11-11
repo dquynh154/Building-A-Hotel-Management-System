@@ -87,7 +87,7 @@ export default function InvoicePrintPage() {
                         Số: {inv.HDON_SO ?? inv.HDON_MA} &nbsp;•&nbsp; Ngày: {fmt(inv.HDON_NGAYLAP ?? inv.HDON_TAO_LUC ?? inv.createdAt)}
                     </div>
 
-                    <div className="opacity-70">ĐC: 123 Đường 3/2, thành phố Cần Thơ | SDT: 0123456789</div>
+                    <div className="opacity-70">ĐC: 14 Phan Đình Phùng, phường Ninh Kiều, Cần Thơ | SDT: 0123456789</div>
                     <div className="opacity-70"></div>
                 </div>
 

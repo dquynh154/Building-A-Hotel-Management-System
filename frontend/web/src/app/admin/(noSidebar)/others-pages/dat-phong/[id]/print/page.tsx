@@ -94,7 +94,7 @@ export default function BookingPrintPage() {
                     {fmt(bk.HDONG_TAO_LUC || bk.createdAt)}
                 </div>
                 <div className="opacity-70">
-                    ĐC: 123 Đường 3/2, TP. Cần Thơ | SDT: 0123456789
+                    ĐC: 14 Phan Đình Phùng, phường Ninh Kiều, Cần Thơ | SDT: 0123456789
                 </div>
             </div>
 

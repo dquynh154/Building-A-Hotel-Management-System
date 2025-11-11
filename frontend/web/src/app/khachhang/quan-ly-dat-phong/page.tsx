@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useGuest } from '@/hooks/useGuest';
 import BookingDetailModal from '@/components/ui/modal/BookingDetaiModal';
 import ReviewModal from '@/components/ui/modal/ReviewModal';
+import { useRouter } from 'next/navigation';
 
 type CTLine = {
     CTDP_ID: number;
@@ -57,7 +58,7 @@ export default function QuanLyDatPhongPage() {
     const [detailOpen, setDetailOpen] = useState(false);
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [reviewOpen, setReviewOpen] = useState(false);
-
+    const router = useRouter();
     useEffect(() => {
         if (guestLoading) return;
         if (!guest) {
@@ -151,7 +152,7 @@ export default function QuanLyDatPhongPage() {
                             const invoiceHref = r.DEPOSIT_INVOICE
                                 ? `/khachhang/dat-phong/ket-qua?hdon_ma=${r.DEPOSIT_INVOICE.HDON_MA}`
                                 : undefined;
-                           
+
 
                             return (
                                 <div
@@ -311,12 +312,13 @@ export default function QuanLyDatPhongPage() {
 
                                         {r.HDONG_TRANG_THAI === 'CHECKED_OUT' && (
                                             reviews.includes(r.HDONG_MA) ? (
-                                                <Link
-                                                    href={`/khachhang/danh-gia/${r.HDONG_MA}`}
-                                                    className="rounded-md bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                                                <button
+                                                    type="button"
+                                                    onClick={() => router.push(`/khachhang/danh-gia?hdong_ma=${r.HDONG_MA}`)}
+                                                    className="rounded-md bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-700"
                                                 >
                                                     Xem lại đánh giá
-                                                </Link>
+                                                </button>
                                             ) : (
                                                 <button
                                                     onClick={() => setSelectedId(r.HDONG_MA)}

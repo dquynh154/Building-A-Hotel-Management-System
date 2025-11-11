@@ -353,7 +353,7 @@ const uploadRoutes = require('./upload');
 r.use('/upload', staffOrAdmin, uploadRoutes);
 
 const imgCtl = require('../controllers/loai_phong_image');
-r.get('/loai-phong/:id/images', staffOrAdmin, imgCtl.listByLoaiPhong);
+r.get('/loai-phong/:id/images', imgCtl.listByLoaiPhong);
 r.post('/loai-phong/:id/images', onlyAdmin, imgCtl.addMany);
 r.put('/loai-phong/images/:imgId/main', onlyAdmin, imgCtl.setMain);
 r.put('/loai-phong/images/order', onlyAdmin, imgCtl.updateOrder);

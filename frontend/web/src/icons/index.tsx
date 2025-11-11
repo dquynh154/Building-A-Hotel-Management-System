@@ -60,6 +60,16 @@ import Bang from "./bang1.svg";
 import ListPhong from "./listphong1.svg";
 import Lich from "./lich1.svg";
 import BaCham from "./3dauchamden.svg";
+import Clock from "./Clock.svg";
+import BedDouble from "./Bed.svg";
+import Window from "./Window.svg";
+import KeyRound from "./KeyRound.svg";
+import Dog from "./Dog.svg";
+import ShowerHead from "./ShowerHead.svg";
+import Wifi from "./Wifi.svg";
+import Tv from "./Tv.svg";
+import Phone from "./phone.svg";
+import Map from "./map.svg";
 export {
   DownloadIcon,
   BellIcon,
@@ -123,4 +133,14 @@ export {
   ListPhong,
   Lich,  
   BaCham,
+  Clock,
+  BedDouble,
+  Window,
+  KeyRound,
+  Dog,
+  ShowerHead,
+  Wifi,
+  Tv,
+  Phone,
+  Map
 };

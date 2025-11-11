@@ -83,10 +83,10 @@ export default function Header() {
 
                 <nav className="hidden gap-6 md:flex">
                     <Link href="/khachhang" className="text-sm text-slate-700 hover:text-blue-600">TRANG CHỦ</Link>
-                    <Link href="/khachhang/gioi-thieu" className="text-sm text-slate-700 hover:text-blue-600">GIỚI THIỆU</Link>
-                    <Link href="/khachhang/tin-tuc" className="text-sm text-slate-700 hover:text-blue-600">TIN TỨC</Link>
-                    <Link href="/khachhang/tien-ich" className="text-sm text-slate-700 hover:text-blue-600">TIỆN ÍCH</Link>
-                    <Link href="/khachhang/dat-phong" className="text-sm text-slate-700 hover:text-blue-600">ĐẶT PHÒNG</Link>
+                    <Link href="/khachhang/" className="text-sm text-slate-700 hover:text-blue-600">GIỚI THIỆU</Link>
+                    <Link href="/khachhang/" className="text-sm text-slate-700 hover:text-blue-600">TIN TỨC</Link>
+                    <Link href="/khachhang/" className="text-sm text-slate-700 hover:text-blue-600">ƯU ĐÃI</Link>
+                    <Link href="/khachhang" className="text-sm text-slate-700 hover:text-blue-600">LIÊN HỆ</Link>
                 </nav>
 
                 {/* Right */}

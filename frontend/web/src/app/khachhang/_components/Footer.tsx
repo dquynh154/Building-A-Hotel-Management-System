@@ -4,7 +4,7 @@ export default function Footer() {
             <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-12 md:grid-cols-3">
                 <div className="space-y-2 text-sm text-gray-300">
                     <div className="font-semibold uppercase tracking-widest text-white/90">Liên hệ</div>
-                    <p>Số 123, đường 3/2, quận Ninh Kiều, thành phố Cần Thơ.</p>
+                    <p>14 Phan Đình Phùng, phường Ninh Kiều, Cần Thơ</p>
                     <p>connect@wendy-hotels.com</p>
                     <p>+84 28 2250 9823</p>
                 </div>

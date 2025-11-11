@@ -738,3 +738,23 @@ span.flatpickr-weekday,
   opacity: 0.8;
   cursor: grabbing; /* Changes the cursor to indicate dragging */
 }
+.yarl__portal {
+  z-index: 100000 !important;
+  /* cao hơn modal */
+}
+
+@keyframes flashOnce {
+  0% {
+    background-color: rgba(251, 191, 36, .25);
+    box-shadow: 0 0 0 4px rgba(251, 191, 36, .25);
+  }
+
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.flash-once {
+  animation: flashOnce 1.1s ease-out 1;
+}

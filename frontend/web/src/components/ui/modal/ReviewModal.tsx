@@ -247,7 +247,7 @@ export default function ReviewModal({
                             return (
                                 <div key={room.CTDP_ID} className="border rounded-lg p-3 mb-3">
                                     <div className="font-medium mb-1">
-                                        {room.LP_TEN} × {room.SO_LUONG}
+                                        {room.LP_TEN}
                                     </div>
 
                                     <div className="flex items-center gap-1 mb-2">

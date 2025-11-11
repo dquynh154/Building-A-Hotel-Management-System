@@ -492,7 +492,7 @@ pub.post('/pay/mock/confirm', async (req, res, next) => {
     <div style="text-align:center;margin-bottom:12px;">
   <h2 style="margin:4px 0 2px 0;color:#004b91;font-size:22px;">Khách sạn Wendy</h2>
   <h3 style="margin:0;color:#222;font-weight:700;letter-spacing:0.5px;">PHIẾU ĐẶT PHÒNG</h3>
-  <p style="margin:0;font-size:12px;color:#666;">ĐC: 123 Đường 3/2, TP. Cần Thơ — SĐT: 0123456789</p>
+  <p style="margin:0;font-size:12px;color:#666;">ĐC: 14 Phan Đình Phùng, phường Ninh Kiều, Cần Thơ — SĐT: 0123456789</p>
 </div>
 
     <hr style="border:none;border-top:1px solid #ddd;margin:20px 0;">
@@ -562,7 +562,7 @@ pub.post('/pay/mock/confirm', async (req, res, next) => {
 
     <hr style="border:none;border-top:1px solid #ddd;margin:24px 0;">
     <div style="text-align:center;font-size:12px;color:#888;">
-      © 2025 Wendy Hotel — 123 Nguyễn Trãi, Cần Thơ<br>Hotline: 0123 456 789
+      © 2025 Wendy Hotel — 14 Phan Đình Phùng, phường Ninh Kiều, Cần Thơ<br>Hotline: 0123 456 789
     </div>
   </div>
 </div>
@@ -1019,72 +1019,68 @@ pub.post('/khachhang/cancel-booking', async (req, res, next) => {
 });
 
 // POST /public/khachhang/review
+// POST /public/khachhang/review
 pub.post('/khachhang/review', async (req, res, next) => {
     try {
         const { kh_ma, hdong_ma, ctdp_id, sao, tieu_de, noi_dung, dinh_kem = [] } = req.body || {};
 
-        // Kiểm tra đầu vào cơ bản
-        if (!kh_ma || !hdong_ma)
-            return res.status(400).json({ message: 'Thiếu kh_ma hoặc hdong_ma' });
-        if (!sao || sao < 1 || sao > 5)
-            return res.status(400).json({ message: 'Số sao phải 1–5' });
-        if (!tieu_de?.trim())
-            return res.status(400).json({ message: 'Thiếu tiêu đề đánh giá' });
+        const KH_MA = Number(kh_ma);
+        const HDONG_MA = Number(hdong_ma);
+        const CTDP_ID = ctdp_id ? Number(ctdp_id) : null;
+        const STARS = Number(sao);
 
-        // 1️⃣ kiểm tra quyền + trạng thái hợp đồng
+        if (!KH_MA || !HDONG_MA) return res.status(400).json({ message: 'Thiếu kh_ma hoặc hdong_ma' });
+        if (!Number.isFinite(STARS) || STARS < 1 || STARS > 5) return res.status(400).json({ message: 'Số sao phải 1–5' });
+        if (!tieu_de?.trim()) return res.status(400).json({ message: 'Thiếu tiêu đề đánh giá' });
+
+        // 1) Quyền + trạng thái
         const hd = await prisma.hOP_DONG_DAT_PHONG.findUnique({
-            where: { HDONG_MA: Number(hdong_ma) },
+            where: { HDONG_MA },
             select: { KH_MA: true, HDONG_TRANG_THAI: true },
         });
-        if (!hd || hd.KH_MA !== Number(kh_ma))
-            return res.status(403).json({ message: 'Bạn không có quyền đánh giá đơn này' });
+        if (!hd || hd.KH_MA !== KH_MA) return res.status(403).json({ message: 'Bạn không có quyền đánh giá đơn này' });
         if (hd.HDONG_TRANG_THAI !== 'CHECKED_OUT')
             return res.status(400).json({ message: 'Chỉ đánh giá hợp đồng đã trả phòng' });
 
-        // 2️⃣ Nếu có ctdp_id thì kiểm tra dòng đó thuộc hợp đồng này
-        if (ctdp_id) {
+        // 2) Nếu có CTDP_ID, xác thực thuộc đúng hợp đồng
+        if (CTDP_ID) {
             const ct = await prisma.cT_DAT_TRUOC.findUnique({
-                where: { CTDP_ID: Number(ctdp_id) },
+                where: { CTDP_ID },
                 select: { HDONG_MA: true },
             });
-            if (!ct || ct.HDONG_MA !== Number(hdong_ma))
+            if (!ct || ct.HDONG_MA !== HDONG_MA)
                 return res.status(403).json({ message: 'Chi tiết đặt phòng không thuộc hợp đồng này' });
         }
 
-        // 3️⃣ Kiểm tra đã có đánh giá chưa (theo từng trường hợp)
-        let exist = null;
-        if (ctdp_id) {
-            exist = await prisma.dANH_GIA.findUnique({
-                where: { CTDP_ID: Number(ctdp_id) },
+        // 3) Kiểm tra đã có đánh giá chưa
+        const existed = await prisma.dANH_GIA.findFirst({
+            where: { HDONG_MA, CTDP_ID: CTDP_ID ?? null, KH_MA },
+            select: { DG_MA: true },
+        });
+        if (existed) {
+            return res.status(400).json({
+                message: CTDP_ID ? 'Bạn đã đánh giá loại phòng này rồi' : 'Bạn đã đánh giá tổng thể đơn này rồi',
             });
-            if (exist)
-                return res.status(400).json({ message: 'Bạn đã đánh giá loại phòng này rồi' });
-        } else {
-            exist = await prisma.dANH_GIA.findFirst({
-                where: { HDONG_MA: Number(hdong_ma), CTDP_ID: null },
-            });
-            if (exist)
-                return res.status(400).json({ message: 'Bạn đã đánh giá tổng thể đơn này rồi' });
         }
 
-        // 4️⃣ Tạo đánh giá (có thể kèm đính kèm)
+        // 4) Tạo đánh giá + đính kèm (dùng create thay vì nested createMany)
         const review = await prisma.dANH_GIA.create({
             data: {
-                KH_MA: Number(kh_ma),
-                HDONG_MA: Number(hdong_ma),
-                CTDP_ID: ctdp_id ? Number(ctdp_id) : null,
-                DG_SAO: Number(sao),
+                KH_MA: KH_MA,
+                HDONG_MA: HDONG_MA,
+                CTDP_ID: CTDP_ID,
+                DG_SAO: STARS,
                 DG_TIEU_DE: tieu_de.trim(),
                 DG_NOI_DUNG: noi_dung || null,
                 DG_TRANG_THAI: 'PUBLISHED',
                 DINH_KEMS: {
-                    createMany: {
-                        data: (Array.isArray(dinh_kem) ? dinh_kem : []).map((f) => ({
+                    create: (Array.isArray(dinh_kem) ? dinh_kem : [])
+                        .filter(f => f?.url)
+                        .map(f => ({
                             DKDG_LOAI: f.loai || 'IMAGE',
                             DKDG_URL: f.url,
                             DKDG_CHUTHICH: f.ghi_chu || null,
                         })),
-                    },
                 },
             },
             include: { DINH_KEMS: true },
@@ -1092,10 +1088,12 @@ pub.post('/khachhang/review', async (req, res, next) => {
 
         res.json({ ok: true, review });
     } catch (e) {
-        console.error('ERR /public/khachhang/review:', e);
+        // Log rõ mã Prisma để soi nhanh (P2002 unique, P2003 FK, ...)
+        console.error('ERR /public/khachhang/review:', e.code, e.meta, e.message);
         next(e);
     }
 });
+
 
 const multer = require('multer');
 const path = require('path');
@@ -1145,6 +1143,182 @@ pub.get('/khachhang/reviews', async (req, res, next) => {
         next(e);
     }
 });
+
+// GET /public/khachhang/review-detail?hdong_ma=... [&kh_ma=...]
+pub.get('/khachhang/review-detail', async (req, res, next) => {
+    try {
+        const hdong_ma = Number(req.query.hdong_ma);
+        const kh_ma = Number(req.guest?.KH_MA || req.query.kh_ma || 0); // tùy bạn có cần ràng buộc chủ sở hữu không
+        if (!hdong_ma) return res.status(400).json({ message: 'Thiếu hdong_ma' });
+
+        // Tổng thể (CTDP_ID = null)
+        const overall = await prisma.dANH_GIA.findFirst({
+            where: { HDONG_MA: hdong_ma, ...(kh_ma ? { KH_MA: kh_ma } : {}), CTDP_ID: null },
+            select: {
+                DG_MA: true, DG_SAO: true, DG_TIEU_DE: true, DG_NOI_DUNG: true, DG_TAO_LUC: true
+            },
+        });
+
+        // Các đánh giá theo từng CTDP_ID + lấy tên loại phòng
+        const rows = await prisma.$queryRawUnsafe(`
+      SELECT dg.CTDP_ID, dg.DG_SAO, dg.DG_TIEU_DE, dg.DG_NOI_DUNG, dg.DG_TAO_LUC,
+             ct.LP_MA, lp.LP_TEN
+      FROM DANH_GIA dg
+      LEFT JOIN CT_DAT_TRUOC ct ON ct.CTDP_ID = dg.CTDP_ID
+      LEFT JOIN LOAI_PHONG   lp ON lp.LP_MA   = ct.LP_MA
+      WHERE dg.HDONG_MA = ${hdong_ma}
+        ${kh_ma ? `AND dg.KH_MA = ${kh_ma}` : ``}
+        AND dg.CTDP_ID IS NOT NULL
+      ORDER BY dg.DG_TAO_LUC DESC
+    `);
+
+        res.json({ overall: overall || null, rooms: rows || [] });
+    } catch (e) { next(e); }
+});
+
+// =====================
+// GET /public/danh-gia
+// =====================
+pub.get('/danh-gia', async (req, res, next) => {
+    try {
+        const take = Math.max(1, Math.min(50, Number(req.query.take) || 10));
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const skip = (page - 1) * take;
+
+        const order = (req.query.order || 'desc').toString().toLowerCase() === 'asc' ? 'asc' : 'desc';
+        const status = (req.query.status || 'PUBLISHED').toString();
+
+        const stars = req.query.stars ? Number(req.query.stars) : null; // lọc đúng số sao
+        const minStars = req.query.minStars ? Number(req.query.minStars) : null; // hoặc từ sao trở lên
+        const hasText = (req.query.hasText || '') === '1';
+        const hasMedia = (req.query.hasMedia || '') === '1';
+        const q = (req.query.q || '').toString().trim();
+        const hdong_ma = req.query.hdong_ma ? Number(req.query.hdong_ma) : null;
+
+        // where an toàn: chỉ bám theo field của bảng DANH_GIA để tránh sai tên quan hệ
+        const where = {
+            DG_TRANG_THAI: status,
+            ...(hdong_ma ? { HDONG_MA: hdong_ma } : {}),
+            ...(stars && stars >= 1 && stars <= 5 ? { DG_SAO: stars } : {}),
+            ...(minStars && minStars >= 1 && minStars <= 5 ? { DG_SAO: { gte: minStars } } : {}),
+            ...(hasText ? { DG_NOI_DUNG: { not: null, notIn: [''] } } : {}),
+            ...(hasMedia ? { DINH_KEMS: { some: {} } } : {}),
+            ...(q ? {
+                OR: [
+                    { DG_TIEU_DE: { contains: q } },
+                    { DG_NOI_DUNG: { contains: q } },
+                ]
+            } : {}),
+        };
+
+        // lấy danh sách DANH_GIA + đính kèm
+        const [rows, total] = await Promise.all([
+            prisma.dANH_GIA.findMany({
+                where,
+                orderBy: { DG_TAO_LUC: order },
+                skip,
+                take,
+                select: {
+                    DG_MA: true, DG_SAO: true, DG_TIEU_DE: true, DG_NOI_DUNG: true, DG_TAO_LUC: true,
+                    KH_MA: true, CTDP_ID: true, HDONG_MA: true,  
+                    // lấy đính kèm từ relation plural bạn đã dùng khi create: DINH_KEMS
+                    DINH_KEMS: {
+                        select: { DKDG_URL: true, DKDG_LOAI: true, DKDG_CHUTHICH: true }
+                    },
+                }
+            }),
+            prisma.dANH_GIA.count({ where })
+        ]);
+
+        // map KH tên + avatar (khỏi join raw)
+        const khIds = [...new Set(rows.map(r => r.KH_MA).filter(Boolean))];
+        const khs = khIds.length
+            ? await prisma.kHACH_HANG.findMany({
+                where: { KH_MA: { in: khIds } },
+                select: { KH_MA: true, KH_HOTEN: true}
+            })
+            : [];
+        const khMap = new Map(khs.map(k => [k.KH_MA, k]));
+
+        // map tên loại phòng qua CTDP_ID
+        const ctdpIds = [...new Set(rows.map(r => r.CTDP_ID).filter(Boolean))];
+        const cts = ctdpIds.length
+            ? await prisma.cT_DAT_TRUOC.findMany({
+                where: { CTDP_ID: { in: ctdpIds } },
+                select: {
+                    CTDP_ID: true,
+                    LOAI_PHONG: { select: { LP_TEN: true } }
+                }
+            })
+            : [];
+        const lpMap = new Map(cts.map(ct => [ct.CTDP_ID, ct.LOAI_PHONG?.LP_TEN || null]));
+
+        // dựng output phẳng cho FE
+        const items = rows.map(r => ({
+            DG_MA: r.DG_MA,
+            DG_SAO: r.DG_SAO,
+            DG_TIEU_DE: r.DG_TIEU_DE,
+            DG_NOI_DUNG: r.DG_NOI_DUNG,
+            HDONG_MA: r.HDONG_MA,   
+            DG_TAO_LUC: r.DG_TAO_LUC,
+            KH_TEN: khMap.get(r.KH_MA)?.KH_HOTEN || null,
+            LP_TEN: lpMap.get(r.CTDP_ID) || null,
+            DINH_KEM_DANH_GIA: r.DINH_KEMS, // FE đã normalize DINH_KEM_DANH_GIA / DINH_KEMS
+        }));
+
+        res.json({ items, total });
+    } catch (e) {
+        console.error('ERR GET /public/danh-gia:', e);
+        res.status(500).json({ message: 'Server error at /public/danh-gia', error: String(e?.message || e) });
+    }
+});
+
+// ===========================
+// GET /public/danh-gia/summary
+// ===========================
+pub.get('/danh-gia/summary', async (req, res) => {
+    try {
+        const status = (req.query.status || 'PUBLISHED').toString();
+        const where = { DG_TRANG_THAI: status };
+
+        const [avgObj, byStars, withText, withMedia] = await Promise.all([
+            prisma.dANH_GIA.aggregate({
+                _avg: { DG_SAO: true },
+                where
+            }),
+            prisma.dANH_GIA.groupBy({
+                by: ['DG_SAO'],
+                _count: { _all: true },
+                where
+            }),
+            prisma.dANH_GIA.count({
+                where: { ...where, DG_NOI_DUNG: { not: null, notIn: [''] } }
+            }),
+            prisma.dANH_GIA.count({
+                where: { ...where, DINH_KEMS: { some: {} } }
+            }),
+        ]);
+
+        /** @type {{[k:number]: number}} */
+        const result = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        byStars.forEach(g => {
+            const s = Number(g.DG_SAO);
+            if (s >= 1 && s <= 5) result[s] = g._count._all;
+        });
+
+        res.json({
+            avg: Number(avgObj._avg.DG_SAO || 0),
+            byStars: result,
+            withText,
+            withMedia
+        });
+    } catch (e) {
+        console.error('ERR GET /public/danh-gia/summary:', e);
+        res.status(500).json({ message: 'Server error at /public/danh-gia/summary' });
+    }
+});
+
+
 
 
 module.exports = pub;

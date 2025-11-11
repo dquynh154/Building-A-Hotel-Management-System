@@ -8,6 +8,7 @@ import Lightbox from "yet-another-react-lightbox";
 import Thumbnails from "yet-another-react-lightbox/plugins/thumbnails";
 import "yet-another-react-lightbox/styles.css";
 import "yet-another-react-lightbox/plugins/thumbnails.css";
+import RoomDetailModal from '@/components/ui/modal/RoomDetailBookingModal';
 
 type RoomLite = {
     LP_MA: number;
@@ -247,17 +248,163 @@ export default function DatPhongPage() {
         setBasket({});          // xoá toàn bộ các phòng đã chọn (stepper về nút "Chọn")
         // setSelection(null);   // nếu bạn còn dùng selection đơn, bỏ comment để xoá luôn
     }, [from, to, adults]);    // 👈 đổi ngày hoặc số người là reset
+    // Mô tả và tiện nghi cố định theo LP_MA
+
+    const [detailOpen, setDetailOpen] = useState(false);
+    const [selectedRoom, setSelectedRoom] = useState<any>(null);
+
+    const STATIC_ROOM_INFO: Record<number, {
+        desc: string;
+        features: string[];
+        tags?: string[];
+        dt: string;
+        beds: string;
+        view: string;
+        // images: string[];
+        amenities: string[];
+    }> = {
+        1: {
+            desc: "Phòng tiêu chuẩn ấm cúng, thiết kế hiện đại. Phù hợp khách công tác hoặc cặp đôi.",
+            features: ["🐾 Cho phép thú cưng", "📺 Smart TV", "🧊 Tủ lạnh mini", "🚭 Không hút thuốc", "🛏️ Giường Queen size"],
+            tags: ["Bestseller"],
+            dt: "20m²",
+            beds: '1 giường Queen',
+            view: 'Hướng thành phố',
+            amenities: ['Smart TV', 'Tủ lạnh mini', 'Máy sấy tóc', 'Khăn tắm', 'Điều hòa', 'Bàn làm việc', 'Điện thoại', 'Tủ quần áo'],
+            // images: [
+            //     '/images/rooms/standard-1.jpg',
+            //     '/images/rooms/standard-2.jpg',
+            //     '/images/rooms/standard-3.jpg',
+            // ],
+        },
+        2: {
+            desc: "Phòng 2 giường đơn rộng rãi, trang bị tiện nghi đầy đủ, thích hợp cho bạn bè hoặc đồng nghiệp.",
+            features: ["📶 Wifi tốc độ cao", "📺 Smart TV", "🧴 Dụng cụ vệ sinh cá nhân", "🛏️ 2 giường đơn", "☕ Ấm đun nước"],
+            tags: ["Bestseller"],
+            dt: "30m²",
+            beds: '2 giường đơn',
+            view: 'Hướng vườn',
+            amenities: ['TV', 'Tủ lạnh', 'Điều hòa', 'Bình đun nước', 'Tủ quần áo', 'Bàn làm việc', 'Máy sấy tóc', 'Khăn tắm', 'Dụng cụ vệ sinh cá nhân'],
+            // images: [
+            //     '/images/rooms/twin-1.jpg',
+            //     '/images/rooms/twin-2.jpg',
+            // ],
+        },
+        3: {
+            desc: "Phòng VIP với tầm nhìn toàn cảnh, nội thất sang trọng và phòng tắm riêng cao cấp.",
+            features: ["🛁 Bồn tắm riêng", "🍷 Mini bar", "📺 Smart TV 65 inch", "🧴 Dụng cụ vệ sinh cao cấp", "🛏️ Giường King size"],
+            tags: ["Luxury"],
+            dt: "40²",
+            beds: '2 giường đôi',
+            view: 'Hướng sông',
+            amenities: ['TV', 'Tủ lạnh', 'Wifi', 'Điều hòa', 'Bình đun nước', 'Tủ quần áo', 'Bàn làm việc', 'Máy sấy tóc', 'Khăn tắm', 'Dụng cụ vệ sinh cá nhân'],
+            // images: [
+            //     '/images/rooms/twin-1.jpg',
+            //     '/images/rooms/twin-2.jpg',
+            // ],
+        }
+    };
 
 
 
     return (
         <div className="mx-auto max-w-7xl px-4 py-6 text-slate-800">
+            {/* Hero logo giống hình 1 */}
+            
+            {/* Thanh tóm tắt kiểu PAO — viền xanh dày, bo tròn lớn */}
+            <section className="mx-auto w-full max-w-6xl px-2">
+                <div className="">
+                    <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-2 md:p-4">
+
+                        {/* Ô Ngày (range) */}
+                        <div className="rounded-xl border-2 border-rose-600 bg-white px-4 py-3 flex flex-col items-center justify-center text-center">
+                            <div className="text-xl font-medium text-gray-900">
+                                Nhận phòng & trả phòng
+                            </div>
+                            <div className="mt-2 flex items-center gap-3">
+                                <div className="w-full md:w-80">
+                                    <DatePicker
+                                        id="dp-range"
+                                        mode="range"
+                                        defaultDate={[parseYMD(from), parseYMD(to)]}
+                                        onChange={handleRangeChange}
+                                        placeholder={`${from.split('-').reverse().join('-')} đến ${to.split('-').reverse().join('-')}`}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Ô Khách */}
+                        <div className="relative rounded-xl border-2 border-rose-600 bg-white px-4 py-3">
+                            <div className="text-xl font-medium text-gray-900 text-center">Số lượng khách</div>
+
+                            <button
+                                type="button"
+                                onClick={() => setGuestOpen(v => !v)}
+                                className="mt-1 w-full text-center text-xl font-semibold"
+                            >
+                                {adults} người
+                            </button>
+
+                            {guestOpen && (
+                                <div className="absolute right-0 z-50 mt-2 w-80 rounded-xl border bg-white p-4 shadow-xl">
+                                    <div className="mb-3 text-sm font-semibold">Số khách</div>
+
+                                    <div className="flex items-center justify-between rounded-md bg-rose-50 px-3 py-2">
+                                        <span className="text-sm text-rose-900">Người</span>
+                                        <div className="flex items-center gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => setAdultsDraft(n => Math.max(1, n - 1))}
+                                                className="h-8 w-8 rounded-md bg-rose-200 text-rose-900"
+                                            >
+                                                –
+                                            </button>
+                                            <span className="w-8 text-center font-semibold">{adultsDraft}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setAdultsDraft(n => Math.min(10, n + 1))}
+                                                className="h-8 w-8 rounded-md bg-rose-600 text-white"
+                                            >
+                                                +
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-4 flex justify-end gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setGuestOpen(false)}
+                                            className="rounded-md px-4 py-2 text-sm"
+                                        >
+                                            Hủy
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const next = new URLSearchParams(q.toString());
+                                                next.set('adults', String(adultsDraft));
+                                                router.replace(`?${next.toString()}`);
+                                                setGuestOpen(false);
+                                            }}
+                                            className="rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white"
+                                        >
+                                            Hoàn tất
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                    </div>
+                </div>
+            </section>
+
 
             {/* Thanh tóm tắt trên cùng */}
-            <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+            {/* <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
                 <div className="rounded-lg border bg-white px-4 py-3">
                     <div className="text-xs text-gray-500 font-medium">Nhận phòng và trả phòng</div>
-                    {/* <div className="mt-1 flex items-center gap-2 text-sm font-semibold"> */}
                     <div className="mt-2 flex items-center gap-3">
                         <div className="w-full md:w-80">
                             <DatePicker
@@ -269,7 +416,6 @@ export default function DatPhongPage() {
                             />
                         </div>
                     </div>
-                    {/* </div> */}
                 </div>
                 <div className="relative rounded-lg border bg-white px-4 py-3">
                     <div className="text-xs text-gray-500 font-medium">Khách</div>
@@ -291,7 +437,6 @@ export default function DatPhongPage() {
                                 <div className="flex items-center gap-3">
                                     <button
                                         type="button"
-                                        // onClick={() => setAdults((n) => Math.max(1, n - 1))}
                                         onClick={() => setAdultsDraft(n => Math.max(1, n - 1))}
                                         className="h-8 w-8 rounded-md bg-rose-200 text-rose-900"
                                     >
@@ -300,7 +445,6 @@ export default function DatPhongPage() {
                                     <span className="w-8 text-center font-semibold">{adultsDraft}</span>
                                     <button
                                         type="button"
-                                        // onClick={() => setAdults((n) => Math.min(10, n + 1))}
                                         onClick={() => setAdultsDraft(n => Math.min(10, n + 1))}
                                         className="h-8 w-8 rounded-md bg-rose-600 text-white"
                                     >
@@ -334,7 +478,7 @@ export default function DatPhongPage() {
                         </div>
                     )}
                 </div>
-            </div>
+            </div> */}
 
             <div className="rounded-2xl border bg-white p-6 md:p-8">
                 <div className="relative flex justify-center items-center border-b-4 border-rose-200 pb-3 mb-8">
@@ -397,45 +541,88 @@ export default function DatPhongPage() {
                                                 alt={r.LP_TEN}
                                                 className="w-full h-full object-cover"
                                             />
-                                            <div className="absolute top-2 left-2 bg-rose-600 text-white text-[11px] px-2 py-0.5 rounded">
-                                                Bestseller
-                                            </div>
+                                            {STATIC_ROOM_INFO[r.LP_MA]?.tags?.map((tag, i) => (
+                                                <div
+                                                    key={i}
+                                                    className="absolute top-2 left-2 bg-rose-600 text-white text-[11px] px-2 py-0.5 rounded"
+                                                >
+                                                    {tag}
+                                                </div>
+                                            ))}
+
                                         </div>
 
                                         {/* Thông tin bên phải */}
                                         <div className="flex flex-col justify-start flex-1">
-                                            <div className="flex items-start justify-between mb-1">
-                                                <h3 className="text-base font-semibold text-rose-700">{r.LP_TEN}</h3>
-                                                <div className="text-xs text-gray-500">Tối đa {r.LP_SONGUOI} khách</div>
+                                            <div className="flex items-start justify-between mb-3">
+                                                <h3 className="text-base text-xl font-semibold text-rose-700">{r.LP_TEN}</h3>
+                                                <div className="flex items-center gap-3 text-sm text-gray-500">
+                                                    <span>Tối đa {r.LP_SONGUOI} khách</span>
+                                                    <span className="text-gray-400">|</span>
+                                                    <span className="text-gray-600">
+                                                        {STATIC_ROOM_INFO[r.LP_MA]?.dt || '20m²'}
+                                                    </span>
+                                                </div>
+
                                             </div>
 
-                                            <div className="flex flex-wrap gap-2 text-xs mb-2">
+                                            {/* <div className="flex flex-wrap gap-2 text-xs mb-2">
                                                 <span className="inline-flex items-center gap-1 rounded-md bg-gray-50 border border-gray-200 px-2 py-0.5">🐾 Cho phép thú cưng</span>
                                                 <span className="inline-flex items-center gap-1 rounded-md bg-gray-50 border border-gray-200 px-2 py-0.5">📺 Smart TV</span>
                                                 <span className="inline-flex items-center gap-1 rounded-md bg-gray-50 border border-gray-200 px-2 py-0.5">🧊 Tủ lạnh mini</span>
                                                 <span className="inline-flex items-center gap-1 rounded-md bg-gray-50 border border-gray-200 px-2 py-0.5">🚭 Không hút thuốc</span>
                                                 <span className="inline-flex items-center gap-1 rounded-md bg-gray-50 border border-gray-200 px-2 py-0.5">🛏️ Giường Queen size</span>
-                                            </div>
+                                            </div> */}
 
-                                            <p className="text-[13px] text-gray-600 leading-snug">
-                                                Phòng tiêu chuẩn ấm cúng, thiết kế hiện đại. Phù hợp khách công tác hoặc cặp đôi.
-                                            </p>
+                                            {(() => {
+                                                const info = STATIC_ROOM_INFO[r.LP_MA];
+                                                return (
+                                                    <>
+                                                        <div className="flex flex-wrap gap-2 text-sm mb-2">
+                                                            {(info?.features ?? []).map((f, idx) => (
+                                                                <span
+                                                                    key={idx}
+                                                                    className="inline-flex items-center gap-1 rounded-md bg-gray-50 border border-gray-200 px-2 py-0.5"
+                                                                >
+                                                                    {f}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                        <p className="text-sm text-gray-600 leading-snug">{info?.desc || "Phòng tiện nghi, sạch sẽ và thoải mái."}</p>
+                                                    </>
+                                                );
+                                            })()}
 
                                             <div className="mt-3">
-                                                <button className="border border-rose-300 text-rose-600 text-xs rounded-full px-3 py-1 hover:bg-rose-50">
+                                                <button
+                                                    onClick={() => {
+                                                        const info = STATIC_ROOM_INFO[r.LP_MA] || {};
+                                                        setSelectedRoom({
+                                                            LP_MA: r.LP_MA,
+                                                            LP_TEN: r.LP_TEN,
+                                                            DTICH: STATIC_ROOM_INFO[r.LP_MA]?.dt,
+                                                            MOTA: STATIC_ROOM_INFO[r.LP_MA]?.desc,
+                                                            VIEW: STATIC_ROOM_INFO[r.LP_MA]?.view,
+                                                            BEDS: STATIC_ROOM_INFO[r.LP_MA]?.beds,
+                                                            TIENNGHI: STATIC_ROOM_INFO[r.LP_MA]?.amenities,
+                                                        });
+                                                        setDetailOpen(true);
+                                                    }}
+                                                    className="border border-rose-300 text-rose-600 text-xs rounded-full px-3 py-1 hover:bg-rose-50"
+                                                >
                                                     Hiển thị thêm
                                                 </button>
+
                                             </div>
                                         </div>
                                     </div>
 
                                     {/* --- Gói giá (phía dưới) --- */}
                                     <div className="border-t border-rose-100 bg-rose-50/20 p-4 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                                        <div className="text-xs text-gray-600">
+                                        <div className="text-sm text-gray-600">
 
                                             <ul className="space-y-1">
                                                 <li>🍳 Đã bao gồm ăn sáng</li>
-
                                                 <li>❌ Không hoàn cọc</li>
                                             </ul>
                                         </div>
@@ -560,6 +747,11 @@ export default function DatPhongPage() {
                     </aside>
                 </div>
             </div>
+            <RoomDetailModal
+                open={detailOpen}
+                onClose={() => setDetailOpen(false)}
+                room={selectedRoom}
+            />
             <Lightbox
                 open={openLightbox}
                 close={() => setOpenLightbox(false)}
@@ -567,6 +759,8 @@ export default function DatPhongPage() {
                 slides={photos}
                 plugins={[Thumbnails]}
             />
+            
+
 
         </div>
     );

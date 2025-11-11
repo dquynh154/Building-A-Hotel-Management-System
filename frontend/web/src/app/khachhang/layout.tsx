@@ -4,7 +4,7 @@ import Footer from './_components/Footer';
 
 export default function KhachHangLayout({ children }: { children: ReactNode }) {
     return (
-        <div className="min-h-screen bg-[#F9F5EF] text-white">
+        <div className="min-h-screen bg-[#FDFCF9] text-white">
             <Header />
             {children}
             <Footer />
