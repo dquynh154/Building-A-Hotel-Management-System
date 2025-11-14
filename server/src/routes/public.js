@@ -1,5 +1,5 @@
 const pub = require('express').Router();
-const { prisma } = require('../db/prisma');
+const  {prisma}  = require('../db/prisma');
 const crypto = require('crypto');
 const qs = require('qs');
 const { Prisma } = require('@prisma/client'); // <-- THÊM DÒNG NÀY để dùng Prisma.Decimal

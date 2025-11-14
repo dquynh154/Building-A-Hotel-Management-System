@@ -568,7 +568,7 @@ model ChatMessage {
   content   String   @map("CONTENT")
   createdAt DateTime @default(now()) @map("CREATED_AT")
 
-  session ChatSession @relation(fields: [sessionId], references: [id])
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, createdAt])
   @@map("CHAT_MESSAGE")
