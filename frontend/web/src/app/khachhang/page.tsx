@@ -217,11 +217,14 @@ export default function Home() {
     useEffect(() => {
         (async () => {
             try {
-                const r = await fetch('/public/danh-gia?status=PUBLISHED&take=10'); // <— chỉnh endpoint nếu khác
+                const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
+                const url = `${API_BASE}/public/danh-gia?status=PUBLISHED&take=5`; // <— chỉnh endpoint nếu khác
+                const r = await fetch(url, { credentials: 'include' });  // nếu dùng cookie
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
                 const j = await r.json();
                 if (Array.isArray(j.items) && j.items.length) {
                     setReviews(j.items.map((x: any, i: number) => ({
-                        id: x.DG_ID ?? i,
+                        id: x.DG_MA ?? i,
                         name: x.KH_TEN ?? x.KHACH_HANG?.KH_HOTEN ?? "Khách ẩn danh",
                         rating: Number(x.DG_SAO ?? 5),
                         content: x.DG_NOI_DUNG || x.DG_TIEU_DE || "Rất tuyệt vời!",
