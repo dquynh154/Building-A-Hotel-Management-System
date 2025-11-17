@@ -57,7 +57,7 @@ export default function QuanLyDatPhongPage() {
     const { guest, loading: guestLoading } = useGuest();
     const [detailOpen, setDetailOpen] = useState(false);
     const [selectedId, setSelectedId] = useState<number | null>(null);
-    const [reviewOpen, setReviewOpen] = useState(false);
+    // const [reviewOpen, setReviewOpen] = useState(false);
     const router = useRouter();
     useEffect(() => {
         if (guestLoading) return;
@@ -81,9 +81,9 @@ export default function QuanLyDatPhongPage() {
         })();
     }, [guestLoading, guest]);
 
-    useEffect(() => {
-        if (selectedId) setReviewOpen(true);
-    }, [selectedId]);
+    // useEffect(() => {
+    //     if (selectedId) setReviewOpen(true);
+    // }, [selectedId]);
     const [reviews, setReviews] = useState<number[]>([]); // danh sách HDONG_MA đã được đánh giá tổng thể
 
     useEffect(() => {
@@ -345,8 +345,8 @@ export default function QuanLyDatPhongPage() {
                 }}
             />
             <ReviewModal
-                open={reviewOpen}
-                onClose={() => setReviewOpen(false)}
+                open={selectedId !== null}
+                onClose={() => setSelectedId(null)}
                 hdong_ma={selectedId}
                 kh_ma={guest?.KH_MA}
                 rooms={
@@ -356,6 +356,12 @@ export default function QuanLyDatPhongPage() {
                         SO_LUONG: ct.SO_LUONG,
                     })) || []
                 }
+                onSubmitted={(hd) => {
+                    if (hd != null) {
+                        setReviews(prev => (prev.includes(hd) ? prev : [...prev, hd]));
+                    }
+                    setSelectedId(null); // đóng modal an toàn
+                }}
             />
 
         </div>

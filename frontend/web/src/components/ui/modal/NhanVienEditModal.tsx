@@ -146,6 +146,7 @@ export default function NhanVienEditModal({
                                     id="nv-ngaysinh-create"
                                     label="Ngày sinh"
                                     placeholder="Chọn ngày"
+                                    allowPastDates={true}
                                     defaultDate={ngaySinh || undefined} // yyyy-mm-dd hoặc undefined
                                     onChange={(_, dateStr) => setNgaySinh(dateStr)} // flatpickr trả về đúng format "Y-m-d"
                                 />

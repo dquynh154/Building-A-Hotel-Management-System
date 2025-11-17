@@ -299,8 +299,8 @@ const hinhthucthue = crud('hINH_THUC_THUE', {
         return data;
     },
 });
-r.get('/hinh-thuc-thue', onlyAdmin, hinhthucthue.list);
-r.get('/hinh-thuc-thue/:id', onlyAdmin, hinhthucthue.get);
+r.get('/hinh-thuc-thue', staffOrAdmin, hinhthucthue.list);
+r.get('/hinh-thuc-thue/:id', staffOrAdmin, hinhthucthue.get);
 r.post('/hinh-thuc-thue', onlyAdmin, hinhthucthue.create);
 r.put('/hinh-thuc-thue/:id', onlyAdmin, hinhthucthue.update);
 r.delete('/hinh-thuc-thue/:id', onlyAdmin, hinhthucthue.remove);
@@ -322,14 +322,14 @@ r.delete('/khuyen-mai-su-dung/:HDONG_MA', onlyAdmin, ctl.remove);
 r.get('/khuyen-mai-su-dung', staffOrAdmin, ctl.list);
 
 const thoiDiem = require('../controllers/thoidiem');
-r.get('/thoi-diem', onlyAdmin, thoiDiem.list);
-r.get('/thoi-diem/:id', onlyAdmin, thoiDiem.get);
+r.get('/thoi-diem', staffOrAdmin, thoiDiem.list);
+r.get('/thoi-diem/:id', staffOrAdmin, thoiDiem.get);
 r.post('/thoi-diem', onlyAdmin, thoiDiem.create);
 r.put('/thoi-diem/:id', onlyAdmin, thoiDiem.update);
 r.delete('/thoi-diem/:id', onlyAdmin, thoiDiem.remove);
 
 const donGia = require('../controllers/dongia');
-r.get('/don-gia', onlyAdmin, donGia.listOrGet);
+r.get('/don-gia', staffOrAdmin, donGia.listOrGet);
 r.post('/don-gia', onlyAdmin, donGia.create);
 r.put('/don-gia/:LP_MA/:HT_MA/:TD_MA', onlyAdmin, donGia.update);
 r.delete('/don-gia/:LP_MA/:HT_MA/:TD_MA', onlyAdmin, donGia.remove);

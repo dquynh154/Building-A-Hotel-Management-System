@@ -23,6 +23,15 @@ const isVideoUrl = (url: string) => /\.(mp4|webm|ogg)(\?.*)?$/i.test(url);
 /* ================= Types & normalize ================= */
 type Raw = any;
 type Media = { url: string; type: 'IMAGE' | 'VIDEO'; note?: string | null };
+type Reply = {
+    content: string;
+    staffName?: string | null;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+    status?: string | null;
+    staffAvatar?: string | null;
+};
+
 type Review = {
     id: number;
     stars: number;
@@ -33,9 +42,11 @@ type Review = {
     roomName?: string | null;
     medias: Media[];
     contractId?: number | null;
+    reply?: Reply | null;
 };
 
 function normalize(x: Raw): Review {
+    // --- đính kèm ---
     const list =
         (Array.isArray(x?.DINH_KEM_DANH_GIA) ? x.DINH_KEM_DANH_GIA :
             Array.isArray(x?.DINH_KEMS) ? x.DINH_KEMS :
@@ -46,9 +57,37 @@ function normalize(x: Raw): Review {
             const url = absUrl(k?.DKDG_URL ?? k?.url ?? '');
             if (!url) return null;
             const loai = (k?.DKDG_LOAI ?? k?.loai ?? '').toString().toUpperCase();
-            return { url, type: (loai === 'VIDEO' || isVideoUrl(url)) ? 'VIDEO' : 'IMAGE', note: k?.DKDG_CHUTHICH ?? k?.ghi_chu ?? null };
+            return {
+                url,
+                type: (loai === 'VIDEO' || isVideoUrl(url)) ? 'VIDEO' : 'IMAGE',
+                note: k?.DKDG_CHUTHICH ?? k?.ghi_chu ?? null
+            };
         })
         .filter(Boolean) as Media[];
+
+    // --- phản hồi (BE đã trả REPLY nếu đã PUBLISHED) ---
+    const rawReply = x?.REPLY || x?.PHAN_HOI || null;
+    let reply: Reply | null = null;
+    if (rawReply) {
+        const status = rawReply?.PH_TRANG_THAI ?? rawReply?.status ?? null;
+        // chỉ hiển thị nếu published (hoặc BE đã lọc sẵn)
+        if (!status || status === 'PUBLISHED') {
+            const content = rawReply?.PH_NOIDUNG ?? rawReply?.content ?? '';
+            if (content?.trim()) {
+                reply = {
+                    content,
+                    staffName: rawReply?.NHAN_VIEN?.NV_HOTEN ?? rawReply?.staffName ?? null,
+                    createdAt: rawReply?.PH_TAO_LUC ?? rawReply?.createdAt ?? null,
+                    updatedAt: rawReply?.PH_SUA_LUC ?? rawReply?.updatedAt ?? null,
+                    status,
+                    staffAvatar: (() => {
+                        const raw = rawReply?.staffAvatar ?? '';
+                        return raw ? absUrl(raw) : null;
+                    })(),
+                };
+            }
+        }
+    }
 
     return {
         id: Number(x?.DG_ID ?? x?.DG_MA ?? 0),
@@ -60,8 +99,10 @@ function normalize(x: Raw): Review {
         roomName: x?.LP_TEN ?? null,
         contractId: x?.HDONG_MA ?? x?.hdong_ma ?? null,
         medias,
+        reply, // <-- gắn phản hồi vào review
     };
 }
+
 
 /* ================= Stars ================= */
 function Stars({ value = 0, className = '' }: { value?: number; className?: string }) {
@@ -381,6 +422,34 @@ export default function PublicReviewsPage() {
                                         ))}
                                     </div>
                                 )}
+                                {/* Reply của nhân viên (nếu có) */}
+                                {/* Reply của nhân viên (nếu có) */}
+                                {rv.reply && (
+                                    <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-9 w-9 overflow-hidden rounded-full bg-emerald-100">
+                                                <Image
+                                                    width={50}
+                                                    height={50}
+                                                    src={rv.reply.staffAvatar || "/images/logo/logo-icon-1.png"}
+                                                    alt="staff"
+                                                />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="text-sm font-semibold truncate">
+                                                    Phản hồi từ {rv.reply.staffName || "nhân viên khách sạn"}
+                                                </div>
+                                                <div className="text-xs text-slate-500">
+                                                    {fmtDate(rv.reply.createdAt)}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <p className="mt-2 whitespace-pre-wrap leading-relaxed text-sm">
+                                            {rv.reply.content}
+                                        </p>
+                                    </div>
+                                )}
                             </article>
                         ))}
                     </div>
@@ -429,6 +498,36 @@ export default function PublicReviewsPage() {
                                 ))}
                             </div>
                         )}
+                        {/* Reply của nhân viên (nếu có) */}
+                        {/* Reply của nhân viên (nếu có) */}
+                        {rv.reply && (
+                            <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="h-9 w-9 overflow-hidden rounded-full bg-emerald-100">
+                                        <Image
+                                            width={50}
+                                            height={50}
+                                            src={rv.reply.staffAvatar || "/images/logo/logo-icon-1.png"}
+                                            alt="staff"
+                                        />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-semibold truncate">
+                                            Phản hồi từ {rv.reply.staffName || "nhân viên khách sạn"}
+                                        </div>
+                                        <div className="text-xs text-slate-500">
+                                            {fmtDate(rv.reply.createdAt)}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <p className="mt-2 whitespace-pre-wrap leading-relaxed text-sm">
+                                    {rv.reply.content}
+                                </p>
+                            </div>
+                        )}
+
+
                     </article>
                 ))}
 

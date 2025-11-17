@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useRef } from 'react';
 import { Modal } from '@/components/ui/modal';
-
+import { useRouter } from 'next/navigation';
 interface RoomInfo {
     CTDP_ID: number;
     LP_TEN: string;
@@ -14,6 +14,7 @@ interface ReviewModalProps {
     hdong_ma: number | null;
     kh_ma: number | undefined;
     rooms?: RoomInfo[];
+    onSubmitted?: (hd: number | null) => void;
 }
 
 // ------------------------ ImageUploader Component ------------------------
@@ -114,7 +115,9 @@ export default function ReviewModal({
     hdong_ma,
     kh_ma,
     rooms = [],
+    onSubmitted,
 }: ReviewModalProps) {
+    const router = useRouter();
     const [overallRating, setOverallRating] = useState(5);
     const [overallText, setOverallText] = useState('');
     const [overallImages, setOverallImages] = useState<File[]>([]);
@@ -200,6 +203,8 @@ export default function ReviewModal({
 
             alert('Cảm ơn bạn đã gửi đánh giá!');
             onClose();
+            onSubmitted?.(hdong_ma);
+            router.refresh?.();
         } catch (err: any) {
             alert(err.message);
         } finally {

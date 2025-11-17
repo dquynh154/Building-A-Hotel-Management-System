@@ -7,6 +7,7 @@ import DatePicker from '@/components/form/date-picker';
 import { EyeCloseIcon, EyeIcon } from '@/icons';
 import Input from '@/components/form/input/InputField';
 
+
 export default function NhanVienCreateModal({
     open, onClose, onCreated,
 }: { open: boolean; onClose: () => void; onCreated?: () => void; }) {
@@ -43,12 +44,10 @@ export default function NhanVienCreateModal({
         setNgaySinh(''); setGioiTinh(''); setChucVu(''); setTrangThai('true'); setErr(null);
     };
 
-    const canSave = !!hoten.trim() && !!taikhoan.trim() && !!matkhau.trim() && isValidEmail(email) &&
-        isValidPhoneVN(sdt) &&
-        !saving;
+    const canSave = !!hoten.trim() && !!chucVu.trim() && !!taikhoan.trim() && !!matkhau.trim() && isValidEmail(email) && isValidPhoneVN(sdt) && !saving;
 
     const submit = async (keepOpen: boolean) => {
-        if (!canSave) return;
+        // if (!canSave) return;
         setSaving(true); setErr(null);
         try {
             await api.post('/nhan-vien', {
@@ -73,7 +72,6 @@ export default function NhanVienCreateModal({
             setErr(e?.response?.data?.message || 'Lưu thất bại');
         } finally { setSaving(false); }
     };
-    const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
 
 
@@ -123,7 +121,7 @@ export default function NhanVienCreateModal({
                             type={showPassword ? "text" : "password"}
                             placeholder="Nhập mật khẩu của bạn"
                             name={matkhau}
-                            onChange={(e) => setPassword(e.target.value)}
+                            onChange={(e) => setMatkhau(e.target.value)}
                         />
                         <span
                             onClick={() => setShowPassword(!showPassword)}
@@ -177,7 +175,9 @@ export default function NhanVienCreateModal({
                         placeholder="Chọn ngày"
                         defaultDate={ngaySinh || undefined} // yyyy-mm-dd hoặc undefined
                         onChange={(_, dateStr) => setNgaySinh(dateStr)} // flatpickr trả về đúng format "Y-m-d"
+                        allowPastDates={true}
                     />
+
                 </div>
                 <div>
                     <label className="mb-1 block text-sm">Giới tính</label>

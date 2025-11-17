@@ -72,7 +72,7 @@ export default function BookingToolbar({
 
             <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2">
-                    <ReactDatePicker
+                    {/* <ReactDatePicker
                         selected={filters.range.from}
                         onChange={(date) =>
                             onFiltersChange({
@@ -100,9 +100,25 @@ export default function BookingToolbar({
                         dateFormat="dd/MM/yyyy"
                         className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                         isClearable
+                    /> */}
+                    <DatePicker
+                        id="dp-from"
+                        label=""
+                        placeholder="Từ ngày"
+                        allowPastDates={true}
+                        onChange={(dates: any) => onFiltersChange({ ...filters, range: { ...filters.range, from: dates?.[0] || dates || null } })}
                     />
+                    <DatePicker
+                        id="dp-to"
+                        label=""
+                        placeholder="Đến ngày"
+                        allowPastDates={true}
+                        onChange={(dates: any) => onFiltersChange({ ...filters, range: { ...filters.range, to: dates?.[0] || dates || null } })}
+                    />
+
                 </div>
 
+               
 
                 <input
                     value={filters.search}

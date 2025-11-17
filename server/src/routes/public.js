@@ -1,5 +1,5 @@
 const pub = require('express').Router();
-const  {prisma}  = require('../db/prisma');
+const { prisma } = require('../db/prisma');
 const crypto = require('crypto');
 const qs = require('qs');
 const { Prisma } = require('@prisma/client'); // <-- THÊM DÒNG NÀY để dùng Prisma.Decimal
@@ -67,7 +67,7 @@ pub.post('/dat-truoc/prepare', async (req, res) => {
 
         const nights = Math.max(1, Math.ceil((new Date(to) - new Date(from)) / 86400000));
         const NV_MA_DEFAULT = Number(process.env.DEFAULT_NV_MA || 1);
-        const tileCoc = Number(process.env.DEFAULT_DEPOSIT_RATE || 50); // % cọc (bạn đã dùng 50%)
+        const tileCoc = Number(process.env.DEFAULT_DEPOSIT_RATE || 20); // % cọc (bạn đã dùng 50%)
 
         const out = await prisma.$transaction(async (tx) => {
             // 1) Kiểm tra tồn cho từng loại phòng
@@ -1220,12 +1220,21 @@ pub.get('/danh-gia', async (req, res, next) => {
                 take,
                 select: {
                     DG_MA: true, DG_SAO: true, DG_TIEU_DE: true, DG_NOI_DUNG: true, DG_TAO_LUC: true,
-                    KH_MA: true, CTDP_ID: true, HDONG_MA: true,  
+                    KH_MA: true, CTDP_ID: true, HDONG_MA: true,
                     // lấy đính kèm từ relation plural bạn đã dùng khi create: DINH_KEMS
                     DINH_KEMS: {
                         select: { DKDG_URL: true, DKDG_LOAI: true, DKDG_CHUTHICH: true }
                     },
-                }
+                    PHAN_HOI: {
+                        select: {
+                            PH_NOIDUNG: true,
+                            PH_TRANG_THAI: true,
+                            PH_TAO_LUC: true,
+                            PH_SUA_LUC: true,
+                            NHAN_VIEN: { select: { NV_HOTEN: true } },
+                        },
+                    },
+                },  
             }),
             prisma.dANH_GIA.count({ where })
         ]);
@@ -1235,7 +1244,7 @@ pub.get('/danh-gia', async (req, res, next) => {
         const khs = khIds.length
             ? await prisma.kHACH_HANG.findMany({
                 where: { KH_MA: { in: khIds } },
-                select: { KH_MA: true, KH_HOTEN: true}
+                select: { KH_MA: true, KH_HOTEN: true }
             })
             : [];
         const khMap = new Map(khs.map(k => [k.KH_MA, k]));
@@ -1254,17 +1263,32 @@ pub.get('/danh-gia', async (req, res, next) => {
         const lpMap = new Map(cts.map(ct => [ct.CTDP_ID, ct.LOAI_PHONG?.LP_TEN || null]));
 
         // dựng output phẳng cho FE
-        const items = rows.map(r => ({
-            DG_MA: r.DG_MA,
-            DG_SAO: r.DG_SAO,
-            DG_TIEU_DE: r.DG_TIEU_DE,
-            DG_NOI_DUNG: r.DG_NOI_DUNG,
-            HDONG_MA: r.HDONG_MA,   
-            DG_TAO_LUC: r.DG_TAO_LUC,
-            KH_TEN: khMap.get(r.KH_MA)?.KH_HOTEN || null,
-            LP_TEN: lpMap.get(r.CTDP_ID) || null,
-            DINH_KEM_DANH_GIA: r.DINH_KEMS, // FE đã normalize DINH_KEM_DANH_GIA / DINH_KEMS
-        }));
+        const items = rows.map((r) => {
+            // chỉ expose phản hồi nếu đã PUBLISHED
+            let REPLY = null;
+            if (r.PHAN_HOI && r.PHAN_HOI.PH_TRANG_THAI === 'PUBLISHED') {
+                REPLY = {
+                    content: r.PHAN_HOI.PH_NOIDUNG,
+                    status: r.PHAN_HOI.PH_TRANG_THAI,
+                    createdAt: r.PHAN_HOI.PH_TAO_LUC,
+                    updatedAt: r.PHAN_HOI.PH_SUA_LUC,
+                    staffName: r.PHAN_HOI.NHAN_VIEN?.NV_HOTEN || null,
+                };
+            }
+
+            return {
+                DG_MA: r.DG_MA,
+                DG_SAO: r.DG_SAO,
+                DG_TIEU_DE: r.DG_TIEU_DE,
+                DG_NOI_DUNG: r.DG_NOI_DUNG,
+                HDONG_MA: r.HDONG_MA,
+                DG_TAO_LUC: r.DG_TAO_LUC,
+                KH_TEN: khMap.get(r.KH_MA)?.KH_HOTEN || null,
+                LP_TEN: lpMap.get(r.CTDP_ID) || null,
+                DINH_KEM_DANH_GIA: r.DINH_KEMS, // FE đang normalize key này
+                REPLY,                           // 👈 FE sẽ đọc để hiển thị phản hồi
+            };
+        });
 
         res.json({ items, total });
     } catch (e) {

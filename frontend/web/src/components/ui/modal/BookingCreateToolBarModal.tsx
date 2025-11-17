@@ -5,6 +5,7 @@ import Flatpickr from 'react-flatpickr';
 import 'flatpickr/dist/flatpickr.css';
 import Button from '@/components/ui/button/Button';
 import api from '@/lib/api';
+import { Vietnamese } from 'flatpickr/dist/l10n/vn';
 
 type Row = { LP_MA: number; LP_TEN: string; freeRooms: number; totalRooms: number; price: number };
 type Selection = { LP_MA: number; qty: number; price: number; LP_TEN: string };
@@ -202,6 +203,7 @@ export default function BookingCreateToolBarModal({
             dateFormat: 'H:i',
             time_24hr: true,
             minuteIncrement: 30,
+            locale: Vietnamese,
             // defaultDate: fromTime, // KHÔNG dùng khi đã có value
             allowInput: true,      // (tuỳ chọn) cho phép gõ tay
             onOpen: (selectedDates: any, dateStr: string, instance: any) => {
@@ -223,7 +225,8 @@ export default function BookingCreateToolBarModal({
             noCalendar: true,
             dateFormat: 'H:i',
             time_24hr: true,
-            minuteIncrement: 30,
+            minuteIncrement: 30, 
+            locale: Vietnamese,
             // defaultDate: fromTime, // KHÔNG dùng khi đã có value
             allowInput: true,      // (tuỳ chọn) cho phép gõ tay
             onOpen: (selectedDates: any, dateStr: string, instance: any) => {
@@ -272,7 +275,7 @@ export default function BookingCreateToolBarModal({
 
                 <Flatpickr
                     value={fromDate}
-                    options={{ dateFormat: 'Y-m-d', minDate: 'today' }}
+                    options={{ dateFormat: 'Y-m-d', minDate: 'today', locale: Vietnamese }}
                     onChange={(_d, s) => {
                         setFromDate(s);
                         if (isHourMode) {
@@ -340,7 +343,7 @@ export default function BookingCreateToolBarModal({
 
                 <Flatpickr
                     value={toDate}
-                    options={{ dateFormat: 'Y-m-d', minDate: fromDate || 'today' }}
+                    options={{ dateFormat: 'Y-m-d', minDate: fromDate || 'today', locale: Vietnamese }}
                     onChange={(_d, s) => {
                         setToDate(s);
                         if (isHourMode) {

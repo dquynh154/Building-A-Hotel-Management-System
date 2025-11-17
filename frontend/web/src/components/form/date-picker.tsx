@@ -13,6 +13,7 @@ type PropsType = {
   defaultDate?: DateOption | DateOption[];
   label?: string;
   placeholder?: string;
+  allowPastDates?: boolean;
 };
 
 export default function DatePicker({
@@ -22,14 +23,14 @@ export default function DatePicker({
   label,
   defaultDate,
   placeholder,
-
+  allowPastDates = false,
 }: PropsType) {
   useEffect(() => {
     const isTime = mode === 'time';
     const flatPickr = flatpickr(`#${id}`, {
       mode: mode || "single",
       dateFormat: isTime ? 'H:i' : 'd-m-Y', // 👈 dd-mm-yyyy
-      minDate: isTime ? undefined : 'today', 
+      minDate: isTime ? undefined : (allowPastDates ? undefined : 'today'),
       static: true,
       monthSelectorType: "static",
       // dateFormat: "Y-m-d",

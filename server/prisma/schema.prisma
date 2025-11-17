@@ -99,6 +99,12 @@ enum LOAI_HOA_DON {
   MAIN
 }
 
+enum PH_TrangThai {
+  DRAFT
+  PUBLISHED
+  HIDDEN
+  DELETED
+}
 // ---------- DANH MỤC PHÒNG ----------
 model TANG {
   TANG_MA  Int    @id @default(autoincrement())
@@ -494,10 +500,15 @@ model PHAN_HOI {
   DG_MA      Int      @unique // 1 review -> 1 phản hồi (nếu muốn cho nhiều phản hồi, bỏ @unique)
   NV_MA      Int
   PH_NOIDUNG String   @db.Text
+  PH_TRANG_THAI PH_TrangThai @default(PUBLISHED)
   PH_TAO_LUC DateTime @default(now())
+  PH_SUA_LUC   DateTime      @updatedAt
 
   DANH_GIA  DANH_GIA  @relation(fields: [DG_MA], references: [DG_MA], onDelete: Cascade)
   NHAN_VIEN NHAN_VIEN @relation(fields: [NV_MA], references: [NV_MA], onDelete: Restrict)
+  
+  @@index([DG_MA])
+  @@index([PH_TRANG_THAI, PH_TAO_LUC])
 }
 
 // ---------- HÓA ĐƠN & THANH TOÁN ----------

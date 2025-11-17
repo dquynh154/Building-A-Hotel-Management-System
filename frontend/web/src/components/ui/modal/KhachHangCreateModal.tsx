@@ -182,6 +182,7 @@ export default function KhachHangCreateModal({
                     <DatePicker
                         id="kh-ngaysinh-create"
                         label="Ngày sinh"
+                        allowPastDates={true}
                         placeholder="Chọn ngày"
                         defaultDate={ngaySinh || undefined} // yyyy-MM-dd
                         onChange={(_, dateStr) => setNgaySinh(dateStr)}

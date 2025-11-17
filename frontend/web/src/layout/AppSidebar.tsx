@@ -33,7 +33,7 @@ const navItems: NavItem[] = [
   {
     icon: <GridIcon />,
     name: "Bảng điều khiển",
-    subItems: [{ name: "Báo cáo thống kê", path: "/admin", pro: false }],
+    subItems: [{ name: "Báo cáo doanh thu", path: "/admin/others-pages/bao-cao/doanh-thu", pro: false }],
   },
   {
     icon: <Room />,
@@ -53,7 +53,11 @@ const navItems: NavItem[] = [
     name: "Quản lý nhân viên",
     path: "/admin/others-pages/nhan-vien",
   },
-
+  {
+    icon: <Staff />,
+    name: "Quản lý đánh giá",
+    path: "/admin/others-pages/danh-gia",
+  },
   {
     icon: <CalenderIcon />,
     name: "Lịch đặt phòng",

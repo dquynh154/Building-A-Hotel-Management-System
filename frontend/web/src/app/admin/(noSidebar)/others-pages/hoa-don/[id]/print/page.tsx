@@ -16,10 +16,11 @@ export default function InvoicePrintPage() {
 
     const { id } = useParams() as { id: string };
     const [inv, setInv] = useState<any>(null);
-    const pays: Array<{ so_tien: number; thoi_gian: any; phuong_thuc: string; status?: string }> = useMemo(() => {
+    const pays: Array<{ so_tien: number; tien_thua:number; thoi_gian: any; phuong_thuc: string; status?: string }> = useMemo(() => {
         const arr = Array.isArray(inv?.THANH_TOAN) ? inv.THANH_TOAN : [];
         return arr.map((p: any) => ({
-            so_tien: Number(p?.TT_SO_TIEN ?? p?.so_tien ?? 0),
+            so_tien: Number(p?.TT_SO_TIEN_KHACH_DUA ?? p?.so_tien ?? 0),
+            tien_thua: Number(p?.TT_TIEN_THUA ?? p?.tien_thua ?? 0),
             thoi_gian: p?.TT_THOI_GIAN ?? p?.TT_NGAY_TAO ?? p?.createdAt ?? p?.thoi_gian,
             phuong_thuc: p?.TT_PHUONG_THUC ?? p?.phuong_thuc ?? '',
             status: (p?.TT_TRANG_THAI_GIAO_DICH ?? p?.status ?? '').toUpperCase(),
@@ -47,7 +48,7 @@ export default function InvoicePrintPage() {
     const kh = inv.KHACH_HANG ?? {};                       // khách chính (đã bổ sung ở BE)
     const b = inv.BOOKING ?? {};                          // <== KHÔNG dùng inv.HOP_DONG nữa
     const rows = inv.CHI_TIET ?? [];                       // BE chưa trả thì sẽ là []
-
+    const nv = inv.NHAN_VIEN ?? {};                           // nhân viên (nếu có)
     // Chuẩn hóa mảng thanh toán từ bảng THANH_TOAN (TT_*)
 
     const tong = Number(inv?.HDON_TONG_TIEN ?? 0);
@@ -59,7 +60,9 @@ export default function InvoicePrintPage() {
     const paid = pays
         .filter(p => (p.status ? p.status === 'SUCCEEDED' : true))
         .reduce((s, p) => s + Number(p.so_tien || 0), 0);
-    const due = Math.max(0, total - paid);
+    const due = pays
+        .filter(p => (p.status ? p.status === 'SUCCEEDED' : true))
+        .reduce((s, p) => s + Number(p.tien_thua || 0), 0);
 
     const invDate = inv.HDON_NGAYLAP ?? inv.HDON_TAO_LUC ?? inv.createdAt;
     const staff = inv.STAFF ?? null;
@@ -99,12 +102,13 @@ export default function InvoicePrintPage() {
                     <div><span className="opacity-70">Khách hàng:</span> <b>{kh.KH_HOTEN || '—'}</b></div>
                     {kh.KH_DIACHI && <div><span className="opacity-70">Địa chỉ:</span> {kh.KH_DIACHI}</div>}
                     {kh.KH_SDT && <div><span className="opacity-70">SDT:</span> {kh.KH_SDT}</div>}
+                    <div><span className="opacity-70">Đặt:</span> {fmt(b.HDONG_NGAYDAT)} → {fmt(b.HDONG_NGAYTRA)}</div>
+                    <div><span className="opacity-70">Ở:</span> {fmt(b.HDONG_NGAYTHUCNHAN)} → {fmt(b.HDONG_NGAYTHUCTRA)}</div>
 
                 </div>
                 <div className="text-right">
-                    <div><span className="opacity-70">Mã HĐ:</span> <b>{b.HDONG_MA ?? '—'}</b></div>
-                    <div><span className="opacity-70">Đặt:</span> {fmt(b.HDONG_NGAYDAT)} → {fmt(b.HDONG_NGAYTRA)}</div>
-                    <div><span className="opacity-70">Ở:</span> {fmt(b.HDONG_NGAYTHUCNHAN)} → {fmt(b.HDONG_NGAYTHUCTRA)}</div>
+                    <div><span className="opacity-70">Mã HĐ: HD000</span> <b>{b.HDONG_MA ?? '—'}</b></div>
+                    <div><span className="opacity-70">Nhân viên:</span> <b>{staff?.NV_HOTEN}</b></div>
                 </div>
             </div>
 
@@ -136,12 +140,12 @@ export default function InvoicePrintPage() {
             <div className="mt-4 grid grid-cols-[1fr_auto] items-start"><div />
                 <div className="inline-grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 min-w-[260px]">
                     <span className="opacity-70">Tổng cộng:</span> <span className="text-right tabular-nums">{vnd(tong)}</span>
-                    <span className="opacity-70">Giảm giá:</span> <span className="text-right tabular-nums">-{vnd(discount)}</span>
-                    <span className="opacity-70">Phí:</span> <span className="text-right tabular-nums">+{vnd(fee)}</span>
-                    <span className="opacity-70">Tiền cọc:</span> <span className="text-right tabular-nums">-{vnd(deposit)}</span>
+                    <span className="opacity-70">Giảm giá:</span> <span className="text-right tabular-nums">{vnd(discount)}</span>
+                    <span className="opacity-70">Phí:</span> <span className="text-right tabular-nums">{vnd(fee)}</span>
+                    <span className="opacity-70">Tiền cọc:</span> <span className="text-right tabular-nums">{vnd(deposit)}</span>
                     <span className="opacity-70 font-semibold">Thành tiền:</span> <span className="text-right tabular-nums font-semibold">{vnd(total)}</span>
-                    <span className="opacity-70">Đã thanh toán:</span> <span className="text-right tabular-nums">{vnd(paid)}</span>
-                    <span className="opacity-70">Còn lại:</span> <span className="text-right tabular-nums">{vnd(due)}</span>
+                    <span className="opacity-70">Khách thanh toán:</span> <span className="text-right tabular-nums">{vnd(paid)}</span>
+                    <span className="opacity-70">Tiền thừa:</span> <span className="text-right tabular-nums">{vnd(due)}</span>
                 </div>
             </div>
 
@@ -171,11 +175,11 @@ export default function InvoicePrintPage() {
             )} */}
 
             {/* Ký tên */}
-            <div className="mt-10 grid grid-cols-3 text-center">
+            {/* <div className="mt-10 grid grid-cols-3 text-center">
                 <div>Người lập {staff?.NV_HOTEN && <div className="mt-10 font-medium">{staff.NV_HOTEN}</div>}</div>
                 <div>Người thu</div>
                 <div>Khách hàng</div>
-            </div>
+            </div> */}
 
             <style jsx global>{`
         @media print {

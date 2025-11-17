@@ -294,7 +294,7 @@ export default function DatPhongPage() {
             desc: "Phòng VIP với tầm nhìn toàn cảnh, nội thất sang trọng và phòng tắm riêng cao cấp.",
             features: ["🛁 Bồn tắm riêng", "🍷 Mini bar", "📺 Smart TV 65 inch", "🧴 Dụng cụ vệ sinh cao cấp", "🛏️ Giường King size"],
             tags: ["Luxury"],
-            dt: "40²",
+            dt: "40m²",
             beds: '2 giường đôi',
             view: 'Hướng sông',
             amenities: ['TV', 'Tủ lạnh', 'Wifi', 'Điều hòa', 'Bình đun nước', 'Tủ quần áo', 'Bàn làm việc', 'Máy sấy tóc', 'Khăn tắm', 'Dụng cụ vệ sinh cá nhân'],

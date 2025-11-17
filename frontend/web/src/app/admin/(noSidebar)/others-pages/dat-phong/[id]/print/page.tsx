@@ -56,6 +56,7 @@ export default function BookingPrintPage() {
 
     const kh = bk.KHACH_HANG ?? {};
     const rawRooms = bk.CHI_TIET_SU_DUNG ?? [];
+    const staff = bk.NHAN_VIEN ?? null;
     // Gom chi tiết sử dụng theo từng phòng
     const groupedRooms = new Map<number, { room: any; count: number }>();
 
@@ -91,7 +92,8 @@ export default function BookingPrintPage() {
                 <div className="text-2xl font-extrabold tracking-wide">PHIẾU ĐẶT PHÒNG</div>
                 <div className="mt-1 text-sm opacity-70">
                     Mã hợp đồng: {bk.HDONG_MA} &nbsp;•&nbsp; Ngày tạo:{' '}
-                    {fmt(bk.HDONG_TAO_LUC || bk.createdAt)}
+                    {fmt(bk.HDONG_TAO_LUC || bk.createdAt)}&nbsp;•&nbsp; Nhân viên:{' '}
+                    {staff.NV_HOTEN || '—'}
                 </div>
                 <div className="opacity-70">
                     ĐC: 14 Phan Đình Phùng, phường Ninh Kiều, Cần Thơ | SDT: 0123456789
@@ -186,14 +188,14 @@ export default function BookingPrintPage() {
                 </div>
             </div>
 
-            <div className="mt-10 grid grid-cols-3 text-center text-sm">
+            {/* <div className="mt-10 grid grid-cols-3 text-center text-sm">
                 <div>
                     Người lập
                     <div className="mt-10 font-medium">{bk.STAFF?.NV_HOTEN || ' '}</div>
                 </div>
                 <div>Người đặt phòng</div>
                 <div>Khách hàng</div>
-            </div>
+            </div> */}
 
             <div className="mt-6 text-center text-xs text-gray-500 italic">
                 Phiếu này dùng để xác nhận đặt phòng. Xin vui lòng mang theo khi đến nhận phòng.

@@ -179,8 +179,8 @@ async function createFromBooking(req, res, next) {
         const depositPaid = depositInv ? Number(depositInv.HDON_THANH_TIEN || 0) : 0;
 
         // 4️⃣ Tổng cần thanh toán
-        const grandTotal = gross - giam + phi;
-        const needToPay = Math.max(0, grandTotal - depositPaid);
+        const grandTotal = gross;
+        const needToPay = Math.max(0, grandTotal - depositPaid - giam + phi);
 
         // // Nếu không nhập tiền hoặc nhập thiếu
         if (paidAmount < needToPay) {

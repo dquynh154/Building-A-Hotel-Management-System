@@ -11,6 +11,7 @@ import Flatpickr from 'react-flatpickr';
 import 'flatpickr/dist/flatpickr.css';
 import KhachHangCreateModal from '@/components/ui/modal/KhachHangCreateModal';
 import OccupantsModal, { Occupant } from '@/components/ui/modal/OccupantsModal';
+import { Vietnamese } from 'flatpickr/dist/l10n/vn';
 type Line = {
     id: string;                 // để key
     lp: number | '';            // LP_MA
@@ -142,6 +143,14 @@ function SearchCombo({
     );
 }
 
+// ==== Time helpers (copy cả block này) ====
+const toDateObj = (dateStr: string, timeStr: string) => new Date(`${dateStr}T${timeStr}:00`);
+const addMinutes = (d: Date, minutes: number) => new Date(d.getTime() + minutes * 60000);
+const fmtYMD = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const fmtHHMM = (d: Date) =>
+    `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+const diffMinutes = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / 60000);
 
 // ========== MAIN ==========
 export default function BookingCreateModal({
@@ -865,6 +874,7 @@ export default function BookingCreateModal({
             dateFormat: 'H:i',
             time_24hr: true,
             minuteIncrement: 30,
+            locale: Vietnamese,
             // defaultDate: fromTime, // KHÔNG dùng khi đã có value
             allowInput: true,      // (tuỳ chọn) cho phép gõ tay
             onOpen: (selectedDates: any, dateStr: string, instance: any) => {
@@ -887,6 +897,7 @@ export default function BookingCreateModal({
             dateFormat: 'H:i',
             time_24hr: true,
             minuteIncrement: 30,
+            locale: Vietnamese,
             // defaultDate: fromTime, // KHÔNG dùng khi đã có value
             allowInput: true,      // (tuỳ chọn) cho phép gõ tay
             onOpen: (selectedDates: any, dateStr: string, instance: any) => {
@@ -983,6 +994,25 @@ export default function BookingCreateModal({
 
         return () => clearTimeout(timer);
     }, [open, fromDate, fromTime, toDate, toTime, lp]);
+
+
+    // ==== Enforce min 60' khi thuê theo giờ ====
+    useEffect(() => {
+        // hourHTId là HT theo giờ bạn đã có sẵn trong component
+        if (!hourHTId || Number(ht) !== Number(hourHTId)) return;
+
+        const start = toDateObj(fromDate, fromTime);
+        const end = toDateObj(toDate, toTime);
+        const MIN = 60; // tối thiểu 60 phút
+
+        if (diffMinutes(start, end) < MIN) {
+            const e2 = addMinutes(start, MIN);
+            // TỰ SỬA giờ trả cho hợp lệ (không block người dùng)
+            setToDate(fmtYMD(e2));
+            setToTime(fmtHHMM(e2));
+        }
+    }, [ht, fromDate, fromTime, toDate, toTime, hourHTId]);
+
 
     return (
         <Modal isOpen={open} onClose={onClose} className="w-full max-w-[1400px] p-4 sm:p-6">
@@ -1170,13 +1200,13 @@ export default function BookingCreateModal({
 
                         {/* Nhận / Trả: dùng chung cho tất cả dòng (như Figma bạn gửi) */}
                         <div className="grid grid-cols-[170px_110px] gap-2">
-                            <Flatpickr value={fromDate} options={{ dateFormat: 'Y-m-d', minDate: 'today' }} onChange={(d: any, s: string) => setFromDate(s)}
+                            <Flatpickr value={fromDate} options={{ dateFormat: 'Y-m-d', minDate: 'today', locale: Vietnamese }} onChange={(d: any, s: string) => setFromDate(s)}
                                 className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                             <Flatpickr value={fromTime} options={timeOptsFrom} onChange={(_, s) => setFromTime(s || '14:00')}
                                 className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                         </div>
                         <div className="grid grid-cols-[170px_110px] gap-2">
-                            <Flatpickr value={toDate} options={{ dateFormat: 'Y-m-d', minDate: fromDate || 'today' }} onChange={(d: any, s: string) => setToDate(s)}
+                            <Flatpickr value={toDate} options={{ dateFormat: 'Y-m-d', minDate: fromDate || 'today', locale: Vietnamese }} onChange={(d: any, s: string) => setToDate(s)}
                                 className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                             <Flatpickr value={toTime} options={timeOptsTo} onChange={(_, s) => setToTime(s || '12:00')}
                                 className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
