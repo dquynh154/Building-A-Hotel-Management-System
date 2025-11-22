@@ -58,7 +58,7 @@ export default function LineChartOne({ labels, dataset, title }: LineChartOnePro
       tooltip: { enabled: false },
       labels: {
         rotate: -45,
-        style: { fontSize: "11px", colors: "#6B7280" },
+        style: { fontSize: "12px", colors: "#6B7280" },
       },
     },
 

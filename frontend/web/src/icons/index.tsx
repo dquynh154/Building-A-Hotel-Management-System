@@ -70,6 +70,7 @@ import Wifi from "./Wifi.svg";
 import Tv from "./Tv.svg";
 import Phone from "./phone.svg";
 import Map from "./map.svg";
+import Print from "./print.svg"
 export {
   DownloadIcon,
   BellIcon,
@@ -142,5 +143,6 @@ export {
   Wifi,
   Tv,
   Phone,
-  Map
+  Map,
+  Print
 };

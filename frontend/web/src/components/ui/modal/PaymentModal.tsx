@@ -158,9 +158,9 @@ export default function PaymentModal({
 
                             
                             {/* Giảm giá / Thu khác (kiểu gạch chân) */}
-                            <div className="mb-2 grid grid-cols-2 gap-6">
+                            {/* <div className="mb-2 grid grid-cols-2 gap-6"> */}
                                 <div>
-                                    <div className="mb-1 text-xs text-gray-500">Giảm giá</div>
+                                    <div className="mb-1 text-sm text-gray-500">Giảm giá</div>
                                     <div className="flex items-center gap-2">
                                         <input
                                             type="text"
@@ -172,7 +172,7 @@ export default function PaymentModal({
                                         />
                                     </div>
                                 </div>
-                                <div>
+                                {/* <div>
                                     <div className="mb-1 text-xs text-gray-500">Thu khác</div>
                                     <div className="flex items-center gap-2">
                                         <input
@@ -184,8 +184,8 @@ export default function PaymentModal({
                                             onBlur={extraBind.onBlur}
                                         />
                                     </div>
-                                </div>
-                            </div>
+                                </div> */}
+                            {/* </div> */}
 
                             {/* Khách cần trả (màu xanh) */}
                             <div className="my-3 flex items-center justify-between">

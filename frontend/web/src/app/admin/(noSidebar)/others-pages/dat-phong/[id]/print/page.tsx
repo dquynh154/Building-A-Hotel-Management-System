@@ -96,7 +96,7 @@ export default function BookingPrintPage() {
                     {staff.NV_HOTEN || '—'}
                 </div>
                 <div className="opacity-70">
-                    ĐC: 14 Phan Đình Phùng, phường Ninh Kiều, Cần Thơ | SDT: 0123456789
+                    ĐC: Khu II, Đ. 3 Tháng 2, Xuân Khánh, Ninh Kiều, Cần Thơ | SDT: 0123456789
                 </div>
             </div>
 

@@ -409,6 +409,56 @@ async function availableRoomsByBooking(req, res, next) {
         next(e);
     }
 }
+// GET /rooms/available-checkin/:id
+async function availableRoomsCheckin(req, res, next) {
+    try {
+        const id = Number(req.params.id);
+
+        const booking = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+            where: { HDONG_MA: id },
+            select: { HDONG_NGAYTRA: true }
+        });
+
+        if (!booking)
+            return res.status(404).json({ message: "Không tìm thấy hợp đồng." });
+
+        const now = new Date();
+        const to = new Date(booking.HDONG_NGAYTRA);
+
+        // lấy phòng đang bận từ NOW → NGÀY TRẢ
+        const busy = await prisma.cHI_TIET_SU_DUNG.findMany({
+            where: {
+                CTSD_TRANGTHAI: "ACTIVE",
+                OR: [
+                    { CTSD_O_TU_GIO: { lte: to }, CTSD_O_DEN_GIO: { gte: now } },
+                    { CTSD_NGAY_DA_O: { lte: to } }
+                ]
+            },
+            select: { PHONG_MA: true }
+        });
+
+        const busyIds = busy.map(b => b.PHONG_MA);
+
+        const rooms = await prisma.pHONG.findMany({
+            where: {
+                NOT: { PHONG_MA: { in: busyIds } },
+                PHONG_TRANGTHAI: "AVAILABLE"
+            },
+            include: { LOAI_PHONG: true }
+        });
+
+        res.json({
+            rooms: rooms.map(r => ({
+                id: r.PHONG_MA,
+                name: r.PHONG_TEN,
+                type: r.LOAI_PHONG?.LP_TEN
+            }))
+        });
+
+    } catch (e) {
+        next(e);
+    }
+}
 
 
 async function setClean(req, res) {
@@ -449,4 +499,5 @@ module.exports = {
     availability,
     setClean,
     availableRoomsByBooking,
+    availableRoomsCheckin,
 };

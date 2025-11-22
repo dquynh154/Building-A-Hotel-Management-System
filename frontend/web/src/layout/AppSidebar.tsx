@@ -33,7 +33,10 @@ const navItems: NavItem[] = [
   {
     icon: <GridIcon />,
     name: "Bảng điều khiển",
-    subItems: [{ name: "Báo cáo doanh thu", path: "/admin/others-pages/bao-cao/doanh-thu", pro: false }],
+    subItems: [
+      { name: "Báo cáo doanh thu", path: "/admin/others-pages/bao-cao/doanh-thu", pro: false },
+      { name: "Báo cáo khách lưu trú", path: "/admin/others-pages/bao-cao/khach-luu-tru", pro: false },
+    ],
   },
   {
     icon: <Room />,

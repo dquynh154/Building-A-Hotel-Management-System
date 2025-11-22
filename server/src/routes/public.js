@@ -492,7 +492,7 @@ pub.post('/pay/mock/confirm', async (req, res, next) => {
     <div style="text-align:center;margin-bottom:12px;">
   <h2 style="margin:4px 0 2px 0;color:#004b91;font-size:22px;">Khách sạn Wendy</h2>
   <h3 style="margin:0;color:#222;font-weight:700;letter-spacing:0.5px;">PHIẾU ĐẶT PHÒNG</h3>
-  <p style="margin:0;font-size:12px;color:#666;">ĐC: 14 Phan Đình Phùng, phường Ninh Kiều, Cần Thơ — SĐT: 0123456789</p>
+  <p style="margin:0;font-size:12px;color:#666;">ĐC:  Khu II, Đ. 3 Tháng 2, Xuân Khánh, Ninh Kiều, Cần Thơ — SĐT: 0123456789</p>
 </div>
 
     <hr style="border:none;border-top:1px solid #ddd;margin:20px 0;">
@@ -562,7 +562,7 @@ pub.post('/pay/mock/confirm', async (req, res, next) => {
 
     <hr style="border:none;border-top:1px solid #ddd;margin:24px 0;">
     <div style="text-align:center;font-size:12px;color:#888;">
-      © 2025 Wendy Hotel — 14 Phan Đình Phùng, phường Ninh Kiều, Cần Thơ<br>Hotline: 0123 456 789
+      © 2025 Wendy Hotel — Khu II, Đ. 3 Tháng 2, Xuân Khánh, Ninh Kiều, Cần Thơ<br>Hotline: 0123 456 789
     </div>
   </div>
 </div>

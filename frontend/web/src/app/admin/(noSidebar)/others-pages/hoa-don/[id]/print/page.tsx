@@ -16,7 +16,9 @@ export default function InvoicePrintPage() {
 
     const { id } = useParams() as { id: string };
     const [inv, setInv] = useState<any>(null);
-    const pays: Array<{ so_tien: number; tien_thua:number; thoi_gian: any; phuong_thuc: string; status?: string }> = useMemo(() => {
+   
+    const [loading, setLoading] = useState(true);
+    const pays: Array<{ so_tien: number; tien_thua: number; thoi_gian: any; phuong_thuc: string; status?: string }> = useMemo(() => {
         const arr = Array.isArray(inv?.THANH_TOAN) ? inv.THANH_TOAN : [];
         return arr.map((p: any) => ({
             so_tien: Number(p?.TT_SO_TIEN_KHACH_DUA ?? p?.so_tien ?? 0),
@@ -26,8 +28,32 @@ export default function InvoicePrintPage() {
             status: (p?.TT_TRANG_THAI_GIAO_DICH ?? p?.status ?? '').toUpperCase(),
         }));
     }, [inv]);
-    const [loading, setLoading] = useState(true);
+    const rows = useMemo(() => {
+        return inv?.CHI_TIET ?? [];
+    }, [inv]);                   // BE chưa trả thì sẽ là []
+    // ===================== GỘP DỊCH VỤ THEO DỊCH VỤ =====================
+    const grouped = useMemo(() => {
+        const map = new Map();
 
+        for (const r of rows) {
+            const key = `${r.PHONG_MA}-${r.DV_MA}-${r.don_gia}`;
+
+            if (!map.has(key)) {
+                map.set(key, {
+                    dien_giai: r.dien_giai,
+                    so_luong: 0,
+                    don_gia: Number(r.don_gia),
+                    thanh_tien: 0,
+                });
+            }
+
+            const item = map.get(key);
+            item.so_luong += Number(r.so_luong || 0);
+            item.thanh_tien += Number(r.thanh_tien || 0);
+        }
+
+        return Array.from(map.values());
+    }, [rows]);
     useEffect(() => {
         (async () => {
             try {
@@ -47,7 +73,8 @@ export default function InvoicePrintPage() {
     // ====== Chuẩn hóa dữ liệu từ API ======
     const kh = inv.KHACH_HANG ?? {};                       // khách chính (đã bổ sung ở BE)
     const b = inv.BOOKING ?? {};                          // <== KHÔNG dùng inv.HOP_DONG nữa
-    const rows = inv.CHI_TIET ?? [];                       // BE chưa trả thì sẽ là []
+    
+
     const nv = inv.NHAN_VIEN ?? {};                           // nhân viên (nếu có)
     // Chuẩn hóa mảng thanh toán từ bảng THANH_TOAN (TT_*)
 
@@ -90,7 +117,7 @@ export default function InvoicePrintPage() {
                         Số: {inv.HDON_SO ?? inv.HDON_MA} &nbsp;•&nbsp; Ngày: {fmt(inv.HDON_NGAYLAP ?? inv.HDON_TAO_LUC ?? inv.createdAt)}
                     </div>
 
-                    <div className="opacity-70">ĐC: 14 Phan Đình Phùng, phường Ninh Kiều, Cần Thơ | SDT: 0123456789</div>
+                    <div className="opacity-70">ĐC:  Khu II, Đ. 3 Tháng 2, Xuân Khánh, Ninh Kiều, Cần Thơ| SDT: 0123456789</div>
                     <div className="opacity-70"></div>
                 </div>
 
@@ -124,14 +151,17 @@ export default function InvoicePrintPage() {
                         </tr>
                     </thead>
                     <tbody>
-                        {rows.map((r: any, i: number) => (
+                        {grouped.map((r, i) => (
                             <tr key={i} className="border-b">
                                 <td className="py-1">{r.dien_giai}</td>
-                                <td className="py-1 text-right tabular-nums">{r.so_luong ?? 1}</td>
-                                <td className="py-1 text-right tabular-nums">{vnd(Number(r.don_gia || 0))}</td>
-                                <td className="py-1 text-right tabular-nums font-medium">{vnd(Number(r.thanh_tien || 0))}</td>
+                                <td className="py-1 text-right tabular-nums">{r.so_luong}</td>
+                                <td className="py-1 text-right tabular-nums">{vnd(r.don_gia)}</td>
+                                <td className="py-1 text-right tabular-nums font-medium">
+                                    {vnd(r.thanh_tien)}
+                                </td>
                             </tr>
                         ))}
+
                     </tbody>
                 </table>
             )}
@@ -141,7 +171,7 @@ export default function InvoicePrintPage() {
                 <div className="inline-grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 min-w-[260px]">
                     <span className="opacity-70">Tổng cộng:</span> <span className="text-right tabular-nums">{vnd(tong)}</span>
                     <span className="opacity-70">Giảm giá:</span> <span className="text-right tabular-nums">{vnd(discount)}</span>
-                    <span className="opacity-70">Phí:</span> <span className="text-right tabular-nums">{vnd(fee)}</span>
+                    {/* <span className="opacity-70">Phí:</span> <span className="text-right tabular-nums">{vnd(fee)}</span> */}
                     <span className="opacity-70">Tiền cọc:</span> <span className="text-right tabular-nums">{vnd(deposit)}</span>
                     <span className="opacity-70 font-semibold">Thành tiền:</span> <span className="text-right tabular-nums font-semibold">{vnd(total)}</span>
                     <span className="opacity-70">Khách thanh toán:</span> <span className="text-right tabular-nums">{vnd(paid)}</span>

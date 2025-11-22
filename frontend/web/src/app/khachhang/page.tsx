@@ -620,7 +620,7 @@ export default function Home() {
                             title="Bản đồ"
                             src={
                                 "https://www.google.com/maps?q=" +
-                                encodeURIComponent("14 Phan Đình Phùng, Ninh Kiều, Cần Thơ") +
+                                encodeURIComponent("Khu II, Đ. 3 Tháng 2, Xuân Khánh, Ninh Kiều, Cần Thơ") +
                                 "&output=embed"
                             }
                             className="h-[360px] w-full md:h-[420px] border-0"
@@ -635,14 +635,14 @@ export default function Home() {
                         <h2 className="mt-2 text-3xl font-extrabold md:text-5xl text-gray-900">Vị trí & liên hệ</h2>
 
                         <p className="mt-6 text-lg text-slate-700">
-                            14 Phan Đình Phùng, phường An Lạc (hoặc phường phù hợp), quận Ninh Kiều, thành phố Cần Thơ
+                            Khu II, Đ. 3 Tháng 2, Xuân Khánh, Ninh Kiều, Cần Thơ
                         </p>
 
                         <div className="mt-8 space-y-4 text-slate-800">
                             <div className="flex items-center gap-3">
                                 <Phone className="h-6 w-6 text-yellow-700" />
                                 <div>
-                                    <div>(+84) 987654321</div>
+                                    <div>(+84) 123456789</div>
 
                                 </div>
                             </div>
@@ -657,7 +657,7 @@ export default function Home() {
                                 <a
                                     href={
                                         "https://www.google.com/maps/dir/?api=1&destination=" +
-                                        encodeURIComponent("14 Phan Đình Phùng, Ninh Kiều, Cần Thơ")
+                                        encodeURIComponent("Khu II, Đ. 3 Tháng 2, Xuân Khánh, Ninh Kiều, Cần Thơ")
                                     }
                                     target="_blank" rel="noopener"
                                     className="font-semibold text-yellow-700 hover:underline"
