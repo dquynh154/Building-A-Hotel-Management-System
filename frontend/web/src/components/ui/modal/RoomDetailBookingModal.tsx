@@ -32,7 +32,7 @@ export default function RoomDetailModal({ open, onClose, room }: RoomDetailModal
         if (!room?.LP_MA) return;
         (async () => {
             try {
-                const res = await api.get(`/loai-phong/${room.LP_MA}/images`);
+                const res = await api.get(`public/loai-phong/${room.LP_MA}/images`);
                 const json = res.data;
                 if (Array.isArray(json)) {
                     const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';

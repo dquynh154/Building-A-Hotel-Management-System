@@ -38,7 +38,7 @@ const nhanVien = crud('nHAN_VIEN', {
     // Hash mật khẩu khi tạo
     beforeCreate: async (data) => {
         if (!data.NV_TAIKHOAN || !data.NV_MATKHAU || !data.NV_HOTEN) {
-            const err = new Error('Thiếu NV_TAIKHOAN / NV_MATKHAU / NV_HOTEN');
+            const err = new Error('Thiếu Tên tài khoản/ mật khẩu/ họ tên');
             err.status = 400; throw err;
         }
         if (!data.NV_CHUCVU || !ROLES.includes(String(data.NV_CHUCVU))) {

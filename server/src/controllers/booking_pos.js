@@ -1148,6 +1148,558 @@ async function changeRoom(req, res, next) {
         next(e);
     }
 }
+// POST /bookings/:id/no-show
+async function markNoShow(req, res, next) {
+    try {
+        const id = Number(req.params.id);
+
+        const booking = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+            where: { HDONG_MA: id },
+            include: {
+                CHI_TIET_SU_DUNG: true,
+                CT_DAT_TRUOC: true,
+            },
+        });
+
+        if (!booking)
+            return res.status(404).json({ message: "Không tìm thấy hợp đồng" });
+
+        if (booking.HDONG_TRANG_THAI !== "CONFIRMED")
+            return res.status(400).json({ message: "Chỉ hợp đồng CONFIRMED mới được NO-SHOW" });
+
+        // 1) cập nhật trạng thái hợp đồng
+        await prisma.hOP_DONG_DAT_PHONG.update({
+            where: { HDONG_MA: id },
+            data: { HDONG_TRANG_THAI: "NO_SHOW" }
+        });
+
+        // 2) xóa CTSD
+        await prisma.cHI_TIET_SU_DUNG.deleteMany({
+            where: { HDONG_MA: id }
+        });
+
+        // 3) trả phòng về AVAILABLE
+
+
+        // 4) hủy CT_DAT_TRUOC
+        await prisma.cT_DAT_TRUOC.updateMany({
+            where: { HDONG_MA: id },
+            data: { TRANG_THAI: "CANCELLED" }
+        });
+
+        // 5) hóa đơn tiền cọc → VOID
+        await prisma.hOA_DON.updateMany({
+            where: {
+                HDON_LOAI: "DEPOSIT",
+                LIEN_KET: {
+                    some: { HDONG_MA: id }
+                }
+            },
+            data: {
+                HDON_TRANG_THAI: "VOID"
+            }
+        });
+
+
+        return res.json({ message: "Đã NO_SHOW hợp đồng." });
+    } catch (e) {
+        console.error(e);
+        next(e);
+    }
+}
+
+
+
+// controllers/booking_pos.js
+// =======================================================
+//  AJDUST CHECKOUT — xử lý cả extend & reduce (ngày + giờ)
+// =======================================================
+function getRangeFromCTSD(ctsd) {
+    // Hợp đồng theo giờ
+    if (ctsd.CTSD_O_TU_GIO && ctsd.CTSD_O_DEN_GIO) {
+        return {
+            start: new Date(ctsd.CTSD_O_TU_GIO),
+            end: new Date(ctsd.CTSD_O_DEN_GIO),
+            type: "HOUR"
+        };
+    }
+
+    // Hợp đồng theo ngày
+    if (ctsd.CTSD_NGAY_DA_O) {
+        const start = new Date(ctsd.CTSD_NGAY_DA_O);
+        const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+        return { start, end, type: "DAY" };
+    }
+
+    return null;
+}
+function isOverlap(aStart, aEnd, bStart, bEnd) {
+    return aStart < bEnd && aEnd > bStart;
+}
+async function checkOverlapFull(roomIds, bookingId, newStart, newEnd) {
+    // Lấy toàn bộ CTSD ACTIVE của các hợp đồng khác
+    const rows = await prisma.cHI_TIET_SU_DUNG.findMany({
+        where: {
+            PHONG_MA: { in: roomIds },
+            HDONG_MA: { not: bookingId },
+            CTSD_TRANGTHAI: "ACTIVE"
+        },
+        include: {
+            PHONG: { select: { PHONG_TEN: true } },
+            HOP_DONG_DAT_PHONG: true
+        }
+    });
+
+    for (const r of rows) {
+        const range = getRangeFromCTSD(r);
+        if (!range) continue;
+
+        if (isOverlap(newStart, newEnd, range.start, range.end)) {
+            return {
+                conflict: true,
+                roomName: r.PHONG.PHONG_TEN,
+                booking: r.HDONG_MA,
+                start: range.start,
+                end: range.end,
+                type: range.type
+            };
+        }
+    }
+
+    return { conflict: false };
+}
+async function reduceDay(booking, newTo, res) {
+    const id = booking.HDONG_MA;
+    const oldTo = new Date(booking.HDONG_NGAYTRA);
+    const checkinTime = new Date(booking.HDONG_NGAYTHUCNHAN || booking.HDONG_NGAYDAT);
+    if (newTo <= checkinTime) {
+        return res.status(400).json({
+            message: "Ngày trả mới không được nhỏ hơn ngày nhận phòng."
+        });
+    }
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // Không cho newTo < hôm nay
+    if (newTo < today) {
+        return res.status(400).json({
+            message: "Không thể rút ngắn ngày trả về quá khứ."
+        });
+    }
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const reduceNights = Math.floor((oldTo - newTo) / dayMs);
+
+    if (reduceNights <= 0) {
+        return res.status(400).json({ message: "Không có đêm nào để giảm." });
+    }
+
+    await prisma.cHI_TIET_SU_DUNG.deleteMany({
+        where: {
+            HDONG_MA: id,
+            CTSD_TRANGTHAI: "ACTIVE",
+            CTSD_NGAY_DA_O: {
+                not: null,
+                gte: newTo,
+                lt: oldTo
+            }
+        }
+    });
+
+    await prisma.hOP_DONG_DAT_PHONG.update({
+        where: { HDONG_MA: id },
+        data: { HDONG_NGAYTRA: newTo }
+    });
+
+    return res.json({
+        message: "Trả phòng sớm (theo ngày) thành công.",
+        newCheckout: newTo,
+        reducedNights: reduceNights
+    });
+}
+async function reduceHour(booking, newTo, res) {
+    const checkinTime = new Date(booking.HDONG_NGAYTHUCNHAN || booking.HDONG_NGAYDAT);
+    if (newTo <= checkinTime) {
+        return res.status(400).json({
+            message: "Giờ trả mới không được nhỏ hơn giờ nhận phòng."
+        });
+    }
+
+    const now = new Date();
+
+    // 1) Không cho rút về quá khứ hoặc bằng thời điểm hiện tại
+    if (newTo <= now) {
+        return res.status(400).json({
+            message: "Giờ trả mới phải lớn hơn thời điểm hiện tại."
+        });
+    }
+
+    const rows = booking.CHI_TIET_SU_DUNG.filter(
+        r => r.CTSD_TRANGTHAI === "ACTIVE" &&
+            r.CTSD_O_TU_GIO && r.CTSD_O_DEN_GIO
+    );
+
+    for (const r of rows) {
+        const start = new Date(r.CTSD_O_TU_GIO);
+        const oldEnd = new Date(r.CTSD_O_DEN_GIO);
+
+        if (newTo <= start) {
+            return res.status(400).json({ message: "Giờ mới không hợp lệ." });
+        }
+
+        const oldMs = oldEnd - start;
+        const newMs = newTo - start;
+        if (oldMs <= 0) continue;
+
+        const factor = newMs / oldMs;
+        const oldTotal = Number(r.CTSD_TONG_TIEN || r.CTSD_DON_GIA || 0);
+        const newTotal = Math.round(oldTotal * factor);
+
+        await prisma.cHI_TIET_SU_DUNG.update({
+            where: {
+                HDONG_MA_PHONG_MA_CTSD_STT: {
+                    HDONG_MA: r.HDONG_MA,
+                    PHONG_MA: r.PHONG_MA,
+                    CTSD_STT: r.CTSD_STT,
+                },
+            },
+            data: {
+                CTSD_O_DEN_GIO: newTo,
+                CTSD_TONG_TIEN: newTotal
+            }
+        });
+    }
+
+    await prisma.hOP_DONG_DAT_PHONG.update({
+        where: { HDONG_MA: booking.HDONG_MA },
+        data: { HDONG_NGAYTRA: newTo }
+    });
+
+    return res.json({
+        message: "Trả phòng sớm (theo giờ) thành công.",
+        newCheckout: newTo
+    });
+}
+async function extendDayLogic(booking, newTo, res) {
+    const id = booking.HDONG_MA;
+    const oldTo = new Date(booking.HDONG_NGAYTRA);
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    const extraNights = Math.floor((newTo - oldTo) / dayMs);
+    if (extraNights <= 0) {
+        return res.status(400).json({ message: "Không có đêm để tăng." });
+    }
+
+    const rooms = await prisma.cHI_TIET_SU_DUNG.findMany({
+        where: { HDONG_MA: id, CTSD_TRANGTHAI: "ACTIVE" },
+        select: { PHONG_MA: true },
+        distinct: ["PHONG_MA"],
+    });
+
+    const roomIds = rooms.map(r => r.PHONG_MA);
+
+    const overlap = await checkOverlapFull(
+        roomIds,
+        id,
+        oldTo,
+        newTo
+    );
+
+    if (overlap.conflict) {
+        return res.status(400).json({
+            message: `Không thể gia hạn. Phòng ${overlap.roomName} đã có hợp đồng #${overlap.booking} từ ${overlap.start.toLocaleString("vi-VN")} → ${overlap.end.toLocaleString("vi-VN")}.`,
+        });
+    }
+
+    // Lấy max STT + giá
+    const maxByRoom = await prisma.cHI_TIET_SU_DUNG.groupBy({
+        by: ["PHONG_MA"],
+        where: { HDONG_MA: id },
+        _max: { CTSD_STT: true },
+    });
+
+    const maxMap = new Map();
+    maxByRoom.forEach(r => maxMap.set(r.PHONG_MA, r._max.CTSD_STT || 0));
+
+    const samples = await prisma.cHI_TIET_SU_DUNG.findMany({
+        where: {
+            HDONG_MA: id,
+            PHONG_MA: { in: roomIds },
+            CTSD_NGAY_DA_O: { not: null }
+        },
+        select: { PHONG_MA: true, CTSD_DON_GIA: true }
+    });
+
+    const priceMap = new Map();
+    samples.forEach(s => {
+        if (!priceMap.has(s.PHONG_MA)) {
+            priceMap.set(s.PHONG_MA, Number(s.CTSD_DON_GIA));
+        }
+    });
+
+    // Tạo CTSD mới
+    const dataToInsert = [];
+
+    for (const roomId of roomIds) {
+        let nextStt = (maxMap.get(roomId) || 0) + 1;
+        const unit = priceMap.get(roomId) || 0;
+
+        for (let i = 0; i < extraNights; i++) {
+            const night = new Date(oldTo.getTime() + i * dayMs);
+
+            dataToInsert.push({
+                HDONG_MA: id,
+                PHONG_MA: roomId,
+                CTSD_STT: nextStt++,
+                CTSD_NGAY_DA_O: night,
+                CTSD_O_TU_GIO: null,
+                CTSD_O_DEN_GIO: null,
+                CTSD_SO_LUONG: 1,
+                CTSD_DON_GIA: unit,
+                CTSD_TONG_TIEN: unit,
+                CTSD_TRANGTHAI: "ACTIVE",
+            });
+        }
+    }
+
+    if (dataToInsert.length) {
+        await prisma.cHI_TIET_SU_DUNG.createMany({ data: dataToInsert });
+    }
+
+    await prisma.hOP_DONG_DAT_PHONG.update({
+        where: { HDONG_MA: id },
+        data: { HDONG_NGAYTRA: newTo }
+    });
+
+    return res.json({
+        message: "Gia hạn theo ngày thành công.",
+        newCheckout: newTo
+    });
+}
+async function extendHourLogic(booking, newTo, res) {
+    const id = booking.HDONG_MA;
+    const oldTo = new Date(booking.HDONG_NGAYTRA);
+
+    const rows = booking.CHI_TIET_SU_DUNG.filter(
+        r => r.CTSD_TRANGTHAI === "ACTIVE" &&
+            r.CTSD_O_TU_GIO && r.CTSD_O_DEN_GIO
+    );
+
+    const roomIds = [...new Set(rows.map(r => r.PHONG_MA))];
+
+    const overlap = await checkOverlapFull(roomIds, id, oldTo, newTo);
+
+    if (overlap.conflict) {
+        return res.status(400).json({
+            message: `Không thể gia hạn giờ. Phòng ${overlap.roomName} đã có hợp đồng #${overlap.booking} từ ${overlap.start.toLocaleString("vi-VN")} → ${overlap.end.toLocaleString("vi-VN")}.`,
+        });
+    }
+
+    for (const r of rows) {
+        const start = new Date(r.CTSD_O_TU_GIO);
+        const oldEnd = new Date(r.CTSD_O_DEN_GIO);
+
+        const oldMs = oldEnd - start;
+        const newMs = newTo - start;
+        if (oldMs <= 0) continue;
+
+        const factor = newMs / oldMs;
+        const newTotal = Math.round(Number(r.CTSD_TONG_TIEN) * factor);
+
+        await prisma.cHI_TIET_SU_DUNG.update({
+            where: {
+                HDONG_MA_PHONG_MA_CTSD_STT: {
+                    HDONG_MA: id,
+                    PHONG_MA: r.PHONG_MA,
+                    CTSD_STT: r.CTSD_STT
+                }
+            },
+            data: {
+                CTSD_O_DEN_GIO: newTo,
+                CTSD_TONG_TIEN: newTotal
+            }
+        });
+    }
+
+    await prisma.hOP_DONG_DAT_PHONG.update({
+        where: { HDONG_MA: id },
+        data: { HDONG_NGAYTRA: newTo }
+    });
+
+    return res.json({
+        message: "Gia hạn theo giờ thành công.",
+        newCheckout: newTo
+    });
+}
+async function adjustCheckout(req, res, next) {
+    try {
+        const id = Number(req.params.id);
+        const { newCheckout } = req.body;
+        const newTo = new Date(newCheckout);
+
+        const booking = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+            where: { HDONG_MA: id },
+            include: {
+                HINH_THUC_THUE: true,
+                CHI_TIET_SU_DUNG: true
+            }
+        });
+
+        const oldTo = new Date(booking.HDONG_NGAYTRA);
+        const isHour = /giờ/i.test(booking.HINH_THUC_THUE.HT_TEN);
+
+        if (newTo < oldTo) {
+            return isHour ? reduceHour(booking, newTo, res) : reduceDay(booking, newTo, res);
+        }
+
+        if (newTo > oldTo) {
+            return isHour ? extendHourLogic(booking, newTo, res) : extendDayLogic(booking, newTo, res);
+        }
+
+        return res.json({ message: "Không thay đổi" });
+
+    } catch (e) {
+        next(e);
+    }
+}
+
+
+async function applyLateFee(req, res, next) {
+    try {
+        const id = Number(req.params.id);
+
+        const booking = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+            where: { HDONG_MA: id },
+            include: {
+                CHI_TIET_SU_DUNG: true,
+            },
+        });
+
+        if (!booking) {
+            return res.status(404).json({ message: "Không tìm thấy hợp đồng." });
+        }
+
+        // ===================== TÍNH SỐ PHÚT TRỄ =====================
+        const plannedCheckout = new Date(booking.HDONG_NGAYTRA).getTime();
+        const now = Date.now();
+        const diffMinutes = (now - plannedCheckout) / 60000;
+
+        if (diffMinutes <= 15) {
+            return res.status(400).json({
+                message: "Chưa đủ 15 phút để tính phí trả phòng trễ."
+            });
+        }
+
+        // Block giờ (làm tròn lên)
+        const hoursLate = Math.ceil(diffMinutes / 60);
+
+        // ===================== LẤY DỊCH VỤ =====================
+        const feeService = await prisma.dICH_VU.findFirst({
+            where: { DV_TEN: "Phí trả phòng trễ (giờ)" },
+        });
+
+        if (!feeService) {
+            return res.status(500).json({
+                message: "Không tìm thấy dịch vụ 'Phí trả phòng trễ (giờ)'."
+            });
+        }
+
+        // ===================== LẤY CTSD MỚI NHẤT MỖI PHÒNG =====================
+        const latestCtsd = await prisma.cHI_TIET_SU_DUNG.groupBy({
+            by: ["PHONG_MA"],
+            where: {
+                HDONG_MA: id,
+                CTSD_TRANGTHAI: "ACTIVE",
+            },
+            _max: {
+                CTSD_STT: true,
+            },
+        });
+
+        if (!latestCtsd.length) {
+            return res.status(400).json({
+                message: "Không có phòng ACTIVE trong hợp đồng."
+            });
+        }
+
+        // ===================== XỬ LÝ TỪNG PHÒNG =====================
+        for (const row of latestCtsd) {
+            const phongId = row.PHONG_MA;
+            const ctsdStt = row._max.CTSD_STT;
+
+            // Kiểm tra xem phòng này đã từng được tính phí trễ chưa
+            const existingLateFee = await prisma.cHI_TIET_DICH_VU.findFirst({
+                where: {
+                    HDONG_MA: id,
+                    PHONG_MA: phongId,
+                    CTSD_STT: ctsdStt,
+                    DV_MA: feeService.DV_MA,
+                    CTDV_TRANGTHAI: "ACTIVE",
+                },
+            });
+
+            if (existingLateFee) {
+                // 🔥 Đã có phí trễ → UPDATE số lượng nếu lần này trễ hơn 🔥
+                if (hoursLate > existingLateFee.CTDV_SOLUONG) {
+                    await prisma.cHI_TIET_DICH_VU.update({
+                        where: {
+                            HDONG_MA_PHONG_MA_CTSD_STT_DV_MA_CTDV_STT: {
+                                HDONG_MA: id,
+                                PHONG_MA: phongId,
+                                CTSD_STT: ctsdStt,
+                                DV_MA: feeService.DV_MA,
+                                CTDV_STT: existingLateFee.CTDV_STT
+                            }
+                        },
+                        data: {
+                            CTDV_SOLUONG: hoursLate,
+                            CTDV_DONGIA: feeService.DV_DONGIA,
+                            CTDV_GHICHU: "Phụ thu trả phòng trễ (cập nhật giờ)",
+                        },
+                    });
+                }
+            } else {
+                // 🔥 Chưa có phí trễ → TẠO CTDV MỚI 🔥
+                const lastCtdv = await prisma.cHI_TIET_DICH_VU.findFirst({
+                    where: {
+                        HDONG_MA: id,
+                        PHONG_MA: phongId,
+                        CTSD_STT: ctsdStt,
+                    },
+                    orderBy: {
+                        CTDV_STT: "desc",
+                    },
+                });
+
+                const nextStt = (lastCtdv?.CTDV_STT || 0) + 1;
+
+                await prisma.cHI_TIET_DICH_VU.create({
+                    data: {
+                        HDONG_MA: id,
+                        PHONG_MA: phongId,
+                        CTSD_STT: ctsdStt,
+                        DV_MA: feeService.DV_MA,
+                        CTDV_STT: nextStt,
+                        CTDV_NGAY: new Date(),
+                        CTDV_SOLUONG: hoursLate,
+                        CTDV_DONGIA: feeService.DV_DONGIA,
+                        CTDV_GHICHU: "Phụ thu trả phòng trễ",
+                        CTDV_TRANGTHAI: "ACTIVE",
+                    },
+                });
+            }
+        }
+
+        return res.json({
+            message: `Đã áp dụng phí trả phòng trễ ${hoursLate} giờ.`,
+            hoursLate,
+        });
+
+    } catch (e) {
+        next(e);
+    }
+}
+
 
 
 module.exports = {
@@ -1160,5 +1712,8 @@ module.exports = {
     removeRoom,
     changeRoom,
     pendingRooms,
-    addRoomForCheckedIn
+    addRoomForCheckedIn,
+    markNoShow,
+    adjustCheckout,
+    applyLateFee
 };

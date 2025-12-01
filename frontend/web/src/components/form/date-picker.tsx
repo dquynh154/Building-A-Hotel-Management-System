@@ -31,7 +31,7 @@ export default function DatePicker({
       mode: mode || "single",
       dateFormat: isTime ? 'H:i' : 'd-m-Y', // 👈 dd-mm-yyyy
       minDate: isTime ? undefined : (allowPastDates ? undefined : 'today'),
-      static: true,
+      static: false,
       monthSelectorType: "static",
       // dateFormat: "Y-m-d",
       defaultDate,

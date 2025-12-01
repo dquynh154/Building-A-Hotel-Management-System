@@ -52,7 +52,11 @@ export default function ChatbotPage() {
                 body: JSON.stringify({ message: messageContent, sessionId }),
             });
             const data = await res.json();
-
+            if (data.newSessionId && data.newSessionId !== sessionId) {
+                setSessionId(data.newSessionId);
+                localStorage.setItem('chat_session', String(data.newSessionId));
+                console.log(`✅ Session ID updated to: ${data.newSessionId}`);
+            }
             // 2. ✅ Thêm câu trả lời của Trợ lý vào mảng messages
             const assistantReply = data.reply || 'Xin lỗi, tôi chưa hiểu câu hỏi này.';
 

@@ -63,8 +63,8 @@ export default function ListView({
         CONFIRMED: { text: 'ĐÃ XÁC NHẬN', cls: 'bg-sky-100 text-sky-700' },
         CHECKED_IN: { text: 'ĐANG LƯU TRÚ', cls: 'bg-emerald-100 text-emerald-700' },
         CHECKED_OUT: { text: 'ĐÃ TRẢ PHÒNG', cls: 'bg-slate-200 text-slate-700' },
-        CANCELLED: { text: 'ĐÃ HỦY ĐẶT PHÒNG', cls: 'bg-rose-100 text-rose-700' },
-        NO_SHOW: { text: 'NO SHOW', cls: 'bg-zinc-100 text-zinc-700' },
+        CANCELLED: { text: 'HỦY ĐẶT PHÒNG', cls: 'bg-rose-100 text-rose-700' },
+        NO_SHOW: { text: 'VẮNG MẶT', cls: 'bg-zinc-100 text-zinc-700' },
         DEFAULT: { text: 'UNKNOWN', cls: 'bg-gray-100 text-gray-600' },
     };
 
@@ -144,7 +144,7 @@ export default function ListView({
                                         <Button
                                             size="sm"
                                             variant="danger"
-                                            disabled={['CHECKED_OUT', 'CANCELLED','CHECKED_IN'].includes(b.TRANG_THAI)}
+                                            disabled={['CHECKED_OUT', 'CANCELLED','CHECKED_IN', 'NO_SHOW'].includes(b.TRANG_THAI)}
                                             onClick={async () => {
                                                 if (['CHECKED_OUT', 'CANCELLED'].includes(b.TRANG_THAI)) return;
 

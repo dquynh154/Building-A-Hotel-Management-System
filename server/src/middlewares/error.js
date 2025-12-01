@@ -63,9 +63,10 @@ module.exports = (err, req, res, next) => {
 
     // 3) (tuỳ chọn) Zod validation
     if (err?.name === 'ZodError') {
+        const first = err.issues?.[0];
+
         return res.status(400).json({
-            message: 'Validation error',
-            errors: err.issues?.map(i => ({ path: i.path, message: i.message })) || []
+            error: first?.message || "Dữ liệu không hợp lệ"
         });
     }
 

@@ -2,7 +2,12 @@
 const { crud } = require('./crud');
 const { prisma } = require('../db/prisma');
 
-const toDate = (v) => (v ? new Date(v) : null);
+const toDate = (v) => {
+    if (!v) return null;
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+};
+
 async function assertNoSpecialOverlap(from, to, excludeTdMa = null) {
     const where = {
         TD_NGAY_BAT_DAU: { lte: to },

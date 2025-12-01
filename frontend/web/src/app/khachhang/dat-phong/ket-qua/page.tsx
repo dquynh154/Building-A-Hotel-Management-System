@@ -98,7 +98,7 @@ export default function KetQuaThanhToanPage() {
                     <p className="text-sm text-gray-600">Hệ thống đang chờ xác nhận từ cổng thanh toán…</p>
                 )}
                 {status === 'FAILED' && (
-                    <p className="text-sm text-red-700">Giao dịch không thành công. Vui lòng thử lại sau.</p>
+                    <p className="text-sm text-red-700">Giao dịch không thành công. Vui lòng tạo lại đơn đặt phòng mới</p>
                 )}
 
                 {status === 'SUCCEEDED' && invoice && (
@@ -153,8 +153,8 @@ export default function KetQuaThanhToanPage() {
                     <Link href="/khachhang" className="rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white">
                         Về trang chính
                     </Link>
-                    <Link href="/khachhang/dat-phong" className="rounded-md border px-4 py-2 text-sm">
-                        Đặt phòng lại
+                    <Link href="/khachhang/quan-ly-dat-phong" className="rounded-md border px-4 py-2 text-sm">
+                        Đơn đặt phòng
                     </Link>
                 </div>
             </div>

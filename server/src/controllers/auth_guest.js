@@ -16,7 +16,6 @@ exports.register = async (req, res, next) => {
     try {
         const body = guestRegister.parse(req.body);
 
-        // Hash pwd
         const pwd = await hash(body.KH_MATKHAU);
 
         const guest = await prisma.kHACH_HANG.create({

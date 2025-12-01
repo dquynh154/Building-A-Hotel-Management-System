@@ -18,6 +18,11 @@ const addDays = (d, n) => {
     x.setDate(x.getDate() + n);
     return x;
 };
+function floorToMinute(date) {
+    const d = new Date(date);
+    d.setSeconds(0, 0);
+    return d;
+}
 
 async function recalcBookingTotals(HDONG_MA) {
     HDONG_MA = Number(HDONG_MA);
@@ -189,8 +194,9 @@ async function create(req, res, next) {
         // Parse khoảng thời gian để check overlap
         let start = null, end = null;
         if (isHour) {
-            start = toDate(TU_GIO);
-            end = toDate(DEN_GIO);
+            start = floorToMinute(toDate(TU_GIO));
+            end = floorToMinute(toDate(DEN_GIO));
+
         } else {
             // NIGHT: 1 đêm = [NGAY(12:00), NGAY(12:00)+1d)
             start = toDate(NGAY);

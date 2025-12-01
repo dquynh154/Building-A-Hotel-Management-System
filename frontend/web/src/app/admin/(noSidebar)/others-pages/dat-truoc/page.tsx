@@ -59,19 +59,19 @@ export default function AdminDatTruocPage() {
                             ))}
                         </div>
                         <div className="mt-3 flex gap-2">
-                            <a
+                            {/* <a
                                 className="rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
                                 href={`/admin/xep-phong?hopdong=${r.HDONG_MA}`}
                             >
                                 Xếp phòng / Xác nhận
-                            </a>
+                            </a> */}
                             <a
-                                className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50"
+                                className="rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
                                 href={`/admin/others-pages/chi-tiet/${r.HDONG_MA}`}
                             >
-                                Xem chi tiết HĐ
+                                Xếp phòng / Xác nhận
                             </a>
-                        </div>
+                        </div>  
                     </div>
                 ))}
             </div>

@@ -42,8 +42,19 @@ export default function ThoiDiemCreateModal({
         if (!ten.trim()) { setErr('Vui lòng nhập tên thời điểm'); return; }
         if (!start || !end) { setErr('Vui lòng chọn đủ Ngày bắt đầu & Ngày kết thúc'); return; }
         if (new Date(start) > new Date(end)) { setErr('Ngày bắt đầu phải ≤ ngày kết thúc'); return; }
-        const startIso = `${start}T00:00:00.000Z`;
-        const endIso = `${end}T00:00:00.000Z`;
+        const fixDate = (d: string) => {
+            // dd-MM-yyyy → yyyy-MM-dd
+            const parts = d.split("-");
+            if (parts.length === 3) {
+                const [day, month, year] = parts;
+                return `${year}-${month}-${day}`;
+            }
+            return d; // fallback
+        };
+
+        const startIso = `${fixDate(start)}T00:00:00.000Z`;
+        const endIso = `${fixDate(end)}T00:00:00.000Z`;
+
         setSaving(true); setErr(null);
         // try {
         //     const startIso = `${start}T00:00:00.000Z`;
@@ -66,6 +77,9 @@ export default function ThoiDiemCreateModal({
         try {
             if (mode === 'edit' && initial?.TD_MA) {
                 // EDIT
+                console.log("startIso =", startIso);
+                console.log("endIso   =", endIso);
+
                 if (isSpecial) {
                     await api.put(`/thoi-diem/${initial.TD_MA}`, {
                         TD_TEN: ten.trim(),

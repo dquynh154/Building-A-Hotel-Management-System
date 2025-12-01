@@ -2,6 +2,7 @@ const express = require("express");
 const { GoogleGenAI } = require("@google/genai");
 const { prisma } = require('../db/prisma');
 const { getAvailableRoomCount, getRoomPrice } = require('../services/roomService');
+const { checkBookingStatus } = require('../services/bookingService');
 
 const router = express.Router();
 
@@ -83,10 +84,10 @@ router.post("/message", async (req, res) => {
 
         // 3. Prompt hệ thống (MỚI: Dùng config.systemInstruction)
         // D:\QUAN LY KHACH SAN\server\src\routes\chatbot.js
-
+        const todayDate = new Date().toISOString().split('T')[0];
         const systemPrompt = `
     Bạn là trợ lý ảo của khách sạn Wendy Hotel.
-
+Hôm nay là ngày ${todayDate}. [THÔNG TIN CỨNG]  
     [THÔNG TIN KHÁCH SẠN CỨNG]:
     - **Phòng Tiêu Chuẩn:** Diện tích 20m², 1 giường Queen size. Có máy sấy tóc, Smart TV, Tủ lạnh mini, Điều hòa, Bàn làm việc . Phù hợp cho 2 người.
     - **Phòng 2 Giường Đơn:** Diện tích 25m², 2 giường đơn. Có tủ quần áo, bình đun nước, Tủ lạnh, Máy sấy tóc, Smart TV. Tối đa 2 người .
@@ -98,6 +99,7 @@ router.post("/message", async (req, res) => {
     - Đảm bảo định dạng ngày là yyyy-mm-dd. **Nếu khách chỉ hỏi 1 ngày (ví dụ: ngày 13/11), hãy đặt date_from là 2025-11-13 và date_to là 2025-11-14 (ngày tiếp theo).**
     - Khi khách hỏi có bao nhiêu loại phòng thì là 3 loại: "Phòng tiêu chuẩn", "Phòng 2 giường đơn", "Phòng sang trọng giường đôi".
     - Khi khách hỏi về **giá** hoặc **chi phí** phòng, hãy gọi hàm "**check_room_price**" (**room_type**).
+    - Khi khách hỏi về đặt phòng của họ, trạng thái đặt chỗ, hoặc thông tin chi tiết đặt phòng, hãy gọi hàm "check_booking_status" với các tham số (guest_name, booking_code).
     - Khi khách hỏi về mô tả, tiện ích, hoặc dịch vụ, hãy ưu tiên trả lời dựa trên phần [THÔNG TIN KHÁCH SẠN CỨNG] trên.
     - Cái gì không có trong phạm vi chức năng của bạn, đừng cố trả lời, đừng bịa ra thông tin.
 `;
@@ -136,6 +138,24 @@ router.post("/message", async (req, res) => {
                     },
                     required: ["room_type"], // Chỉ cần room_type
                 },
+            },
+            {
+                name: "check_booking_status",
+                description: "Kiểm tra trạng thái đặt phòng của khách hàng dựa trên Tên khách hàng (guest_name) hoặc Mã đặt phòng (booking_code). Ưu tiên dùng booking_code nếu có.",
+                parameters: {
+                    type: "OBJECT",
+                    properties: {
+                        guest_name: {
+                            type: "string",
+                            description: "Tên đầy đủ hoặc một phần tên của khách hàng đã đặt phòng. Chỉ cần tìm kiếm nếu booking_code không có."
+                        },
+                        booking_code: {
+                            type: "string",
+                            description: "Mã đặt phòng (ID_HOPDONG) của khách hàng."
+                        }
+                    },
+                    required: [] // Không yêu cầu bắt buộc, vì khách có thể cung cấp 1 trong 2
+                }
             }
             ],
         }];
@@ -281,7 +301,7 @@ router.post("/message", async (req, res) => {
             await prisma.chatMessage.create({ data: { sessionId: session.id, role: "assistant", content: finalReply } });
 
             // Gửi câu trả lời tự nhiên về Frontend
-            return res.json({ reply: finalReply });
+            return res.json({ reply: finalReply, newSessionId: session.id });
         }
 
         // ✅ Xử lý Function Call: check_room_price (MỚI)
@@ -338,7 +358,68 @@ router.post("/message", async (req, res) => {
                 ],
             });
 
-            return res.json({ reply: finalReply });
+            return res.json({ reply: finalReply, newSessionId: session.id });
+            // D:\QUAN LY KHACH SAN\server\src\routes\chatbot.js (Trong router.post, sau khối check_room_price)
+
+        } else if (call.name === "check_booking_status") { // ✅ KHỐI MỚI
+            const { guest_name, booking_code } = call.args;
+
+            // 1. Lấy dữ liệu từ Service
+            const bookingData = await checkBookingStatus(guest_name, booking_code);
+
+            let replyText;
+
+            if (bookingData && bookingData.error) {
+                // Xử lý lỗi từ Service (ví dụ: mã đặt phòng không hợp lệ)
+                replyText = bookingData.error;
+
+            } else if (bookingData) {
+                // Xử lý khi tìm thấy đặt phòng
+                const roomType = bookingData.CHI_TIET_SU_DUNG_PHONG[0]?.PHONG.LOAIPHONG.TEN_LP || "chưa xác định";
+                const checkInDate = new Date(bookingData.HDONG_NGAY_DEN).toLocaleDateString('vi-VN');
+                const bookingStatus = bookingData.HDONG_TRANG_THAI;
+
+                replyText = `Thông tin đặt phòng của quý khách đã được tìm thấy (Mã: ${bookingData.HDONG_MA}):
+- Khách hàng: ${bookingData.KHACH_HANG.KH_TEN}
+- Loại phòng: ${roomType}
+- Ngày nhận phòng: ${checkInDate}
+- Trạng thái: ${bookingStatus}.`;
+
+            } else {
+                // Không tìm thấy đặt phòng nào
+                replyText = "Rất tiếc, tôi không tìm thấy bất kỳ đặt phòng nào phù hợp với thông tin quý khách cung cấp. Vui lòng kiểm tra lại tên hoặc Mã đặt phòng (ID_HOPDONG).";
+            }
+
+            // 2. Gửi lại kết quả (replyText) cho Gemini để tạo câu trả lời tự nhiên
+            // **Áp dụng logic Function Calling 2 bước (Model + Function Response)**
+            const updatedContents = [...contents];
+
+            updatedContents.push({
+                role: "model",
+                parts: [{ functionCall: { name: call.name, args: call.args } }],
+            });
+
+            updatedContents.push({
+                role: "function",
+                parts: [{ functionResponse: { name: call.name, response: { message: replyText, data: bookingData } } }],
+            });
+
+            const followUp = await callGeminiWithRetry({
+                model: MODEL_ID,
+                contents: updatedContents,
+            });
+
+            const finalReply = followUp.text || "Xin lỗi, đã xảy ra lỗi khi tạo câu trả lời chi tiết.";
+
+            // 3. Lưu lịch sử
+            await prisma.chatMessage.createMany({
+                data: [
+                    { sessionId: session.id, role: "user", content: message },
+                    { sessionId: session.id, role: "assistant", content: finalReply },
+                ],
+            });
+
+            return res.json({ reply: finalReply, newSessionId: session.id });
         }
 
         // 8. Nếu Gemini không gọi function (Chỉ trả lời text)

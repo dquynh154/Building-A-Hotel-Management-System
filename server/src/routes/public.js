@@ -725,6 +725,7 @@ pub.get('/loai-phong', async (req, res, next) => {
 // });
 
 // GET /public/loai-phong-trong?from=YYYY-MM-DD&to=YYYY-MM-DD&adults=1&take=50&skip=0
+// GET /public/loai-phong-trong?from=YYYY-MM-DD&to=YYYY-MM-DD&adults=1&take=50&skip=0
 pub.get('/loai-phong-trong', async (req, res, next) => {
     try {
         const from = String(req.query.from || '').slice(0, 10);
@@ -780,15 +781,15 @@ pub.get('/loai-phong-trong', async (req, res, next) => {
         GROUP BY i.LP_MA
       ),
       all_images AS (
-  SELECT 
-    LP_MA,
-    CONCAT('[', GROUP_CONCAT(
-      JSON_OBJECT('URL', URL)
-      ORDER BY IS_MAIN DESC, ORD ASC SEPARATOR ','
-    ), ']') AS IMAGE_LIST
-  FROM LOAI_PHONG_IMAGE
-  GROUP BY LP_MA
-),
+        SELECT 
+          LP_MA,
+          CONCAT('[', GROUP_CONCAT(
+            JSON_OBJECT('URL', URL)
+            ORDER BY IS_MAIN DESC, ORD ASC SEPARATOR ','
+          ), ']') AS IMAGE_LIST
+        FROM LOAI_PHONG_IMAGE
+        GROUP BY LP_MA
+      ),
       price_special AS (
         SELECT g.LP_MA, MIN(g.DG_DONGIA) AS PRICE
         FROM DON_GIA g
@@ -810,8 +811,8 @@ pub.get('/loai-phong-trong', async (req, res, next) => {
       SELECT
         t.LP_MA, t.LP_TEN, t.LP_SONGUOI, t.LP_TRANGTHAI,
         CAST(t.TOTAL_ROOMS - COALESCE(b.BOOKED_CNT, 0) - COALESCE(h.HELD, 0) AS UNSIGNED) AS ROOM_COUNT,
-        c.IMG_URL,ai.IMAGE_LIST,
-        COALESCE(ps.PRICE, pb.PRICE) AS PRICE
+        c.IMG_URL, ai.IMAGE_LIST,
+        COALESCE(ps.PRICE, pb.PRICE) AS PRICE   -- giá “theo ngày bắt đầu”, ta sẽ đè lại sau
       FROM total_per_type t
       LEFT JOIN (
         SELECT LP_MA, COUNT(*) AS BOOKED_CNT
@@ -822,21 +823,35 @@ pub.get('/loai-phong-trong', async (req, res, next) => {
       LEFT JOIN cover_image c ON c.LP_MA = t.LP_MA
       LEFT JOIN price_special ps ON ps.LP_MA = t.LP_MA
       LEFT JOIN price_base   pb ON pb.LP_MA = t.LP_MA
-      LEFT JOIN all_images ai ON ai.LP_MA = t.LP_MA
+      LEFT JOIN all_images   ai ON ai.LP_MA = t.LP_MA
       ${whereClause}
-ORDER BY t.LP_MA
-
+      ORDER BY t.LP_MA
       LIMIT ${take} OFFSET ${skip};
     `);
 
         // BigInt -> Number để trả JSON an toàn
         const items = rows.map(r =>
-            Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? Number(v) : v]))
+            Object.fromEntries(
+                Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? Number(v) : v])
+            )
         );
+
+        // Chuẩn bị tính số đêm
+        const fromDate = new Date(from + 'T00:00:00');
+        const toDate = new Date(to + 'T00:00:00');
+        const diffMs = toDate - fromDate;
+        const nights = Math.max(1, Math.round(diffMs / 86400000));
+
+        // Parse IMAGE_LIST và TÍNH LẠI GIÁ ĐỘNG CHO TỪNG LOẠI PHÒNG
         for (const r of items) {
+            // parse ảnh
             if (typeof r.IMAGE_LIST === 'string') {
                 try {
-                    r.LOAI_PHONG_IMAGE = JSON.parse(r.IMAGE_LIST).map(url => ({ URL: url }));
+                    const arr = JSON.parse(r.IMAGE_LIST);
+                    // arr hiện đang là [{URL: "..."}, ...] do JSON_OBJECT('URL', URL)
+                    r.LOAI_PHONG_IMAGE = arr.map((x) =>
+                        typeof x === 'string' ? { URL: x } : x
+                    );
                 } catch {
                     r.LOAI_PHONG_IMAGE = [];
                 }
@@ -844,13 +859,41 @@ ORDER BY t.LP_MA
                 r.LOAI_PHONG_IMAGE = [];
             }
             delete r.IMAGE_LIST;
+
+            // nếu không còn phòng thì khỏi tính giá
+            if (!r.ROOM_COUNT || nights <= 0) {
+                r.TOTAL_PRICE = 0;
+                r.PRICE = r.PRICE ?? 0; // giữ giá SQL làm tham khảo
+                continue;
+            }
+
+            // ====== GIÁ ĐỘNG: tính giá theo từng đêm ======
+            let total = 0;
+            for (let i = 0; i < nights; i++) {
+                const d = new Date(fromDate);
+                d.setDate(d.getDate() + i);
+
+                const y = d.getFullYear();
+                const mo = String(d.getMonth() + 1).padStart(2, '0');
+                const da = String(d.getDate()).padStart(2, '0');
+                const at = `${y}-${mo}-${da} 14:00:00`; // giờ check-in mỗi ngày
+
+                // dùng hàm getPriceForDay đã có sẵn trong file public.js
+                const price = await getPriceForDay(prisma, r.LP_MA, at);
+                total += Number(price);
+            }
+
+            r.TOTAL_PRICE = total;
+            r.PRICE = total / nights;   // đơn giá trung bình/đêm → FE * nights = tổng
         }
+
         res.json({ items });
     } catch (e) {
         console.error('ERR /public/loai-phong-trong:', e);
         res.status(500).json({ message: 'Lỗi máy chủ', detail: String(e?.message || e) });
     }
 });
+
 
 
 // GET /public/loai-phong/:id/images

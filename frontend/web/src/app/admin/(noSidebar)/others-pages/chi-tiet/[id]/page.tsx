@@ -18,6 +18,7 @@ import PaymentModal, { PaymentPayload } from '@/components/ui/modal/PaymentModal
 import AddRoomModal from '@/components/ui/modal/AddRoomModal';
 import AddRoomCheckInModal from '@/components/ui/modal/AddRoomCheckInModal';
 import SuaXoaDichVuHopDongModal from "@/components/ui/modal/SuaXoaDichVuHopDongModal";
+import AdjustReturnDateModal from '@/components/ui/modal/AdjustReturnDateModal';
 
 type StaffMe = { NV_MA: number; NV_HOTEN: string; NV_CHUCVU: string | null };
 type BookingHeader = {
@@ -782,6 +783,36 @@ export default function BookingDetailPage() {
         }
     }
 
+    async function handleNoShow() {
+        if (!booking) return;
+
+        if (!confirm('Xác nhận khách VẮNG MẶT (NO-SHOW)?')) return;
+
+        try {
+            await api.post(`/bookings/${bookingId}/no-show`);
+            alert('Đã chuyển hợp đồng sang NO_SHOW');
+            await loadFull();       // reload lại màn hình
+        } catch (e: any) {
+            alert(e?.response?.data?.message || 'Xử lý NO-SHOW thất bại');
+        }
+    }
+    const now = new Date();
+    const checkinTime = booking?.from ? new Date(booking.from) : null;
+    const checkoutTime = booking?.to ? new Date(booking.to) : null;
+
+    const canNoShow =
+        booking?.trang_thai === "CONFIRMED" &&
+        checkinTime &&
+        now > checkinTime;
+
+    const canCheckIn =
+        booking?.trang_thai === "CONFIRMED" &&
+        checkinTime &&
+        checkoutTime &&
+        now >= checkinTime &&
+        now <= checkoutTime;  // 👈 nằm TRONG khoảng mới được nhận
+
+
 
     async function doCheckout() {
         if (!booking) return;
@@ -812,6 +843,13 @@ export default function BookingDetailPage() {
             return (
                 <span className="rounded-full bg-rose-100 text-rose-700 ring-1 ring-rose-300 px-3 py-1 text-sm font-medium">
                     Đã hủy đặt phòng
+                </span>
+            );
+        }
+        if (upper === 'NO_SHOW') {
+            return (
+                <span className="rounded-full bg-rose-100 text-rose-700 ring-1 ring-rose-300 px-3 py-1 text-sm font-medium">
+                    Vắng mặt
                 </span>
             );
         }
@@ -854,11 +892,37 @@ export default function BookingDetailPage() {
     // Modal sửa/xóa dịch vụ
     const [serviceModalOpen, setServiceModalOpen] = useState(false);
     const [serviceModalData, setServiceModalData] = useState(null as any);
+    const [openAdjustModal, setOpenAdjustModal] = useState(false);
 
+    const checkLateFee = () => {
+        if (!booking) return false;
+
+        const planned = new Date(booking.to).getTime();
+        const now = Date.now();
+        const diffMinutes = (now - planned) / 60000;
+
+        return diffMinutes > 15; // trễ hơn 15 phút thì tính phí
+    };
+    const getLateInfo = () => {
+        if (!booking) return null;
+
+        const planned = new Date(booking.to).getTime();
+        const now = Date.now();
+        const diffMinutes = Math.floor((now - planned) / 60000);
+
+        if (diffMinutes <= 15) return null; // không tính
+
+        if (diffMinutes < 60) {
+            return `${diffMinutes} phút`;
+        }
+
+        const hours = Math.ceil(diffMinutes / 60);
+        return `${hours} giờ`;
+    };
 
     return (
         <div className="min-h-screen">
-            <PageBreadcrumb_ct pageTitle={`Hợp đồng HD${String(bookingId).padStart(6, '0')}`} />
+            <PageBreadcrumb_ct pageTitle={`Hợp đồng HD${String(bookingId).padStart(6, '0')}` + `- Hình thức : ${booking?.htLabel}`} />
             <div>
 
                 {/* 2 cột: danh mục DV | chi tiết HĐ gộp */}
@@ -970,18 +1034,28 @@ export default function BookingDetailPage() {
                                 </button>
                             </div>
 
-
                             <div className="grid w-fit justify-items-center gap-1 self-end">
                                 <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
                                     DỰ KIẾN: NGÀY ĐẶT - NGÀY TRẢ
                                 </span>
 
-                                <div className="inline-flex h-11 items-center gap-2 rounded-lg border bg-white/60 px-3 text-sm font-medium text-gray-800 shadow-sm ring-1 ring-gray-200 backdrop-blur-[2px] dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:ring-white/10">
+                                <button
+                                    type="button"
+                                    onClick={() => setOpenAdjustModal(true)}
+                                    className="inline-flex h-11 items-center gap-2 rounded-lg border bg-white/60 px-3 
+      text-sm font-medium text-gray-800 shadow-sm ring-1 ring-gray-200 
+      hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 
+      dark:text-gray-100 dark:ring-white/10"
+                                    title="Chỉnh ngày/giờ trả phòng"
+                                >
                                     <time className="tabular-nums">{fmt(booking?.from)}</time>
                                     <span className="mx-1 text-gray-400">→</span>
                                     <time className="tabular-nums">{fmt(booking?.to)}</time>
-                                </div>
+                                </button>
                             </div>
+
+
+
                             {/* CỤM: NGÀY NHẬN PHÒNG */}
                             {(() => {
                                 const actualCheckIn = booking?.thuc_nhan || null;
@@ -1149,7 +1223,7 @@ export default function BookingDetailPage() {
                                                     <div className="text-right min-w-[80px] font-medium">{vnd(row.qty * row.price)}</div>
 
                                                     {/* không có nút Xoá cho dòng gộp */}
-                                                   <div>
+                                                    <div>
                                                         {status === 'CHECKED_IN' && (
                                                             <>
                                                                 <button
@@ -1173,7 +1247,7 @@ export default function BookingDetailPage() {
                                                                     <PencilIcon />
                                                                 </button>
                                                             </>
-                                                        )}                                                      
+                                                        )}
                                                     </div>
 
                                                     <div />
@@ -1361,24 +1435,35 @@ export default function BookingDetailPage() {
                                     </Button>
                                 </>
                             )}
-                            
-                           
+
+
 
                             {status === 'CHECKED_IN' && (
                                 <>
-                                   
+
                                     <Button
                                         size="sm"
                                         variant="primary"
                                         disabled={isCheckedOut}
-                                        onClick={() => {
-                                            // chỉ cho CHECKED_IN; nếu muốn chặt hơn, bạn có thể disable luôn khi chưa CHECKED_IN
-                                            if ((booking?.trang_thai || '').toUpperCase() !== 'CHECKED_IN') {
-                                                alert('Chỉ trả phòng khi hợp đồng đang CHECKED_IN');
-                                                return;
+                                        onClick={async () => {
+                                            try {
+                                                const lateInfo = getLateInfo();
+
+                                                if (lateInfo) {
+                                                    const ok = confirm(
+                                                        `Khách đang checkout trễ ${lateInfo}.\nBạn có muốn tính phí trả phòng trễ không?`
+                                                    );
+                                                    if (ok) {
+                                                        await api.post(`/bookings/${bookingId}/apply-late-fee`);
+                                                        await loadFull();
+                                                    }
+                                                }
+                                                setPayForCheckout(true);
+                                                setPayOpen(true);
+                                            } catch (e) {
+                                                console.error(e);
+                                                alert("Lỗi khi xử lý checkout trễ.");
                                             }
-                                            setPayForCheckout(true);   // bật chế độ trả phòng sau khi thu
-                                            setPayOpen(true);          // mở modal thu tiền
                                         }}
                                     >
                                         Thanh toán & trả phòng
@@ -1387,16 +1472,28 @@ export default function BookingDetailPage() {
 
                                 </>
                             )}
-                            {booking?.trang_thai === 'CONFIRMED' && (
-                                <Button
-                                    size="sm"
-                                    variant="primary"
-                                    onClick={handleEarlyCheckIn}
-                                    disabled={checkingIn}
-                                >
-                                    {checkingIn ? 'Đang nhận…' : 'Nhận phòng'}
-                                </Button>
+
+                            {canCheckIn && (
+                                 
+                                    <Button
+                                        size="sm"
+                                        variant="primary"
+                                        onClick={handleEarlyCheckIn}
+                                        disabled={checkingIn}
+                                    >
+                                        {checkingIn ? 'Đang nhận…' : 'Nhận phòng'}
+                                    </Button>
+                                
                             )}
+                            {canNoShow && (
+                                <button
+                                    onClick={handleNoShow}
+                                    className="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700"
+                                >
+                                    Vắng mặt
+                                </button>
+                            )}
+
                         </div>
 
                     </ComponentCard>
@@ -1530,6 +1627,31 @@ export default function BookingDetailPage() {
                         }}
                     />
                 )}
+
+                {/* <AdjustReturnDateModal
+                    open={openAdjustModal}
+                    onClose={() => setOpenAdjustModal(false)}
+                    booking={booking}
+                    bookingId={booking?.id}
+                    onUpdated={loadFull}
+                /> */}
+                <AdjustReturnDateModal
+                    open={openAdjustModal}
+                    onClose={() => setOpenAdjustModal(false)}
+                    bookingId={booking?.id}
+                    mode={
+                        /giờ/i.test(booking?.htLabel ?? "")
+                            ? "HOUR"
+                            : "DAY"
+                    }
+                    currentFrom={booking?.from}
+                    currentTo={booking?.to}
+                    onChanged={() => {
+                        // gọi lại load chi tiết HĐ
+                        loadFull(); // dùng đúng tên hàm bạn đang xài để fetch lại
+                    }}
+                />
+
 
 
             </div>

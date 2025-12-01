@@ -16,6 +16,9 @@ const toLeadingZeroVN = (s) => {
     if (d.startsWith('84')) return '0' + d.slice(2);
     return d;
 };
+function isValidCCCD(s) {
+    return /^[0-9]{12}$/.test(String(s).trim());
+}
 
 const khachHang = crud('kHACH_HANG', {
     pk: 'KH_MA',
@@ -53,6 +56,18 @@ const khachHang = crud('kHACH_HANG', {
             if (!isValidPhoneVN(data.KH_SDT)) { const e = new Error('Số điện thoại không hợp lệ'); e.status = 400; throw e; }
             data.KH_SDT = toLeadingZeroVN(data.KH_SDT);
         }
+        // Validate CCCD (12 số)
+        if (data.KH_CCCD != null && data.KH_CCCD !== '') {
+            if (!isValidCCCD(data.KH_CCCD)) {
+                const e = new Error('CCCD không hợp lệ (phải gồm 12 chữ số)');
+                e.status = 400;
+                throw e;
+            }
+
+            // ép chuỗi, bỏ khoảng trắng
+            data.KH_CCCD = String(data.KH_CCCD).trim();
+        }
+
         // Nếu có tạo tài khoản thì phải có mật khẩu → hash
         if (data.KH_TAIKHOAN) {
             if (!data.KH_MATKHAU) { const err = new Error('Thiếu mật khẩu'); err.status = 400; throw err; }
@@ -77,6 +92,18 @@ const khachHang = crud('kHACH_HANG', {
             if (!isValidPhoneVN(data.KH_SDT)) { const e = new Error('Số điện thoại không hợp lệ'); e.status = 400; throw e; }
             data.KH_SDT = toLeadingZeroVN(data.KH_SDT);
         }
+        // Validate CCCD (12 số)
+        if (data.KH_CCCD != null && data.KH_CCCD !== '') {
+            if (!isValidCCCD(data.KH_CCCD)) {
+                const e = new Error('CCCD không hợp lệ (phải gồm 12 chữ số)');
+                e.status = 400;
+                throw e;
+            }
+
+            // ép chuỗi, bỏ khoảng trắng
+            data.KH_CCCD = String(data.KH_CCCD).trim();
+        }
+
         if (data.KH_NGAYSINH) data.KH_NGAYSINH = new Date(data.KH_NGAYSINH);
         return data;
     },

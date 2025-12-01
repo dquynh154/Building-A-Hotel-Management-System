@@ -9,7 +9,7 @@ export default function PayMockPage() {
     const hdon_ma = q.get('hdon_ma') || '';
     const email = q.get('email') || '';
     const amount = Number(q.get('amount') || 0);
-    const ret = q.get('return') || '/khachhang/dat-phong/ket-qua';
+    const ret = '/khachhang/dat-phong/ket-qua';
     const [busy, setBusy] = useState(false);
 
     const go = async (success: boolean) => {

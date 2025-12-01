@@ -10,6 +10,12 @@ const toDate = (v) => {
     const d = new Date(v);
     return isNaN(d.getTime()) ? null : d;
 };
+function normalizeToMinute(d) {
+    const x = new Date(d);
+    x.setSeconds(0);
+    x.setMilliseconds(0);
+    return x;
+}
 
 const clampPct = (v) => {
     const n = Number(v);
@@ -141,8 +147,12 @@ async function create(req, res, next) {
 
         // 2) Ép kiểu
         const htMa = Number(HT_MA);
-        const ngayDat = toDate(HDONG_NGAYDAT);
-        const ngayTra = toDate(HDONG_NGAYTRA);
+        const ngayDatRaw = toDate(HDONG_NGAYDAT);
+        const ngayTraRaw = toDate(HDONG_NGAYTRA);
+
+        const ngayDat = normalizeToMinute(ngayDatRaw);
+        const ngayTra = normalizeToMinute(ngayTraRaw);
+
 
         if (!Number.isInteger(htMa) || htMa <= 0) {
             return res.status(400).json({ message: 'HT_MA không hợp lệ' });
@@ -928,7 +938,10 @@ async function cancel(req, res, next) {
                 HDONG_GHICHU: reason || 'Huỷ bởi quản lý',
             },
         });
-
+        await prisma.cT_DAT_TRUOC.updateMany({
+            where: { HDONG_MA: id },
+            data: { TRANG_THAI: "CANCELLED" }
+        });
         await prisma.hOA_DON.updateMany({
             where: {
                 LIEN_KET: {

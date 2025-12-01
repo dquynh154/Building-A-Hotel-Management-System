@@ -131,12 +131,39 @@ export default function BoardView({
                             }
                             const now = Date.now();
 
-                            // Tìm booking gần nhất (để xác định “sắp đến”)
-                            const future = bsAll
-                                .filter(b => ['CONFIRMED', 'PENDING'].includes(b.TRANG_THAI))
-                                .filter(b => new Date(b.TU_LUC).getTime() > now)
-                                .sort((a, b) => new Date(a.TU_LUC).getTime() - new Date(b.TU_LUC).getTime());
-                            const upcoming = future[0];
+                            const activeStay = bsAll.find(b => b.TRANG_THAI === 'CHECKED_IN');
+
+                            // ---- 2) Booking sắp đến hoặc đang nằm trong khoảng (TU_LUC → DEN_LUC) nhưng chưa check-in ----
+                            const upcomingList = bsAll.filter(b => {
+                                const start = new Date(b.TU_LUC).getTime();
+                                const end = new Date(b.DEN_LUC).getTime();
+
+                                // chưa check-in + chưa hết hạn thuê
+                                return (b.TRANG_THAI === 'PENDING' || b.TRANG_THAI === 'CONFIRMED')
+                                    && now < end;
+                            });
+
+                            // lấy booking gần nhất theo TU_LUC
+                            const upcoming = upcomingList
+                                .sort((a, b) => new Date(a.TU_LUC).getTime() - new Date(b.TU_LUC).getTime())[0];
+                            // 🔥 Chỉ dùng cho disable nút "Đặt nhanh":
+                            // true nếu đang trong khoảng TU_LUC → DEN_LUC mà khách chưa nhận phòng
+                            const hasNoShowRange = bsAll.some(b => {
+                                if (!(b.TRANG_THAI === 'PENDING' || b.TRANG_THAI === 'CONFIRMED')) return false;
+
+                                const start = new Date(b.TU_LUC).getTime();
+                                const end = new Date(b.DEN_LUC).getTime();
+
+                                return start <= now && now < end; // đang nằm trong khoảng giữ phòng
+                            });
+
+                            const isBlocked = !!activeStay || hasNoShowRange;
+
+
+                            // ---- Ưu tiên: nếu đang ở → bs = active; nếu không → bs = upcoming ----
+                            // let bs: BookingLite[] = [];
+                            if (activeStay) bs = [activeStay];
+                            else if (upcoming) bs = [upcoming];
 
                             // Xác định class màu theo trạng thái
                             let statusClass = '';
@@ -268,7 +295,7 @@ export default function BoardView({
                                             size="sm"
                                             variant="primary"
                                             onClick={() => onQuickBook?.(r)}
-                                            disabled={r.PHONG_TRANGTHAI !== 'AVAILABLE' && (bs?.length ?? 0) > 0}
+                                            disabled={isBlocked ||r.PHONG_TRANGTHAI !== 'AVAILABLE' && (bs?.length ?? 0) > 0}
                                         // title={r.PHONG_TRANGTHAI === 'AVAILABLE' ? 'Đặt phòng này' : 'Phòng đang bận'}
                                         >
                                             Đặt nhanh

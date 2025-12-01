@@ -151,6 +151,12 @@ const fmtYMD = (d: Date) =>
 const fmtHHMM = (d: Date) =>
     `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 const diffMinutes = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / 60000);
+function buildISO(dateStr: string, timeStr: string) {
+    const [h, m] = timeStr.split(':').map(Number);
+    const d = new Date(dateStr);
+    d.setHours(h, m, 0, 0);   // GIÂY = 0
+    return d.toISOString();
+}
 
 // ========== MAIN ==========
 export default function BookingCreateModal({
@@ -462,7 +468,8 @@ export default function BookingCreateModal({
     const canSave = !!kh?.value
         && !!ht && !!fromDate && !!toDate
         && lines.every(l => !!l.roomId)   // tất cả dòng đều đã chọn phòng
-        && !saving;
+        && !saving
+        && lines.length > 0;
 
 
     // báo giá (thành tiền)
@@ -472,8 +479,9 @@ export default function BookingCreateModal({
             if (!canQuote) { setQuoteItems([]); setQuoteTotal(0); return; }
             setQuoting(true); setErr(null);
             try {
-                const isoFrom = new Date(`${fromDate}T${fromTime}:00`).toISOString();
-                const isoTo = new Date(`${toDate}T${toTime}:00`).toISOString();
+                const isoFrom = buildISO(fromDate, fromTime);
+                const isoTo = buildISO(toDate, toTime);
+
                 const htLabel = hireTypes.find(o => o.value === ht)?.label || '';
 
                 const q = await api.get('/pricing/quote', {
@@ -514,8 +522,8 @@ export default function BookingCreateModal({
         if (!canSave) return;
         setSaving(true); setErr(null);
         try {
-            const fromISO = toIsoDateTime(fromDate, fromTime);
-            const toISO = toIsoDateTime(toDate, toTime);
+            const fromISO = buildISO(fromDate, fromTime);
+            const toISO = buildISO(toDate, toTime);
             const now = new Date();
             const nowISO = now.toISOString();
             const isHourMode = Boolean(hourHTId && Number(ht) === Number(hourHTId));
@@ -802,8 +810,9 @@ export default function BookingCreateModal({
     useEffect(() => {
         if (!open) return;
         const runId = ++quoteRunIdRef.current;
-        const isoFrom = fromDate && fromTime ? new Date(`${fromDate}T${fromTime}:00`).toISOString() : '';
-        const isoTo = toDate && toTime ? new Date(`${toDate}T${toTime}:00`).toISOString() : '';
+        const isoFrom = (fromDate && fromTime) ? buildISO(fromDate, fromTime) : '';
+        const isoTo = (toDate && toTime) ? buildISO(toDate, toTime) : '';
+
         if (!isoFrom || !isoTo || +new Date(isoTo) <= +new Date(isoFrom)) {
             // reset giá
             if (runId !== quoteRunIdRef.current) return;
@@ -836,18 +845,20 @@ export default function BookingCreateModal({
 
                     let lineTotal: number;
 
-                    if (hourHTId && Number(ht) === Number(hourHTId)) {
-                        // Backend có thể đang ceil giờ => nội suy đơn giá/giờ từ total của API
-                        // Đơn giá/giờ ≈ totalFromApi / ceil(decHours)
-                        const ceilHours = Math.max(1, Math.ceil(decHours));
-                        const unitPerHour = ceilHours ? (totalFromApi / ceilHours) : 0;
+                    // if (hourHTId && Number(ht) === Number(hourHTId)) {
+                    //     // Backend có thể đang ceil giờ => nội suy đơn giá/giờ từ total của API
+                    //     // Đơn giá/giờ ≈ totalFromApi / ceil(decHours)
+                    //     const ceilHours = Math.max(1, Math.ceil(decHours));
+                    //     const unitPerHour = ceilHours ? (totalFromApi / ceilHours) : 0;
 
-                        // Thành tiền theo giờ thập phân, rồi làm tròn nghìn gần nhất
-                        lineTotal = roundToNearestThousand(unitPerHour * decHours);
-                    } else {
-                        // Theo NGÀY giữ nguyên total và chỉ làm tròn nghìn
-                        lineTotal = roundToNearestThousand(totalFromApi);
-                    }
+                    //     // Thành tiền theo giờ thập phân, rồi làm tròn nghìn gần nhất
+                    //     lineTotal = roundToNearestThousand(unitPerHour * decHours);
+                    // } else {
+                    //     // Theo NGÀY giữ nguyên total và chỉ làm tròn nghìn
+                    //     lineTotal = roundToNearestThousand(totalFromApi);
+                    // }
+                    lineTotal = roundToNearestThousand(totalFromApi);
+
 
                     results.push(lineTotal);
                     return { ...l, price: lineTotal, quoting: false };
@@ -1170,8 +1181,9 @@ export default function BookingCreateModal({
                                     if (val && hourHTId && val === hourHTId) {
                                         const pad = (n: number) => String(n).padStart(2, "0");
                                         const d = new Date();
+                                        d.setSeconds(0, 0);
                                         const ymd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-                                        const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                                        const hm = fmtHHMM(d);
                                         fromTimeRoundedOnce.current = false;
                                         setFromDate(ymd);
                                         setFromTime(hm);
@@ -1230,8 +1242,11 @@ export default function BookingCreateModal({
                             {/* <button className="rounded-md border px-2 py-1 text-xs dark:border-slate-700"
                                 onClick={() => setLines(prev => prev.filter((_, i) => i !== idx))}
                             >🗑</button> */}
+                            {lines.length > 1 && (
+                                <Button size="sm" variant="danger" startIcon={<TrashBinIcon />}
+                                    onClick={() => setLines(prev => prev.filter((_, i) => i !== idx))}> </Button>
+                            )}
 
-                            <Button size="sm" variant="light" startIcon={<TrashBinIcon />} onClick={() => setLines(prev => prev.filter((_, i) => i !== idx))}> </Button>
 
                         </div>
                     </div>

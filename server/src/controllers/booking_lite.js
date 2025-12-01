@@ -160,7 +160,7 @@ async function lite(req, res, next) {
         // 2️⃣ Lấy thêm các hợp đồng chưa có CTSD (đặt trực tuyến)
         const hopdong = await prisma.hOP_DONG_DAT_PHONG.findMany({
             where: {
-                HDONG_TRANG_THAI: { in: ['PENDING', 'CONFIRMED','CANCELLED'] },
+                HDONG_TRANG_THAI: { in: ['PENDING', 'CONFIRMED','CANCELLED','NO_SHOW'] },
                 // chỉ lấy hợp đồng chưa có chi tiết sử dụng
                 CHI_TIET_SU_DUNG: { none: {} },
             },

@@ -27,6 +27,17 @@ export async function gfetch(path: string, opts: RequestInit = {}) {
     // cố gắng parse JSON
     let data: any = null;
     try { data = await res.json(); } catch { }
-    if (!res.ok) throw (data || { message: res.statusText, status: res.status });
+    if (!res.ok) {
+        // Tạo một Error chuẩn để FE catch dễ
+        const err: any = new Error(
+            data?.error || data?.message || res.statusText || "Request error"
+        );
+
+        // Gắn thêm body gốc để FE đọc chi tiết
+        err.data = data;
+        err.status = res.status;
+
+        throw err;
+    }
     return data;
 }
