@@ -297,6 +297,8 @@ export default function PublicReviewsPage() {
     const resetAndApply = () => setPage(1);
 
     return (
+        <>
+            <title>Đánh giá</title>
         <div className="mx-auto max-w-7xl px-4 py-10 text-slate-800">
             {/* Header + Summary */}
             <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4">
@@ -559,5 +561,6 @@ export default function PublicReviewsPage() {
 `}</style>
 
         </div>
+        </>
     );
 }

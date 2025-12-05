@@ -2,7 +2,7 @@
 const { prisma } = require('../db/prisma');
 
 // Các trạng thái HĐ đang giữ phòng
-const HOLD_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN'];
+const HOLD_STATUSES = ['CONFIRMED', 'CHECKED_IN'];
 
 /**
  * Lấy số lượng phòng trống theo loại phòng trong một khoảng ngày (Đã được tăng cường).
@@ -24,7 +24,9 @@ async function getAvailableRoomCount(fromDate, toDate, roomTypeKeyword) {
                 // Sử dụng 'mode: insensitive' để đảm bảo tìm kiếm không phân biệt chữ hoa/thường
                 LP_TEN: { contains: roomTypeKeyword },
             },
-            PHONG_TRANGTHAI: "AVAILABLE",
+            // PHONG_TRANGTHAI: "AVAILABLE",
+            PHONG_TRANGTHAI: {
+                notIn: ["MAINTENANCE"]},
             // PHONG không bị CHI_TIET_SU_DUNG chặn trong khoảng [fromDate, toDate)
             CHI_TIET_SU_DUNG: {
                 none: {

@@ -46,6 +46,8 @@ export default function GuestStayReport() {
     };
 
     return (
+        <>
+         <title>Báo cáo khách lưu trú</title>
         <div className="space-y-6">
             <h1 className="text-2xl font-semibold">Báo cáo khách lưu trú</h1>
 
@@ -179,5 +181,6 @@ export default function GuestStayReport() {
                 </table>
             </div>
         </div>
+        </>
     );
 }

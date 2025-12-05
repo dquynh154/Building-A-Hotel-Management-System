@@ -7,6 +7,7 @@ r.use('/public', require('./public'));
 r.use('/auth/guest', require('./auth_guest'));
 r.use('/auth/staff', require('./auth_staff'));
 r.use('/', require('./baocao'));
+r.use('/', require('./yeucaudv'));
 r.use('/', require('./booking'));
 r.use('/', require('./pricing'));
 r.use('/', require('./danhgia'));

@@ -92,6 +92,7 @@ enum CTDV_TrangThai {
   CANCELLED
   INVOICED
   DOI_PHONG
+  PENDING
 }
 
 enum LOAI_HOA_DON {
@@ -409,6 +410,7 @@ model CHI_TIET_DICH_VU {
   CTDV_SOLUONG Int
   CTDV_DONGIA  Decimal  @db.Decimal(12, 2)
   CTDV_GHICHU  String?
+  CTDV_FROM String?  // "CHATBOT" | null
 
   CTDV_TRANGTHAI CTDV_TrangThai @default(ACTIVE)
   CTDV_HUY_LUC   DateTime?
@@ -418,10 +420,8 @@ model CHI_TIET_DICH_VU {
   DICH_VU                    DICH_VU             @relation(fields: [DV_MA], references: [DV_MA])
   CTSD                       CHI_TIET_SU_DUNG    @relation(name: "CTSD_to_CTDV", fields: [HDONG_MA, PHONG_MA, CTSD_STT], references: [HDONG_MA, PHONG_MA, CTSD_STT], onDelete: Cascade)
   HUY_NV                     NHAN_VIEN?          @relation(fields: [CTDV_HUY_NV], references: [NV_MA])
-  PHONG                      PHONG?              @relation(fields: [pHONGPHONG_MA], references: [PHONG_MA])
-  pHONGPHONG_MA              Int?
-  HOP_DONG_DAT_PHONG         HOP_DONG_DAT_PHONG? @relation(fields: [hOP_DONG_DAT_PHONGHDONG_MA], references: [HDONG_MA])
-  hOP_DONG_DAT_PHONGHDONG_MA Int?
+  HOP_DONG_DAT_PHONG         HOP_DONG_DAT_PHONG  @relation(fields: [HDONG_MA], references: [HDONG_MA], onDelete: Cascade)
+  PHONG                      PHONG?              @relation(fields: [PHONG_MA], references: [PHONG_MA])
 
   @@id([HDONG_MA, PHONG_MA, CTSD_STT, DV_MA, CTDV_STT])
   @@index([HDONG_MA, PHONG_MA, CTSD_STT])

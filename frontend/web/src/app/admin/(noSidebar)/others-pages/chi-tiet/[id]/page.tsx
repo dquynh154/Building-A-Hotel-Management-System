@@ -809,7 +809,7 @@ export default function BookingDetailPage() {
         booking?.trang_thai === "CONFIRMED" &&
         checkinTime &&
         checkoutTime &&
-        now >= checkinTime &&
+        // now >= checkinTime &&
         now <= checkoutTime;  // 👈 nằm TRONG khoảng mới được nhận
 
 
@@ -921,6 +921,8 @@ export default function BookingDetailPage() {
     };
 
     return (
+        <>
+            <title>Chi tiết hợp đồng</title>
         <div className="min-h-screen">
             <PageBreadcrumb_ct pageTitle={`Hợp đồng HD${String(bookingId).padStart(6, '0')}` + `- Hình thức : ${booking?.htLabel}`} />
             <div>
@@ -1656,6 +1658,6 @@ export default function BookingDetailPage() {
 
             </div>
         </div>
-
+        </>
     );
 }

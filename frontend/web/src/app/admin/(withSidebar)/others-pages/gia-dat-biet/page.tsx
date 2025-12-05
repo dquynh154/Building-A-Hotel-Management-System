@@ -109,6 +109,8 @@ export default function SpecialPricingPage() {
     };
 
     return (
+        <>
+            <title>Thiết lập giá</title>
         <div>
             <PageBreadcrumb pageTitle="Thiết lập giá" />
         <div className="space-y-4">
@@ -190,5 +192,6 @@ export default function SpecialPricingPage() {
 
         </div>
         </div>
+        </>
     );
 }

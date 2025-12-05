@@ -113,6 +113,8 @@ export default function BookingPage() {
         loadData();
     };
     return (
+        <>
+            <title>Đặt phòng</title>
         <div>
             <PageBreadcrumb pageTitle="Đặt phòng" />
 
@@ -194,5 +196,6 @@ export default function BookingPage() {
                 rooms={rooms} // ✅ để modal có danh sách phòng nếu muốn đổi
             />
         </div>
+        </>
     );
 }

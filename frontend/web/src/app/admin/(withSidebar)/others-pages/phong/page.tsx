@@ -213,6 +213,7 @@ export default function PhongPage() {
         })();
     }, [open]);
     return (
+        <>            <title>Loại phòng & Phòng</title>
         <div>
             <PageBreadcrumb pageTitle="Loại phòng & Phòng" />
             <div className="mb-4 flex items-center justify-between gap-2">
@@ -410,5 +411,6 @@ export default function PhongPage() {
             />
 
         </div>
+        </>
     );
 }

@@ -109,6 +109,8 @@ export default function RevenueReportPage() {
     console.log("dataset", lineChartData.datasets[0].data);
 
     return (
+        <>
+            <title>Báo cáo doanh thu</title>
         <div className="space-y-8">
 
             {/* Header */}
@@ -281,6 +283,7 @@ export default function RevenueReportPage() {
 
             </div>
         </div>
+        </>
     );
 }
 

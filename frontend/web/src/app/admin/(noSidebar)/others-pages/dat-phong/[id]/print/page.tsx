@@ -77,6 +77,8 @@ export default function BookingPrintPage() {
     const remain = Math.max(0, total - deposit);
 
     return (
+        <>
+            <title>Phiếu đặt phòng</title>
         <div className="mx-auto my-6 w-[840px] bg-white p-8 text-[13px] text-slate-800 print:m-0 print:w-full print:p-0">
             {/* Header */}
             <div className="mb-4 text-center">
@@ -212,5 +214,6 @@ export default function BookingPrintPage() {
         }
       `}</style>
         </div>
+        </>
     );
 }

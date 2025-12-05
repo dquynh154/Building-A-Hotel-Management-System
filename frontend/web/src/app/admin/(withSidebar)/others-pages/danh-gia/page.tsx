@@ -67,6 +67,8 @@ export default function DanhGiaPage() {
     const [rowPH, setRowPH] = useState<DanhGiaRow | null>(null);
 
     return (
+        <>
+            <title>Quản lý đánh giá</title>
         <div>
             <PageBreadcrumb pageTitle="Đánh giá của khách" />
 
@@ -129,5 +131,6 @@ export default function DanhGiaPage() {
                 onSaved={() => load(page)}
             />
         </div>
+        </>
     );
 }

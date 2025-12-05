@@ -44,6 +44,8 @@ export default function GuestStayPrintPage({ searchParams }: any) {
     }, []);
 
     return (
+        <>
+            <title>Báo cáo khách lưu trú</title>
         <div className="p-10 print:p-0 text-black max-w-4xl mx-auto">
 
             {/* Header */}
@@ -131,5 +133,6 @@ export default function GuestStayPrintPage({ searchParams }: any) {
                 <p>(Ký, ghi rõ họ tên)</p>
             </div>
         </div>
+        </>
     );
 }

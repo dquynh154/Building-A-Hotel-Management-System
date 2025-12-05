@@ -94,6 +94,8 @@ export default function InvoicePrintPage() {
     const invDate = inv.HDON_NGAYLAP ?? inv.HDON_TAO_LUC ?? inv.createdAt;
     const staff = inv.STAFF ?? null;
     return (
+        <>
+            <title>In hóa đơn</title>
         <div className="mx-auto my-6 w-[840px] bg-white p-8 text-[13px] text-slate-800 print:m-0 print:w-full print:p-0">
             {/* Header */} <div className="mb-4">
                 {/* Logo (trên cùng, canh giữa) */}
@@ -218,5 +220,6 @@ export default function InvoicePrintPage() {
         }
       `}</style>
         </div>
+        </>
     );
 }

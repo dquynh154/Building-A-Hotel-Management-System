@@ -78,6 +78,8 @@ export default function KetQuaThanhToanPage() {
                     : 'Đang xác thực thanh toán…';
 
     return (
+        <>
+            <title>Kết quả giao dịch</title>
         <div className="mx-auto max-w-3xl p-6 text-slate-800">
             <div className="rounded-xl border bg-white p-6 shadow-sm">
                 <h1
@@ -159,5 +161,6 @@ export default function KetQuaThanhToanPage() {
                 </div>
             </div>
         </div>
+        </>
     );
 }

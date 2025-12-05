@@ -191,6 +191,13 @@ const AppHeader: React.FC<AppHeaderProps> = ({ leftMode = "toggle", backHref = "
                 <span className="text-sm font-medium text-white"><a href="/admin/others-pages/dat-phong">Lễ Tân</a></span>
               </Button>
             </div>
+            <Link
+              href="/admin/others-pages/dat-truoc?status=needs_action"
+              className="block px-4 py-2 mt-3 text-sm font-medium text-center text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+            >
+              Xem tất cả đặt phòng chờ
+            </Link>
+
             {/* <!-- Dark Mode Toggler --> */}
             <ThemeToggleButton />
             {/* <!-- Dark Mode Toggler --> */}

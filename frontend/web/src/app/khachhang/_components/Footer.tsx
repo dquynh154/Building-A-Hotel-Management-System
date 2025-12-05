@@ -1,7 +1,7 @@
 export default function Footer() {
     return (
         <footer className="mt-24 border-t border-white/10 bg-black">
-            <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-12 md:grid-cols-3">
+            <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-12 md:grid-cols-4">
                 <div className="space-y-2 text-sm text-gray-300">
                     <div className="font-semibold uppercase tracking-widest text-white/90">Liên hệ</div>
                     <p> Khu II, Đ. 3 Tháng 2, Xuân Khánh, Ninh Kiều, Cần Thơ</p>
@@ -85,7 +85,11 @@ export default function Footer() {
 
                 <div>
                     <div className="mb-2 font-semibold uppercase tracking-widest text-white/90">Về Wendy</div>
-                    <p className="text-sm text-gray-300"></p>
+                    {/* <p className="text-sm text-gray-300"></p> */}
+                    <p className="text-m text-gray-300">GIỚI THIỆU</p>
+                    <p className="text-m text-gray-300">TIN TỨC</p>
+                    <p className="text-m text-gray-300">LIÊN HỆ</p>
+                    <p className="text-m text-gray-300">ĐÁNH GIÁ</p>
                 </div>
             </div>
         </footer>

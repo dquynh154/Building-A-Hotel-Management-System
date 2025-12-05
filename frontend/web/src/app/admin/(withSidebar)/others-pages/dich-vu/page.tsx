@@ -94,6 +94,8 @@ export default function DichVuPage() {
     }, [search]);
 
     return (
+        <>
+            <title>Quản lý dịch vụ</title>
         <div>
             <PageBreadcrumb pageTitle="Dịch vụ" />
 
@@ -165,5 +167,6 @@ export default function DichVuPage() {
                 onUpdated={() => loadServices(page)}
             />
         </div>
+        </>
     );
 }

@@ -1277,7 +1277,7 @@ pub.get('/danh-gia', async (req, res, next) => {
                             NHAN_VIEN: { select: { NV_HOTEN: true } },
                         },
                     },
-                },  
+                },
             }),
             prisma.dANH_GIA.count({ where })
         ]);
@@ -1385,6 +1385,101 @@ pub.get('/danh-gia/summary', async (req, res) => {
     }
 });
 
+
+pub.get('/pay/info/:hdon_ma', async (req, res) => {
+    try {
+        const hdon_ma = Number(req.params.hdon_ma);
+        if (!hdon_ma) return res.status(400).json({ error: "Thiếu mã hóa đơn" });
+
+        // 1) Lấy hóa đơn
+        const invoice = await prisma.hOA_DON.findUnique({
+            where: { HDON_MA: hdon_ma },
+            include: {
+                LIEN_KET: true,             // để lấy HDONG_MA
+            }
+        });
+
+        if (!invoice) return res.status(404).json({ error: "Không tìm thấy hóa đơn" });
+
+        // 2) Lấy hợp đồng tương ứng
+        const hdongLink = invoice.LIEN_KET[0];
+        if (!hdongLink)
+            return res.status(400).json({ error: "Hoá đơn chưa liên kết hợp đồng" });
+
+        const hopdong = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+            where: { HDONG_MA: hdongLink.HDONG_MA },
+            include: {
+                KHACH_HANG: true,
+            }
+        });
+
+        if (!hopdong)
+            return res.status(404).json({ error: "Không tìm thấy hợp đồng" });
+
+        // 3) Lấy bản ghi thanh toán mới nhất
+        const payment = await prisma.tHANH_TOAN.findFirst({
+            where: { HDON_MA: hdon_ma },
+            orderBy: { TT_MA: 'desc' }
+        });
+
+        // 4) Lấy danh sách loại phòng từ JSON của hóa đơn
+        const meta = invoice.HDON_CHITIET_JSON || {};
+        const items = meta.items || [];
+
+        // 5) Map sang format FE cần
+        const phongDaDat = [];
+
+        for (const it of items) {
+            const lp = await prisma.lOAI_PHONG.findUnique({
+                where: { LP_MA: it.lp_ma },
+                select: { LP_TEN: true }
+            });
+
+            phongDaDat.push({
+                LP_MA: it.lp_ma,
+                LOAI_PHONG: lp?.LP_TEN || '(Không rõ)',
+                SO_LUONG: it.qty,
+                DON_GIA: it.unit_price,
+                TONG_TIEN: it.subtotal
+            });
+        }
+
+        // 6) Gửi dữ liệu cho FE
+        return res.json({
+            HDON_MA: invoice.HDON_MA,
+            HDONG_MA: hopdong.HDONG_MA,
+
+            // Người thanh toán:
+            KH_TEN: hopdong.KHACH_HANG.KH_HOTEN,
+            KH_EMAIL: hopdong.KHACH_HANG.KH_EMAIL,
+            KH_SDT: hopdong.KHACH_HANG.KH_SDT,
+
+            // Thông tin ngày:
+            FROM: meta.from,
+            TO: meta.to,
+            NIGHTS: meta.nights,
+
+            // Danh sách phòng hiển thị trên UI:
+            PHONG_DA_DAT: phongDaDat,
+
+            // Tổng tiền – tiền cọc:
+            TONG_TIEN: invoice.HDON_TONG_TIEN,
+            TIEN_COC:  invoice.HDON_THANH_TIEN,
+
+            // Dữ liệu giao dịch:
+            TRANSACTION_ID: payment?.TT_MA_GIAO_DICH || null,
+            PAYMENT_STATUS: payment?.TT_TRANG_THAI_GIAO_DICH || 'INITIATED',
+            PAYMENT_AMOUNT: payment?.TT_SO_TIEN || meta.deposit_amount,
+
+            // Thời gian tạo giao dịch:
+            CREATED_AT: payment?.TT_NGAY_GIO || invoice.HDON_TAO_LUC,
+        });
+
+    } catch (err) {
+        console.error('❌ Lỗi /pay/info:', err);
+        res.status(500).json({ error: 'Lỗi hệ thống: ' + err.message });
+    }
+});
 
 
 

@@ -4,38 +4,75 @@ import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
+import api from "@/lib/api";
 
-type NotiItem = {
-  HDONG_MA: number;
-  HDONG_NGAYDAT: string;
-  HDONG_NGAYTRA: string;
-  HDONG_TIENCOCYECAU: string;
-  HDONG_TAO_LUC: string;
-  KHACH_HANG: { KH_MA: number; KH_HOTEN: string | null; KH_EMAIL: string | null; KH_SDT: string | null };
-  CT: { CTDP_ID: number; SO_LUONG: number; DON_GIA: number; TONG_TIEN: number; LOAI_PHONG: { LP_MA: number; LP_TEN: string } }[];
+type ServiceRequestItem = {
+  HDONG_MA: number; // Mã hợp đồng
+  PHONG_MA: number; // Mã phòng khách đang ở
+  CTSD_STT: number; // PK
+  DV_MA: number; // PK
+  CTDV_STT: number;
+  PHONG_TEN: string; // Tên phòng
+
+  DICH_VU_TEN: string; // Tên dịch vụ khách yêu cầu
+  KH_HOTEN: string; // Tên khách hàng
+  REQUEST_TIME: string; // Thời gian yêu cầu (dùng để hiển thị)
+  CTDV_TRANGTHAI: string;
 };
-
 export default function NotificationDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const [notifying, setNotifying] = useState(true);
-  const [items, setItems] = useState<NotiItem[]>([]);
+  const [items, setItems] = useState<ServiceRequestItem[]>([]);
   const [loading, setLoading] = useState(false);
 
   function toggleDropdown() { setIsOpen(!isOpen); }
   function closeDropdown() { setIsOpen(false); }
 
+  const handleAction = async (item: ServiceRequestItem, action: 'approve' | 'reject') => {
+    try {
+      setLoading(true);
+      const payload = {
+        HDONG_MA: item.HDONG_MA,
+        PHONG_MA: item.PHONG_MA,
+        CTSD_STT: item.CTSD_STT,
+        DV_MA: item.DV_MA,
+        CTDV_STT: item.CTDV_STT,
+      };
+
+      // ⚠️ THAY THẾ fetch BẰNG api.post
+      // API POST duyệt/từ chối: /requests/service/approve hoặc /requests/service/reject
+      const res = await api.post(`/requests/service/${action}`, payload);
+
+      if (res.status >= 200 && res.status < 300) {
+        // Xóa yêu cầu đã xử lý dựa trên CTDV_STT (vì nó là duy nhất trong mảng UI hiện tại)
+        setItems(prev =>
+          prev.map(i =>
+            i.CTDV_STT === item.CTDV_STT
+              ? { ...i, CTDV_TRANGTHAI: action === "approve" ? "ACTIVE" : "CANCELLED" }
+              : i
+          )
+        );
+
+      } else {
+        console.error("Xử lý thất bại:", res.data);
+        alert(`Xử lý yêu cầu ${action} thất bại: ${res.data.error || res.data.message}`);
+      }
+    } catch (error) {
+      console.error('Lỗi mạng/hệ thống:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => {
     if (!isOpen) return;
     (async () => {
       try {
         setLoading(true);
-        const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-        const res = await fetch(`${BASE}/admin/dat-truoc?status=needs_action&take=50`, { credentials: "include" });
-        const json = await res.json();
-        setItems(Array.isArray(json?.items) ? json.items : []);
-        setNotifying(false);
-      } catch {
-        /* noop */
+        const res = await api.get(`/requests/pending/service`);
+
+        setItems(res.data);
+      } catch (e) {
+        // ... xử lý lỗi
       } finally {
         setLoading(false);
       }
@@ -75,49 +112,68 @@ export default function NotificationDropdown() {
           </button>
         </div>
 
-        <ul className="flex flex-col h-auto overflow-y-auto custom-scrollbar">
-          {loading && <li className="p-3 text-sm text-gray-500">Đang tải…</li>}
-
+        <ul className="flex flex-col gap-2 max-h-[300px] overflow-y-auto">
+          {loading && (
+            <li className="p-4 text-center text-gray-500">Đang tải...</li>
+          )}
           {!loading && items.length === 0 && (
-            <li className="p-3 text-sm text-gray-500">Chưa có đặt phòng trực tuyến nào đang chờ.</li>
+            <li className="p-4 text-center text-gray-500">Không có yêu cầu dịch vụ nào đang chờ.</li>
           )}
 
-          {items.map((it) => {
-            const lpText = it.CT.map(c => `${c.LOAI_PHONG.LP_TEN} × ${c.SO_LUONG}`).join(' • ');
-            const name = it.KHACH_HANG?.KH_HOTEN || 'Khách vãng lai';
-            const tienCoc = Number(it.HDONG_TIENCOCYECAU || 0).toLocaleString('vi-VN');
-
+          {/* ✅ Cập nhật Render cho Yêu cầu Dịch vụ */}
+          {!loading && items.length > 0 && items.map((it) => {
             return (
-              <li key={it.HDONG_MA}>
-                <DropdownItem
-                  onItemClick={closeDropdown}
-                  className="flex gap-3 rounded-lg border-b border-gray-100 p-3 px-4.5 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5"
-                  href={`/admin/others-pages/dat-truoc?status=pending#hd_${it.HDONG_MA}`}                >
-                  <span className="relative block w-full h-10 rounded-full z-1 max-w-10">
-                    <Image width={40} height={40} src="/images/user/user-02.jpg" alt="User" className="w-full rounded-full" />
-                    <span className="absolute bottom-0 right-0 z-10 h-2.5 w-full max-w-2.5 rounded-full border-[1.5px] border-white bg-success-500 dark:border-gray-900"></span>
-                  </span>
-
-                  <span className="block">
-                    <span className="mb-1.5 block text-theme-sm text-gray-700 dark:text-gray-300">
-                      <b>{name}</b> vừa đặt phòng – cọc yêu cầu <b>{tienCoc}đ</b>
+              <li key={it.CTDV_STT}>
+                <div
+                  className="flex items-center gap-2.5 px-4 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5"
+                >
+                  <span className="block w-full">
+                    <span className="mb-1.5 block text-theme-sm text-gray-700 dark:text-gray-900">
+                      <b>{it.KH_HOTEN}</b> yêu cầu thêm dịch vụ <b>{it.DICH_VU_TEN}</b> vào phòng <b> {it.PHONG_TEN}</b> (Mã HĐ: {it.HDONG_MA})
                     </span>
                     <span className="block text-xs text-gray-500">
-                      {lpText || '—'}
+                      {new Date(it.REQUEST_TIME).toLocaleString('vi-VN')}
                     </span>
                   </span>
-                </DropdownItem>
+
+                  {it.CTDV_TRANGTHAI === "PENDING" ? (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleAction(it, "approve")}
+                        className="text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-700"
+                      >
+                        Chấp nhận
+                      </button>
+                      <button
+                        onClick={() => handleAction(it, "reject")}
+                        className="text-xs bg-rose-600 text-white px-2 py-1 rounded hover:bg-rose-700"
+                      >
+                        Từ chối
+                      </button>
+                    </div>
+                  ) : it.CTDV_TRANGTHAI === "ACTIVE" ? (
+                    <span className="text-green-600 text-xs font-semibold">
+                      Đã chấp nhận
+                    </span>
+                  ) : (
+                    <span className="text-red-600 text-xs font-semibold">
+                      Đã từ chối
+                    </span>
+                  )}
+                </div>
               </li>
             );
           })}
         </ul>
 
-        <Link
-          href="/admin/others-pages/dat-truoc?status=needs_action"
-          className="block px-4 py-2 mt-3 text-sm font-medium text-center text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-        >
-          Xem tất cả đặt phòng chờ
-        </Link>
+        <div className="mt-3 text-center">
+          <Link
+            href="/admin/others-pages/yeu-cau-dich-vu" // Giả sử một trang quản lý yêu cầu
+            className="block px-4 py-2 text-sm font-medium text-gray-700 bg-white border-t border-gray-300 rounded-b-lg hover:bg-gray-50"
+          >
+            Xem tất cả yêu cầu
+          </Link>
+        </div>
       </Dropdown>
     </div>
   );

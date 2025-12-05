@@ -52,6 +52,8 @@ export default function TimesPage() {
     };
 
     return (
+        <>
+            <title>Quản lý thời điểm</title>
         <div>
              <PageBreadcrumb pageTitle="Quản lý thời điểm" />
         <div className="space-y-4">
@@ -142,5 +144,6 @@ export default function TimesPage() {
             )}
         </div>
         </div>
+        </>
     );
 }

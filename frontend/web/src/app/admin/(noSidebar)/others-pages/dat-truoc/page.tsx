@@ -30,6 +30,8 @@ export default function AdminDatTruocPage() {
     }, []);
 
     return (
+        <>
+            <title>Đặt trước trực tuyến</title>
         <div className="mx-auto max-w-6xl p-6">
             <h1 className="mb-4 text-2xl font-bold">Đặt phòng trực tuyến đang chờ</h1>
             {loading && <div>Đang tải…</div>}
@@ -76,5 +78,6 @@ export default function AdminDatTruocPage() {
                 ))}
             </div>
         </div>
+        </>
     );
 }

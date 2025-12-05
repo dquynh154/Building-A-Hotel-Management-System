@@ -6,6 +6,7 @@ import { useGuest } from '@/hooks/useGuest';
 import BookingDetailModal from '@/components/ui/modal/BookingDetaiModal';
 import ReviewModal from '@/components/ui/modal/ReviewModal';
 import { useRouter } from 'next/navigation';
+import Pagination from '@/components/tables/Pagination';
 
 type CTLine = {
     CTDP_ID: number;
@@ -52,7 +53,36 @@ const statusBadge = (s: Row['HDONG_TRANG_THAI']) => {
 };
 
 export default function QuanLyDatPhongPage() {
+    const [page, setPage] = useState(1);
+    const pageSize = 5;
     const [rows, setRows] = useState<Row[]>([]);
+    const [keyword, setKeyword] = useState("");
+    const [statusFilter, setStatusFilter] =
+        useState<"ALL" | Row["HDONG_TRANG_THAI"]>("ALL");
+
+    // 1) Lọc theo trạng thái
+    const filteredByStatus = useMemo(() => {
+        if (statusFilter === "ALL") return rows;
+        return rows.filter(r => r.HDONG_TRANG_THAI === statusFilter);
+    }, [rows, statusFilter]);
+
+    // 2) Lọc theo từ khóa (mã hợp đồng)
+    const filteredRows = useMemo(() => {
+        if (!keyword.trim()) return filteredByStatus;
+        return filteredByStatus.filter(r =>
+            r.HDONG_MA.toString().includes(keyword.trim())
+        );
+    }, [filteredByStatus, keyword]);
+
+    // 3) Tính tổng số trang theo kết quả sau khi lọc
+    const totalPages = Math.ceil(filteredRows.length / pageSize);
+
+    // 4) Phân trang
+    const paginatedRows = useMemo(() => {
+        const start = (page - 1) * pageSize;
+        return filteredRows.slice(start, start + pageSize);
+    }, [filteredRows, page, pageSize]);
+
     const [loading, setLoading] = useState(true);
     const { guest, loading: guestLoading } = useGuest();
     const [detailOpen, setDetailOpen] = useState(false);
@@ -100,9 +130,12 @@ export default function QuanLyDatPhongPage() {
     }, [guest]);
 
     return (
+        <>
+         <title>Đơn đặt phòng của tôi</title>
+        
         <div className="mx-auto max-w-5xl px-4 py-8">
             <div className="rounded-2xl border bg-white shadow-sm">
-                <div className="flex items-center justify-between border-b px-6 py-4">
+                <div className="flex items-center justify-center border-b px-6 py-4">
                     <h1 className="text-xl md:text-2xl font-bold text-slate-900">
                         Đơn đặt phòng của tôi
                     </h1>
@@ -110,6 +143,50 @@ export default function QuanLyDatPhongPage() {
                 </div>
 
                 <div className="p-6">
+                    {/* Search + Filter */}
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+
+                        {/* Tìm kiếm */}
+                        <input
+                            value={keyword}
+                            onChange={(e) => {
+                                setKeyword(e.target.value);
+                                setPage(1);  // reset về trang đầu
+                            }}
+                            placeholder="Tìm theo mã hợp đồng..."
+                            className="border rounded-lg px-3 py-2 w-full md:w-72 text-slate-700 dark:text-slate-200 
+             placeholder-slate-400 dark:placeholder-slate-500"
+                        />
+
+                        {/* Bộ lọc trạng thái */}
+                        <div className="flex gap-2 overflow-x-auto py-1">
+                            {[
+                                { key: "ALL", label: "Tất cả" },
+                                { key: "PENDING", label: "Chờ cọc" },
+                                { key: "CONFIRMED", label: "Đã cọc" },
+                                { key: "CHECKED_IN", label: "Đang ở" },
+                                { key: "CHECKED_OUT", label: "Đã trả" },
+                                { key: "CANCELLED", label: "Hủy" },
+                                { key: "NO_SHOW", label: "Vắng mặt" }
+                            ].map(item => (
+                                <button
+                                    key={item.key}
+                                    onClick={() => {
+                                        setStatusFilter(item.key as any);
+                                        setPage(1); // reset về trang đầu khi filter
+                                    }}
+                                    className={`px-3 py-1.5 rounded-full border text-sm whitespace-nowrap ${statusFilter === item.key
+                                            ? "bg-rose-600 text-white border-rose-600"
+                                            : "bg-white text-slate-600 hover:bg-slate-100"
+                                        }`}
+                                >
+                                    {item.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+
                     {loading && (
                         <div className="rounded-lg border bg-white p-4 text-sm text-slate-600">
                             Đang tải danh sách đơn đặt phòng…
@@ -130,9 +207,11 @@ export default function QuanLyDatPhongPage() {
                         </div>
                     )}
 
+
                     {/* Danh sách đơn */}
                     <div className="space-y-4">
-                        {rows.map((r) => {
+                        {paginatedRows.map((r, index) => {
+                            const stt = (page - 1) * pageSize + (index + 1);
                             const badge = statusBadge(r.HDONG_TRANG_THAI);
                             const depositAmount =
                                 (r.DEPOSIT_INVOICE?.HDON_THANH_TIEN ??
@@ -143,9 +222,9 @@ export default function QuanLyDatPhongPage() {
 
                             const totalAmount = Number(r.HDONG_TONGTIENDUKIEN || 0);
                             const remain = Math.max(totalAmount - depositAmount, 0);
-
+                            const email = guest?.KH_EMAIL || '';
                             const payHref = canPay
-                                ? `/khachhang/pay-mock?hdon_ma=${r.DEPOSIT_INVOICE?.HDON_MA}&amount=${depositAmount}&return=/khachhang/quan-ly-dat-phong`
+                                ? `/khachhang/pay-mock?hdon_ma=${r.DEPOSIT_INVOICE?.HDON_MA}&amount=${depositAmount}&email=${email}&return=/khachhang/quan-ly-dat-phong`
                                 : undefined;
 
                             const detailHref = `/khachhang/dat-phong/chi-tiet?hd=${r.HDONG_MA}`;
@@ -162,7 +241,7 @@ export default function QuanLyDatPhongPage() {
                                     {/* Header */}
                                     <div className="flex items-center justify-between mb-1">
                                         <div className="font-semibold text-slate-900">
-                                            MÃ HỢP ĐỒNG: HD{r.HDONG_MA.toString().padStart(6, "0")}
+                                            {stt}. MÃ HỢP ĐỒNG: HD{r.HDONG_MA.toString().padStart(6, "0")}
                                         </div>
                                         <span
                                             className={`rounded-full px-3 py-1 text-xs font-semibold ${badge.cls}`}
@@ -334,6 +413,13 @@ export default function QuanLyDatPhongPage() {
                             );
                         })}
                     </div>
+                    <div className="mt-6 flex justify-center">
+                        <Pagination
+                            currentPage={page}
+                            totalPages={totalPages}
+                            onPageChange={(p) => setPage(p)}
+                        />
+                    </div>
                 </div>
             </div>
             <BookingDetailModal
@@ -365,6 +451,7 @@ export default function QuanLyDatPhongPage() {
             />
 
         </div>
+        </>
     );
 
 

@@ -59,7 +59,7 @@ export default function ThongTinLuuTruPage() {
             .join(',');
     }, [selMap]);
 
-    const depositPercent = 50;
+    const depositPercent = 20;
     const deposit = Math.round(grandTotal * depositPercent / 100); // VND, làm tròn đơn giản
 
 
@@ -201,6 +201,8 @@ export default function ThongTinLuuTruPage() {
     });
 
     return (
+        <>
+            <title>Thông tin lưu trú</title>
         <div className="mx-auto max-w-6xl px-4 py-6 text-slate-800">
             {/* KHUNG BỌC CHUNG */}
             <div className="rounded-2xl border bg-white">
@@ -563,5 +565,6 @@ export default function ThongTinLuuTruPage() {
                 </div>
             </div>
         </div>
+        </>
     );
 }

@@ -6,6 +6,7 @@ import DatePicker from '@/components/form/date-picker';
 import { useGuest } from '@/hooks/useGuest';
 import { clearToken } from '@/lib/auth-guest';
 import { Clock, BedDouble, Window, KeyRound, Dog, ShowerHead, Wifi, Tv, MailIcon, Phone, Map } from "@/icons";
+import ChatWidget from '@/components/chatbot/ChatWidget';
 
 const ymd = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -247,6 +248,10 @@ export default function Home() {
 
 
     return (
+        <>
+            <title>Trang chủ</title>
+         <ChatWidget /> 
+       
         <div className="min-h-screen bg-[#FDFCF9] text-white">
             {/* Top bar */}
 
@@ -672,5 +677,6 @@ export default function Home() {
 
 
         </div>
+        </>
     );
 }

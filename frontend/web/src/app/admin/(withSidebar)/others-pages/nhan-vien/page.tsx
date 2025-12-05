@@ -72,6 +72,7 @@ export default function NhanVienPage() {
     const [editId, setEditId] = useState<number | null>(null);
 
     return (
+        <><title>Quản lý Nhân viên</title>
         <div>
             <PageBreadcrumb pageTitle="Nhân viên" />
 
@@ -130,5 +131,6 @@ export default function NhanVienPage() {
             <NhanVienCreateModal open={openCreate} onClose={() => setOpenCreate(false)} onCreated={() => { setPage(1); loadNV(1); }} />
             <NhanVienEditModal open={openEdit} id={editId} onClose={() => setOpenEdit(false)} onUpdated={() => loadNV(page)} />
         </div>
+        </>
     );
 }
