@@ -2,7 +2,7 @@
 const r = require('express').Router();
 const {
     getBookingFull, searchProducts, addService, updateService, removeService, addItemToExisting, removeRoom, changeRoom, pendingRooms, addRoomForCheckedIn, markNoShow,
-    adjustCheckout, applyLateFee
+    adjustCheckout, applyLateFee, adjustCheckin, applyEarlyCheckinFee
 } = require('../controllers/booking_pos');
 
 // Chi tiết HĐ + các dòng
@@ -21,10 +21,11 @@ r.delete('/bookings/:id/rooms/:phongId', removeRoom);
 r.post('/bookings/:id/change-room', changeRoom);
 r.get('/bookings/:id/pending-rooms', pendingRooms);
 r.post('/bookings/:id/no-show',markNoShow)
+
 r.post('/bookings/:id/adjust-checkout', adjustCheckout);
 // r.post('/bookings/:id/extend-hour', extendStayHour);
 // routes/booking_pos.js
 r.post('/bookings/:id/apply-late-fee', applyLateFee);
-
-
+r.post('/bookings/:id/adjust-checkin', adjustCheckin); 
+r.post('/bookings/:id/apply-early-checkin-fee', applyEarlyCheckinFee);
 module.exports = r;

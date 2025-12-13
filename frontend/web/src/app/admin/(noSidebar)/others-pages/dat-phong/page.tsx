@@ -116,7 +116,7 @@ export default function BookingPage() {
         <>
             <title>Đặt phòng</title>
         <div>
-            <PageBreadcrumb pageTitle="Đặt phòng" />
+            {/* <PageBreadcrumb pageTitle="Đặt phòng" /> */}
 
             <BookingToolbar
                 mode={mode}
@@ -129,7 +129,7 @@ export default function BookingPage() {
             />
 
             <ComponentCard title={
-                mode === 'board' ? 'Sơ đồ phòng (Board)' : mode === 'list' ? 'Danh sách đặt phòng' : 'Lịch đặt phòng'
+                mode === 'board' ? 'Sơ đồ phòng' : mode === 'list' ? 'Danh sách đặt phòng' : 'Lịch đặt phòng'
             }>
                 {mode === 'list' && (
                     <div className="mb-4 flex items-center gap-3">

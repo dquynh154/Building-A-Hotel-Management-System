@@ -31,7 +31,18 @@ export default function SignInForm() {
       // lưu token để Protected gửi Authorization: Bearer <token>
       localStorage.setItem("token", res.data.token);
       // vào dashboard (nếu nhánh admin là folder "admin" thì dùng "/admin")
-      router.replace("/admin");
+      const role = res.data.staff?.NV_CHUCVU;
+      localStorage.setItem("role", role);
+
+      if (role === "Lễ Tân") {
+        router.replace("/admin/others-pages/dat-phong");
+      } else if (role === "Admin") {
+        router.replace("/admin/others-pages/bao-cao/doanh-thu");
+      } else {
+        // fallback – gần như không bao giờ chạy
+        router.replace("/admin");
+      }
+
     } catch (e: any) {
       setErr(e?.response?.data?.message || "Đăng nhập thất bại");
     } finally {

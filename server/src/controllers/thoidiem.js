@@ -57,7 +57,7 @@ const thoiDiem = crud('tHOI_DIEM', {
             const from = toDate(special.TD_NGAY_BAT_DAU);
             const to = toDate(special.TD_NGAY_KET_THUC);
             if (!(from && to) || from > to) {
-                const err = new Error('SPECIAL: khoảng ngày không hợp lệ');
+                const err = new Error('Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu');
                 err.status = 400; throw err;
             }
             // validate chồng lấn (không có exclude vì đang tạo mới)
@@ -117,7 +117,7 @@ const thoiDiem = crud('tHOI_DIEM', {
             const from = toDate(special?.TD_NGAY_BAT_DAU);
             const to = toDate(special?.TD_NGAY_KET_THUC);
             if (!(from && to) || from > to) {
-                const err = new Error('SPECIAL: khoảng ngày không hợp lệ');
+                const err = new Error('Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu');
                 err.status = 400; throw err;
             }
 

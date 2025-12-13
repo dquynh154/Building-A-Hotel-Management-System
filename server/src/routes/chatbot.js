@@ -10,9 +10,18 @@ const { handleDepositPaymentUpdate } = require('../services/depositPaymentServic
 const router = express.Router();
 
 // ===== Khởi tạo client Gemini mới =====
-const client = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-});
+const API_KEYS = [
+    process.env.GEMINI_API_KEY_1,
+    process.env.GEMINI_API_KEY_2,
+    process.env.GEMINI_API_KEY_3,
+    // process.env.GEMINI_API_KEY_4,
+    process.env.GEMINI_API_KEY_5,
+].filter(key => key); // Lọc bỏ Key rỗng (nếu có)
+
+// ===== HÀM KHỞI TẠO CLIENT TẠM THỜI VỚI KEY CỤ THỂ =====
+function createGeminiClient(apiKey) {
+    return new GoogleGenAI({ apiKey });
+}
 
 // ===== Model ID =====
 const MODEL_ID = "gemini-2.5-flash";
@@ -20,31 +29,112 @@ const MODEL_ID = "gemini-2.5-flash";
 console.log("✅ Chatbot route loaded - using Gemini 2.5 Flash API (v1.29.0)");
 const MAX_RETRIES = 3;
 const DELAY_MS = 2000; // 2 giây chờ ban đầu
+// ===== LOGIC QUẢN LÝ KEY LUÂN PHIÊN =====
 
+const KEY_MANAGER = {
+    currentIndex: 0,
+    keys: API_KEYS,
+    // Lưu trữ các key bị chặn lỗi 429 RPD (Reset hàng ngày)
+    blockedKeys: new Set(),
+};
+
+/**
+ * Trả về Key API tiếp theo theo thứ tự Round-Robin
+ * Loại trừ các key đã bị đánh dấu là bị chặn lỗi RPD (429)
+ */
+function getNextAvailableKey() {
+    const totalKeys = KEY_MANAGER.keys.length;
+    if (totalKeys === 0) {
+        throw new Error("Không tìm thấy Khóa API nào trong cấu hình.");
+    }
+
+    // Vòng lặp tối đa N lần (N là số Key) để tìm Key khả dụng
+    for (let i = 0; i < totalKeys; i++) {
+        const key = KEY_MANAGER.keys[KEY_MANAGER.currentIndex];
+        KEY_MANAGER.currentIndex = (KEY_MANAGER.currentIndex + 1) % totalKeys; // Chuyển sang Key tiếp theo
+
+        // Kiểm tra xem Key này có đang bị chặn không
+        if (!KEY_MANAGER.blockedKeys.has(key)) {
+            return key; // Trả về Key chưa bị chặn
+        }
+    }
+
+    // Nếu vòng lặp kết thúc mà không tìm thấy Key nào (tất cả đều bị chặn RPD)
+    console.error("❌ TẤT CẢ KEY API ĐỀU ĐÃ BỊ CHẶN RPD. HỆ THỐNG KHÔNG THỂ GỌI API.");
+    return null; // Trả về null để báo lỗi
+}
+
+/**
+ * Báo cáo một Key đã gặp lỗi RPD (429) để hệ thống không sử dụng Key này trong ngày.
+ * Note: Key này sẽ cần được xóa khỏi blockedKeys vào ngày hôm sau (Manual hoặc cần Logic phức tạp hơn).
+ */
+function blockKeyForDay(key) {
+    if (key) {
+        KEY_MANAGER.blockedKeys.add(key);
+        console.warn(`⚠️ Key ${key.substring(0, 5)}... đã bị chặn RPD và sẽ không được sử dụng tiếp trong hôm nay.`);
+    }
+}
 /**
  * Gọi API Gemini với cơ chế thử lại (retry) khi gặp lỗi 503/429.
  */
+/**
+ * Gọi API Gemini với cơ chế thử lại (retry) và Luân phiên Key khi gặp lỗi 503/429.
+ */
 async function callGeminiWithRetry(params) {
+    let currentKey = getNextAvailableKey();
+    if (!currentKey) {
+        throw new Error("API Gemini thất bại: Tất cả các Key đã bị chặn RPD.");
+    }
+
+    const client = createGeminiClient(currentKey); // Khởi tạo Client với Key hiện tại
+
     for (let i = 0; i < MAX_RETRIES; i++) {
         try {
-            console.log(`🌀 Thử gọi Gemini API (Lần ${i + 1}/${MAX_RETRIES})...`);
-            // Gọi hàm API chính
+            console.log(`🌀 Thử gọi Gemini API (Key: ${currentKey.substring(0, 5)}..., Lần ${i + 1}/${MAX_RETRIES})...`);
+
             const result = await client.models.generateContent(params);
-            return result; // Thành công, thoát khỏi vòng lặp và trả về kết quả
+            return result; // Thành công
 
         } catch (error) {
-            // Kiểm tra lỗi 503 (Overloaded) hoặc 429 (Rate Limit)
-            if (error.status === 503 || error.status === 429) {
+
+            if (error.status === 429) {
+                // Lỗi 429 (Rate Limit) -> Giới hạn RPD hoặc RPM đã hết
+                console.warn(`⚠️ Key ${currentKey.substring(0, 5)}... bị giới hạn (${error.status}).`);
+
+                // Nếu đây là lần thử đầu tiên (i=0) và gặp 429, ta có thể giả định đó là giới hạn RPD đã hết
+                // (Vì nếu chỉ là RPM, hàm retry sau 2 giây sẽ giải quyết).
+                // Chúng ta sẽ block Key này và thử Key tiếp theo NGAY LẬP TỨC.
+                if (i === 0) {
+                    blockKeyForDay(currentKey); // Đánh dấu Key này bị chặn RPD
+
+                    currentKey = getNextAvailableKey(); // Lấy Key tiếp theo
+                    if (!currentKey) {
+                        // Nếu hết Key, thoát ngay.
+                        throw new Error("API Gemini thất bại: Tất cả các Key đã bị chặn RPD.");
+                    }
+
+                    // Khởi tạo client mới với Key tiếp theo, và thiết lập lại biến đếm i
+                    client = createGeminiClient(currentKey);
+                    i = -1; // Đặt i=-1 để khi chạy vòng lặp i++ sẽ là i=0 (thử lại)
+                    continue; // Quay lại vòng lặp với Key mới
+
+                } else {
+                    // Nếu đã thử retry nhiều lần mà vẫn 429, chờ và thử lại
+                    console.warn(`⚠️ Đang chờ ${DELAY_MS * (i + 1)}ms trước khi thử lại...`);
+                    await new Promise(resolve => setTimeout(resolve, DELAY_MS * (i + 1)));
+                }
+
+            } else if (error.status === 503) {
+                // Lỗi 503 (Overloaded) -> Thử lại với Key cũ (vì lỗi này là lỗi server tạm thời)
                 console.warn(`⚠️ Gemini bị quá tải (${error.status}). Đang chờ ${DELAY_MS * (i + 1)}ms trước khi thử lại...`);
-                // Chờ đợi (delay) tăng dần
                 await new Promise(resolve => setTimeout(resolve, DELAY_MS * (i + 1)));
             } else {
-                // Nếu là lỗi khác (ví dụ: 400 Bad Request, 401 Unauthorized), thì ném lỗi ngay
+                // Lỗi khác
                 throw error;
             }
         }
     }
-    // Nếu thất bại sau tất cả các lần thử
+    // Thất bại sau tất cả các lần thử
     throw new Error("API Gemini vẫn bị quá tải sau nhiều lần thử. Vui lòng thử lại sau.");
 }
 

@@ -71,6 +71,7 @@ import Tv from "./Tv.svg";
 import Phone from "./phone.svg";
 import Map from "./map.svg";
 import Print from "./print.svg"
+import Star from "./star.svg";
 export {
   DownloadIcon,
   BellIcon,
@@ -144,5 +145,6 @@ export {
   Tv,
   Phone,
   Map,
-  Print
+  Print,
+  Star,
 };

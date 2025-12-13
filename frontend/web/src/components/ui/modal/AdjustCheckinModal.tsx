@@ -2,24 +2,32 @@
 
 import { useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
-import DatePicker from '@/components/form/date-picker';
+import DatePicker from "@/components/form/date-picker";
+
 type Mode = "DAY" | "HOUR";
 
 interface Props {
     open: boolean;
     bookingId: number | null | undefined;
+
     mode: Mode; // "DAY" hoặc "HOUR"
-    currentFrom?: string | null;
-    currentTo?: string | null;
+    currentFrom?: string | null;  // ngày/giờ NHẬN HIỆN TẠI
+    currentTo?: string | null;    // ngày/giờ TRẢ (chỉ để hiển thị dải)
+
     onClose: () => void;
-    onChanged?: (newCheckout: string) => void;
+    onChanged?: (newCheckin: string) => void;
 }
 
+// =======================
+// Helpers giống file gốc
+// =======================
 function toInputDate(iso?: string | null) {
     if (!iso) return "";
     const d = new Date(iso);
     if (isNaN(+d)) return "";
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+        d.getDate()
+    ).padStart(2, "0")}`;
 }
 
 function toInputDateTimeLocal(iso?: string | null) {
@@ -34,35 +42,33 @@ function toInputDateTimeLocal(iso?: string | null) {
     return `${y}-${m}-${day}T${hh}:${mm}`;
 }
 
-export default function AdjustReturnDateModal({
+export default function AdjustCheckinModal({
     open,
     bookingId,
     mode,
-    currentFrom,
-    currentTo,
+
+    currentFrom,     // ngày giờ cũ của check-in
+    currentTo,       // chỉ dùng để hiển thị
     onClose,
     onChanged,
 }: Props) {
     const [submitting, setSubmitting] = useState(false);
 
-    // theo ngày
-    const [newDate, setNewDate] = useState("");
-
-    // theo giờ
-    const [newDateTime, setNewDateTime] = useState("");
+    const [newDate, setNewDate] = useState("");          // DAY mode
+    const [newDateTime, setNewDateTime] = useState("");  // HOUR mode
     const [pickerDate, setPickerDate] = useState<Date | undefined>(undefined);
 
     useEffect(() => {
         if (!open) return;
 
         if (mode === "DAY") {
-            if (currentTo) {
-                const d = new Date(currentTo);
-                setPickerDate(d);                // ⭐ quan trọng
-                setNewDate(toInputDate(currentTo));
+            if (currentFrom) {
+                const d = new Date(currentFrom);
+                setPickerDate(d);   // ⭐ giữ ngày hiển thị trong DatePicker
+                setNewDate(toInputDate(currentFrom));
             }
         } else {
-            setNewDateTime(toInputDateTimeLocal(currentTo || null));
+            setNewDateTime(toInputDateTimeLocal(currentFrom || null));
         }
     }, [open, mode]);
 
@@ -79,38 +85,37 @@ export default function AdjustReturnDateModal({
 
         try {
             setSubmitting(true);
-            let newCheckoutIso = "";
+            let newCheckinIso = "";
 
             if (mode === "DAY") {
-                const d = new Date(`${newDate}T12:00:00`);
+                const d = new Date(`${newDate}T14:00:00`);
                 if (isNaN(+d)) {
                     alert("Ngày mới không hợp lệ.");
                     return;
                 }
-                newCheckoutIso = d.toISOString();
+                newCheckinIso = d.toISOString();
             } else {
                 const d = new Date(newDateTime);
                 if (isNaN(+d)) {
                     alert("Thời gian mới không hợp lệ.");
                     return;
                 }
-                newCheckoutIso = d.toISOString();
+                newCheckinIso = d.toISOString();
             }
 
             // ============================
-            //  CALL API mới: adjust-checkout
+            //   CALL API adjust-checkin
             // ============================
-            const res = await api.post(`/bookings/${bookingId}/adjust-checkout`, {
-                newCheckout: newCheckoutIso,
+            const res = await api.post(`/bookings/${bookingId}/adjust-checkin`, {
+                newCheckin: newCheckinIso,
             });
 
-            const serverNew = res.data?.newCheckout || newCheckoutIso;
+            const serverNew = res.data?.newCheckin || newCheckinIso;
 
             onChanged?.(serverNew);
             onClose();
         } catch (err: any) {
-            // console.error(err);
-            alert(err?.response?.data?.message || "Điều chỉnh thời gian thất bại.");
+            alert(err?.response?.data?.message || "Điều chỉnh thời gian nhận thất bại.");
         } finally {
             setSubmitting(false);
         }
@@ -130,10 +135,11 @@ export default function AdjustReturnDateModal({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="w-full max-w-md rounded-xl bg-white shadow-lg">
+
                 {/* Header */}
                 <div className="flex items-center justify-between border-b px-4 py-3">
                     <h2 className="text-xl font-semibold text-slate-800">
-                        Điều chỉnh thời gian trả phòng
+                        Điều chỉnh thời gian nhận phòng
                     </h2>
                     <button
                         onClick={onClose}
@@ -155,18 +161,20 @@ export default function AdjustReturnDateModal({
                     {mode === "DAY" ? (
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-slate-600">
-                                Chọn ngày trả mới
+                                Chọn ngày nhận mới
                             </label>
 
                             <DatePicker
-                                id="checkout-date-picker"
+                                id="checkin-date-picker"
                                 mode="single"
-                                defaultDate={pickerDate}   
-                                onChange={(selectedDates: any[]) => {
-                                    if (!selectedDates || !selectedDates[0]) return;
-                                    const d = selectedDates[0];
-                                    setPickerDate(d);  
-                                    // Chuyển về YYYY-MM-DD
+                                defaultDate={pickerDate}
+                                onChange={(dates: any[], _dateStr: string, _instance: any) => {
+                                    if (!dates || !dates[0]) return;
+                                    const d = dates[0] as Date;
+
+                                    // ⭐ CẬP NHẬT lại pickerDate để defaultDate = ngày mới
+                                    setPickerDate(d);
+
                                     const y = d.getFullYear();
                                     const m = String(d.getMonth() + 1).padStart(2, "0");
                                     const day = String(d.getDate()).padStart(2, "0");
@@ -174,17 +182,17 @@ export default function AdjustReturnDateModal({
                                     setNewDate(`${y}-${m}-${day}`);
                                 }}
                                 placeholder="Chọn ngày"
-                                allowPastDates={true}  // cho phép chọn ngày cũ nếu cần
+                                allowPastDates={true}
                             />
 
                             <p className="text-sm text-slate-500">
-                                Giờ trả mặc định: <b>12:00 trưa</b>.
+                                Giờ nhận mặc định: <b>14:00 </b>.
                             </p>
                         </div>
                     ) : (
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-slate-600">
-                                Chọn thời điểm trả mới
+                            <label className="block text-xs font-medium text-slate-600">
+                                Chọn thời điểm nhận mới
                             </label>
                             <input
                                 type="datetime-local"
@@ -194,7 +202,7 @@ export default function AdjustReturnDateModal({
                                 onChange={(e) => setNewDateTime(e.target.value)}
                             />
                             <p className="text-xs text-slate-500">
-                                Hệ thống sẽ tính thêm/giảm tiền theo tổng số giờ thực tế.
+                                Hệ thống sẽ tính thêm/giảm thời gian theo giờ.
                             </p>
                         </div>
                     )}

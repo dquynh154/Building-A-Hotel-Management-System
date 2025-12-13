@@ -19,6 +19,7 @@ import {
   Room,
   Service,
   Staff,
+  Star
 } from "../icons/index";
 // import SidebarWidget from "./SidebarWidget";
 
@@ -32,7 +33,7 @@ type NavItem = {
 const navItems: NavItem[] = [
   {
     icon: <GridIcon />,
-    name: "Bảng điều khiển",
+    name: "Báo cáo",
     subItems: [
       { name: "Báo cáo doanh thu", path: "/admin/others-pages/bao-cao/doanh-thu", pro: false },
       { name: "Báo cáo khách lưu trú", path: "/admin/others-pages/bao-cao/khach-luu-tru", pro: false },
@@ -57,7 +58,7 @@ const navItems: NavItem[] = [
     path: "/admin/others-pages/nhan-vien",
   },
   {
-    icon: <Staff />,
+    icon: <Star />,
     name: "Quản lý đánh giá",
     path: "/admin/others-pages/danh-gia",
   },
@@ -72,55 +73,55 @@ const navItems: NavItem[] = [
     path: "/admin/others-pages/profile",
   },
 
-  {
-    name: "Forms",
-    icon: <ListIcon />,
-    subItems: [{ name: "Form Elements", path: "/admin/others-pages/forms/form-elements", pro: false }],
-  },
-  {
-    name: "Tables",
-    icon: <TableIcon />,
-    subItems: [{ name: "Basic Tables", path: "/admin/others-pages/tables/basic-tables", pro: false }],
-  },
-  {
-    name: "Pages",
-    icon: <PageIcon />,
-    subItems: [
-      { name: "Blank Page", path: "/admin/others-pages/blank", pro: false },
-      { name: "404 Error", path: "/error-404", pro: false },
-    ],
-  },
+  // {
+  //   name: "Forms",
+  //   icon: <ListIcon />,
+  //   subItems: [{ name: "Form Elements", path: "/admin/others-pages/forms/form-elements", pro: false }],
+  // },
+  // {
+  //   name: "Tables",
+  //   icon: <TableIcon />,
+  //   subItems: [{ name: "Basic Tables", path: "/admin/others-pages/tables/basic-tables", pro: false }],
+  // },
+  // {
+  //   name: "Pages",
+  //   icon: <PageIcon />,
+  //   subItems: [
+  //     { name: "Blank Page", path: "/admin/others-pages/blank", pro: false },
+  //     { name: "404 Error", path: "/error-404", pro: false },
+  //   ],
+  // },
 ];
 
 const othersItems: NavItem[] = [
-  {
-    icon: <PieChartIcon />,
-    name: "Charts",
-    subItems: [
-      { name: "Line Chart", path: "/admin/others-pages/chart/line-chart", pro: false },
-      { name: "Bar Chart", path: "/admin/others-pages/chart/bar-chart", pro: false },
-    ],
-  },
-  {
-    icon: <BoxCubeIcon />,
-    name: "UI Elements",
-    subItems: [
-      { name: "Alerts", path: "/admin/ui-elements/alerts", pro: false },
-      { name: "Avatar", path: "/admin/ui-elements/avatars", pro: false },
-      { name: "Badge", path: "/admin/ui-elements/badge", pro: false },
-      { name: "Buttons", path: "/admin/ui-elements/buttons", pro: false },
-      { name: "Images", path: "/admin/ui-elements/images", pro: false },
-      { name: "Videos", path: "/admin/ui-elements/videos", pro: false },
-    ],
-  },
-  {
-    icon: <PlugInIcon />,
-    name: "Authentication",
-    subItems: [
-      { name: "Sign In", path: "/full-width-pages/auth/signin", pro: false },
-      { name: "Sign Up", path: "/full-width-pages/auth/signup", pro: false },
-    ],
-  },
+  // {
+  //   icon: <PieChartIcon />,
+  //   name: "Charts",
+  //   subItems: [
+  //     { name: "Line Chart", path: "/admin/others-pages/chart/line-chart", pro: false },
+  //     { name: "Bar Chart", path: "/admin/others-pages/chart/bar-chart", pro: false },
+  //   ],
+  // },
+  // {
+  //   icon: <BoxCubeIcon />,
+  //   name: "UI Elements",
+  //   subItems: [
+  //     { name: "Alerts", path: "/admin/ui-elements/alerts", pro: false },
+  //     { name: "Avatar", path: "/admin/ui-elements/avatars", pro: false },
+  //     { name: "Badge", path: "/admin/ui-elements/badge", pro: false },
+  //     { name: "Buttons", path: "/admin/ui-elements/buttons", pro: false },
+  //     { name: "Images", path: "/admin/ui-elements/images", pro: false },
+  //     { name: "Videos", path: "/admin/ui-elements/videos", pro: false },
+  //   ],
+  // },
+  // {
+  //   icon: <PlugInIcon />,
+  //   name: "Authentication",
+  //   subItems: [
+  //     { name: "Sign In", path: "/full-width-pages/auth/signin", pro: false },
+  //     { name: "Sign Up", path: "/full-width-pages/auth/signup", pro: false },
+  //   ],
+  // },
 ];
 
 const AppSidebar: React.FC = () => {
@@ -337,7 +338,7 @@ const AppSidebar: React.FC = () => {
           !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
         }`}
       >
-        <Link href="/admin">
+        <Link href="/admin/others-pages/bao-cao/doanh-thu" >
           {isExpanded || isHovered || isMobileOpen ? (
             <>
               <Image
@@ -386,7 +387,7 @@ const AppSidebar: React.FC = () => {
             </div>
 
             <div className="">
-              <h2
+              {/* <h2
                 className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                   !isExpanded && !isHovered
                     ? "lg:justify-center"
@@ -398,7 +399,7 @@ const AppSidebar: React.FC = () => {
                 ) : (
                   <HorizontaLDots />
                 )}
-              </h2>
+              </h2> */}
               {renderMenuItems(othersItems, "others")}
             </div>
           </div>

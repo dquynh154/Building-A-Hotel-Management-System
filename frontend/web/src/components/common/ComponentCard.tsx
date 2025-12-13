@@ -33,16 +33,16 @@ const ComponentCard: React.FC<ComponentCardProps> = ({
       )}
       {/* Card Header */}
       <div  className={`px-6 py-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${headerClassName}`} >
-        <h3 className="text-base font-medium text-gray-800 dark:text-white/90">
+        <h1 className="text-base font-medium text-gray-800 dark:text-white/90">
           {(title || right) && (
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+              <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">
                 {title}
-              </h3>
+              </h1>
               {right && <div className="shrink-0">{right}</div>}
             </div>
           )}
-        </h3>
+        </h1>
         {desc && (
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             {desc}

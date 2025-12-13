@@ -13,6 +13,12 @@ function fmt(iso?: string | Date) {
     if (Number.isNaN(+d)) return '—';
     return d.toLocaleString('vi-VN', { hour12: false });
 }
+function fmtDate(iso?: string) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (isNaN(+d)) return "—";
+    return d.toLocaleDateString("vi-VN"); // chỉ hiển thị dd/mm/yyyy
+}
 
 export default function BookingPrintPage() {
     const { id } = useParams() as { id: string };
@@ -57,20 +63,27 @@ export default function BookingPrintPage() {
     const kh = bk.KHACH_HANG ?? {};
     const rawRooms = bk.CHI_TIET_SU_DUNG ?? [];
     const staff = bk.NHAN_VIEN ?? null;
-    // Gom chi tiết sử dụng theo từng phòng
-    const groupedRooms = new Map<number, { room: any; count: number }>();
+    const groupedRooms = new Map<string, { room: any; count: number; dates: string[] }>();
 
     rawRooms.forEach((r: any) => {
-        const key = r.PHONG_MA;
+        const key = `${r.PHONG_MA}-${r.CTSD_DON_GIA}`;
         const prev = groupedRooms.get(key);
+
         if (prev) {
-            prev.count += 1; // mỗi dòng = 1 ngày
+            prev.count += 1;
+            prev.dates.push(r.CTSD_NGAY_DA_O || r.CTSD_O_TU_GIO); // 👈 lưu ngày của từng dòng
         } else {
-            groupedRooms.set(key, { room: r, count: 1 });
+            groupedRooms.set(key, {
+                room: r,
+                count: 1,
+                dates: [r.CTSD_NGAY_DA_O || r.CTSD_O_TU_GIO]  // 👈 ngày đầu tiên
+            });
         }
     });
 
     const rooms = Array.from(groupedRooms.values());
+
+
 
     const total = Number(bk?.HDONG_TONGTIENDUKIEN ?? 0);
     const deposit = Number(bk?.HDONG_TIENCOCYEUCAU ?? 0);
@@ -143,7 +156,7 @@ export default function BookingPrintPage() {
                     </tr>
                 </thead>
                 <tbody>
-                    {rooms.map(({ room, count }, i) => {
+                    {rooms.map(({ room, count, dates }, i) => {
                         const loaiPhong = room.PHONG?.LOAI_PHONG?.LP_TEN || '—';
                         const phong = room.PHONG?.PHONG_TEN || `Phòng ${room.PHONG_MA}`;
                         const hinhThuc = bk.HINH_THUC_THUE?.HT_TEN || '—';
@@ -159,8 +172,21 @@ export default function BookingPrintPage() {
                                     <div className="font-medium">{loaiPhong}</div>
                                     <div className="text-xs text-gray-500">
                                         ({hinhThuc}) - {phong} <br />
-                                        {fmt(tu)} → {fmt(den)}
+
+                                        {dates.length === 1 && (
+                                            <>{fmtDate(dates[0])}</>
+                                        )}
+
+                                        {/* Nếu group có nhiều ngày */}
+                                        {dates.length > 1 && (
+                                            <span>
+                                                {dates.map((d, idx) => (
+                                                    <div key={idx}>{fmtDate(d)}</div>
+                                                ))}
+                                            </span>
+                                        )}
                                     </div>
+
                                 </td>
                                 <td className="py-2 text-right">{soLuong}</td>
                                 <td className="py-2 text-right tabular-nums">{vnd(donGia)}</td>

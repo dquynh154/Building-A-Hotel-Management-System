@@ -30,8 +30,20 @@ export default function GuestStayReport() {
 
     const [loading, setLoading] = useState(false);
     const [canPrint, setCanPrint] = useState(false);
+    const [err, setErr] = useState("");
 
     const fetchData = async () => {
+        setErr("");
+
+        if (!from || !to) {
+            setErr("Vui lòng chọn đầy đủ ngày bắt đầu và ngày kết thúc.");
+            return;
+        }
+
+        if (new Date(from) > new Date(to)) {
+            setErr("Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu.");
+            return;
+        }
         setLoading(true);
         try {
             const res = await api.get("/bao-cao/khach-luu-tru", {
@@ -40,6 +52,8 @@ export default function GuestStayReport() {
             setItems(res.data.items || []);
 
             setCanPrint((res.data.items || []).length > 0);
+        } catch (e: any) {
+            setErr(e?.response?.data?.message || "Lỗi khi tải dữ liệu.");
         } finally {
             setLoading(false);
         }
@@ -111,6 +125,11 @@ export default function GuestStayReport() {
                 
 
             </div>
+                {err && (
+                    <div className="text-red-600 text-sm font-medium">
+                        {err}
+                    </div>
+                )}
 
             {/* Bảng kết quả */}
             <div className="bg-white rounded-lg border p-4 overflow-auto">
@@ -154,7 +173,7 @@ export default function GuestStayReport() {
 
                                     {/* Phòng — chỉ hiển thị ở dòng đầu */}
                                     <td className="px-3 py-2">
-                                        {idx === 0 ? it.rooms.map((r: any) => r.room).join(", ") : ""}
+                                        {idx === 0 ? it.rooms.map((r: any) => `${r.room} (${r.roomType})`).join(", ") : ""}
                                     </td>
 
                                     {/* Từ ngày — chỉ hiển thị ở dòng đầu */}
@@ -173,7 +192,7 @@ export default function GuestStayReport() {
                         {items.length === 0 && (
                             <tr>
                                 <td colSpan={8} className="text-center text-slate-400 py-4">
-                                    Không có dữ liệu.
+                                        Không tìm thấy khách lưu trú
                                 </td>
                             </tr>
                         )}

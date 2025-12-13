@@ -759,6 +759,7 @@ pub.get('/loai-phong-trong', async (req, res, next) => {
         JOIN HOP_DONG_DAT_PHONG H ON H.HDONG_MA = CTSD.HDONG_MA
         JOIN PHONG P ON P.PHONG_MA = CTSD.PHONG_MA
         WHERE H.HDONG_TRANG_THAI NOT IN ('CANCELLED','NO_SHOW')
+        AND CTSD.CTSD_TRANGTHAI = 'ACTIVE' 
           AND COALESCE(H.HDONG_NGAYTHUCNHAN, H.HDONG_NGAYDAT) < '${toDt}'
           AND COALESCE(H.HDONG_NGAYTHUCTRA,  H.HDONG_NGAYTRA)  > '${fromDt}'
       ),

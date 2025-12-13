@@ -9,22 +9,64 @@ const ACTIVE_STATES = ['ACTIVE', 'DOI_PHONG',];
 async function sumRoomAndService(HDONG_MA) {
     HDONG_MA = Number(HDONG_MA);
 
-    // Tiền phòng: CTSD_TONG_TIEN các CTSD ACTIVE/INVOICED
+    // 1️⃣ Lấy hình thức thuê
+    const hd = await prisma.hOP_DONG_DAT_PHONG.findUnique({
+        where: { HDONG_MA },
+        select: {
+            HT_MA: true,
+            HINH_THUC_THUE: { select: { HT_TEN: true } }
+        }
+    });
+
+    const htTen = (hd?.HINH_THUC_THUE?.HT_TEN || '').toUpperCase();
+    const isHourly = htTen.includes('GIỜ') || hd?.HT_MA === 2;
+    const isNightly = !isHourly;
+
+    // 2️⃣ Chọn trạng thái CTSD cần tính
+    let states;
+    if (isHourly) {
+        // thuê theo giờ → tính ACTIVE + DOI_PHONG
+        states = ['ACTIVE', 'DOI_PHONG'];
+    } else {
+        // thuê theo ngày → CHỈ tính ACTIVE
+        states = ['ACTIVE'];
+    }
+
+    // 3️⃣ Tiền phòng
     const ctsd = await prisma.cHI_TIET_SU_DUNG.findMany({
-        where: { HDONG_MA, CTSD_TRANGTHAI: { in: ACTIVE_STATES } },
+        where: {
+            HDONG_MA,
+            CTSD_TRANGTHAI: { in: states }
+        },
         select: { CTSD_TONG_TIEN: true }
     });
-    const roomTotal = ctsd.reduce((s, r) => s + toNum(r.CTSD_TONG_TIEN), 0);
 
-    // Tiền DV: sum(SL*ĐG) các CTDV ACTIVE/INVOICED
+    const roomTotal = ctsd.reduce((s, r) => s + Number(r.CTSD_TONG_TIEN || 0), 0);
+
+    // 4️⃣ Tiền dịch vụ
     const ctdv = await prisma.cHI_TIET_DICH_VU.findMany({
-        where: { HDONG_MA, CTDV_TRANGTHAI: { in: ACTIVE_STATES } },
-        select: { CTDV_SOLUONG: true, CTDV_DONGIA: true }
+        where: {
+            HDONG_MA,
+            CTDV_TRANGTHAI: { in: states }
+        },
+        select: {
+            CTDV_SOLUONG: true,
+            CTDV_DONGIA: true
+        }
     });
-    const serviceTotal = ctdv.reduce((s, r) => s + (toNum(r.CTDV_DONGIA) * Number(r.CTDV_SOLUONG || 0)), 0);
 
-    return { roomTotal, serviceTotal, gross: roomTotal + serviceTotal };
+    const serviceTotal = ctdv.reduce(
+        (s, r) => s + Number(r.CTDV_DONGIA || 0) * Number(r.CTDV_SOLUONG || 0),
+        0
+    );
+
+    return {
+        roomTotal,
+        serviceTotal,
+        gross: roomTotal + serviceTotal
+    };
 }
+
 
 async function getDiscount(HDONG_MA) {
     const km = await prisma.kHUYEN_MAI_SU_DUNG.findUnique({
@@ -287,6 +329,7 @@ async function get(req, res, next) {
                     HDONG_NGAYTRA: true,
                     HDONG_NGAYTHUCNHAN: true,
                     HDONG_NGAYTHUCTRA: true,
+                    HT_MA: true, 
                     KHACH_HANG: {
                         select: {
                             KH_HOTEN: true, KH_DIACHI: true, KH_SDT: true, KH_EMAIL: true,
@@ -348,26 +391,82 @@ async function get(req, res, next) {
                     PHONG_TEN: ten,
                 };
             });
+            const isHourly = hd.HT_MA === 2;
+            const isNightly = hd.HT_MA === 1;
 
             // 5.2 Tiền phòng
-            const sd = await prisma.cHI_TIET_SU_DUNG.findMany({
-                where: { HDONG_MA: link.HDONG_MA },
-                include: { PHONG: { select: { PHONG_TEN: true } } },
-                orderBy: [{ PHONG_MA: 'asc' }, { CTSD_STT: 'asc' }],
-            });
+            let sd = [];
+
+            if (isNightly) {
+                // THUÊ THEO NGÀY → CHỈ lấy ACTIVE + INVOICED
+                sd = await prisma.cHI_TIET_SU_DUNG.findMany({
+                    where: {
+                        HDONG_MA: link.HDONG_MA,
+                        CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+                    },
+                    include: { PHONG: { select: { PHONG_TEN: true } } },
+                    orderBy: [{ PHONG_MA: 'asc' }, { CTSD_STT: 'asc' }],
+                });
+            }
+
+            if (isHourly) {
+                // THUÊ THEO GIỜ → lấy ACTIVE + DOI_PHONG + INVOICED
+                sd = await prisma.cHI_TIET_SU_DUNG.findMany({
+                    where: {
+                        HDONG_MA: link.HDONG_MA,
+                        CTSD_TRANGTHAI: { in: ['ACTIVE', 'DOI_PHONG', 'INVOICED'] },
+                    },
+                    include: { PHONG: { select: { PHONG_TEN: true } } },
+                    orderBy: [{ PHONG_MA: 'asc' }, { CTSD_STT: 'asc' }],
+                });
+            }
+
 
             const roomRows = sd.map(r => {
-                const roomName = r.PHONG?.PHONG_TEN || (r.PHONG_MA ? `Phòng ${r.PHONG_MA}` : 'Phòng');
-                // nếu bạn có số đêm/đơn giá trong CTSD thì tận dụng, không thì để 1 × đơn giá/tổng
-                const qty = Number(r.CTSD_SO_LUONG ?? r.so_dem ?? 1);
-                const unit = Number(r.CTSD_DON_GIA ?? r.CTSD_GIA ?? r.don_gia ?? 0);
-                const amt = Number(r.CTSD_TONG_TIEN ?? r.thanh_tien ?? (unit ? qty * unit : 0));
-                const dienGiai = unit || amt ? `${roomName}` : `${roomName}`;
+                const roomName = r.PHONG?.PHONG_TEN || `Phòng ${r.PHONG_MA}`;
+                const unit = Number(r.CTSD_DON_GIA || 0);
+                const amount = Number(r.CTSD_TONG_TIEN || 0);
+
+                // === Nếu thuê theo giờ ===
+                if (isHourly && r.CTSD_O_TU_GIO) {
+                    const start = new Date(r.CTSD_O_TU_GIO);
+                    const end = new Date(r.CTSD_O_DEN_GIO || new Date());
+
+                    // tính số phút thực tế
+                    const diffMin = Math.ceil((end - start) / (60 * 1000));
+                    // Block 30 phút
+                    const billedMin = Math.ceil(diffMin / 30) * 30;
+                    const billedHours = billedMin / 60;
+
+                    const qty = billedHours;
+
+                    const dienGiai = `${roomName} (từ ${start.getHours().toString().padStart(2, '0')}:${start.getMinutes().toString().padStart(2, '0')} đến ${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')})`;
+
+                    return {
+                        loai: 'PHONG',
+                        dien_giai: dienGiai,
+                        so_luong: qty,
+                        don_gia: unit,
+                        thanh_tien: amount,  // đã tính sẵn trong CTSD_TONG_TIEN
+                        PHONG_MA: r.PHONG_MA ?? null,
+                        PHONG_TEN: roomName,
+                    };
+                }
+
+                // === Nếu thuê theo ngày ===
+                const qty = 1;
+                const dienGiai = `${roomName} (ngày ${r.CTSD_NGAY_DA_O?.toISOString().slice(0, 10)})`;
                 return {
-                    loai: 'PHONG', dien_giai: dienGiai, so_luong: qty, don_gia: unit, thanh_tien: amt, PHONG_MA: r.PHONG_MA ?? null,
+                    loai: 'PHONG',
+                    dien_giai: dienGiai,
+                    so_luong: qty,
+                    don_gia: unit,
+                    thanh_tien: amount,
+                    PHONG_MA: r.PHONG_MA ?? null,
                     PHONG_TEN: roomName,
                 };
             });
+
 
             CHI_TIET = [...roomRows, ...dvRows].filter(x => Number.isFinite(x.thanh_tien));
         }

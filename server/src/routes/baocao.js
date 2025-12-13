@@ -98,13 +98,21 @@ r.get("/bao-cao/doanh-thu", async (req, res, next) => {
 r.get("/bao-cao/khach-luu-tru", async (req, res, next) => {
     try {
         const { from, to } = req.query;
-
+        if (!from || !to) {
+            return res.status(400).json({ message: "Vui lòng chọn đầy đủ ngày bắt đầu và ngày kết thúc." });
+        }
         const fromDate = toDate1(from);
         const toDate = toDate1(to);
 
         if (!fromDate || !toDate)
-            return res.status(400).json({ message: "Thiếu from/to" });
+            return res.status(400).json({ message: "Ngày không hợp lệ" });
 
+        if (toDate < fromDate) {
+            return res.status(400).json({ message: "Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu." });
+        }
+
+        fromDate.setHours(0, 0, 0, 0);
+        toDate.setHours(23, 59, 59, 999);
         // Lấy các hợp đồng có giao nhau với khoảng ngày
         const hopdong = await prisma.hOP_DONG_DAT_PHONG.findMany({
             where: {
@@ -142,10 +150,13 @@ r.get("/bao-cao/khach-luu-tru", async (req, res, next) => {
 
             if (!overlaps(stayStart, stayEnd, fromDate, toDate)) continue;
 
-            const rooms = hd.CHI_TIET_SU_DUNG.map((c) => ({
+            const roomsRaw = hd.CHI_TIET_SU_DUNG.map(c => ({
                 room: c.PHONG.PHONG_TEN,
                 roomType: c.PHONG.LOAI_PHONG.LP_TEN
             }));
+            const rooms = Array.from(
+                new Map(roomsRaw.map(r => [r.room, r])).values()
+            );
 
             const guests = hd.LUU_TRU_KHACH.map((lt) => ({
                 name: lt.KHACH_HANG.KH_HOTEN,

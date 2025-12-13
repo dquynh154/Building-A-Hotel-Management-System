@@ -1,4 +1,6 @@
-import { useMemo } from 'react';
+"use client";
+
+import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
 import Button from '@/components/ui/button/Button';
@@ -42,7 +44,7 @@ export default function ListView({
     bookings: BookingLite[];
     filters: FilterState;
 }) {
-    // Gộp theo HDONG_MA để chỉ hiển thị 1 dòng/hợp đồng
+    // ============= 1. Gộp hợp đồng như cũ =============
     const grouped = useMemo<GroupedBooking[]>(() => {
         const map = new Map<number, GroupedBooking>();
         for (const b of bookings) {
@@ -58,6 +60,29 @@ export default function ListView({
         }
         return Array.from(map.values());
     }, [bookings]);
+
+    // ============= 2. Phân trang nội bộ =============
+    const [page, setPage] = useState(1);
+    const pageSize = 10;
+
+    const total = grouped.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    // Nếu đổi filter / dữ liệu mà page vượt quá tổng trang thì kéo về trang cuối
+    useEffect(() => {
+        if (page > totalPages) {
+            setPage(totalPages);
+        }
+        if (totalPages === 0) {
+            setPage(1);
+        }
+    }, [totalPages, page]);
+
+    const pageData = useMemo(() => {
+        const start = (page - 1) * pageSize;
+        return grouped.slice(start, start + pageSize);
+    }, [grouped, page, pageSize]);
+
     const STATUS_META: Record<string, { text: string; cls: string }> = {
         PENDING: { text: 'CHỜ CỌC', cls: 'bg-amber-100 text-amber-700' },
         CONFIRMED: { text: 'ĐÃ XÁC NHẬN', cls: 'bg-sky-100 text-sky-700' },
@@ -79,117 +104,137 @@ export default function ListView({
     }
 
     return (
-        <div className="overflow-auto rounded-xl border">
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                        <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                            STT
-                        </TableCell>
-                        <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                            Mã đặt phòng
-                        </TableCell>
-                        <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                            Khách đặt
-                        </TableCell>
-                        <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                            Lưu trú
-                        </TableCell>
-                        <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                            Trạng thái
-                        </TableCell>
-                        <TableCell isHeader className="px-5 py-3 text-medium text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                            Thao tác
-                        </TableCell>
-                    </TableRow>
-                </TableHeader>
-
-                <TableBody>
-                    {grouped.map((b, i) => {
-                        const r = stayRange(b);
-                        return (
-                            <TableRow key={b.HDONG_MA}>
-                                <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">{i + 1}</TableCell>
-                                <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">
-                                    {`DP${String(b.HDONG_MA).padStart(6, '0')}`}
-                                </TableCell>
-                                <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">
-                                    {b.KH_TEN || 'Khách lẻ'}
-                                </TableCell>
-                                <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">
-                                    <div className="flex items-center gap-2">
-                                        <span>
-                                            {fmt(r.from)} → {fmt(r.to)}
-                                        </span>
-                                        {/* <span
-                                            className={
-                                                r.label === 'thực'
-                                                    ? 'rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700'
-                                                    : 'rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600'
-                                            }
-                                        >
-                                            {r.label}
-                                        </span> */}
-                                    </div>
-                                </TableCell>
-                                <TableCell className="px-5 py-3 text-theme-sm">
-                                    <StatusPill status={b.TRANG_THAI} />
-                                </TableCell>
-
-                                <TableCell className="px-5 py-3 text-theme-sm text-right">
-                                    <div className="inline-flex items-center gap-2">
-                                        <Button size="sm" variant="outline">
-                                            <Link href={`/admin/others-pages/chi-tiet/${b.HDONG_MA}`}>Chi tiết</Link>
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="danger"
-                                            disabled={['CHECKED_OUT', 'CANCELLED','CHECKED_IN', 'NO_SHOW'].includes(b.TRANG_THAI)}
-                                            onClick={async () => {
-                                                if (['CHECKED_OUT', 'CANCELLED'].includes(b.TRANG_THAI)) return;
-
-                                                const confirmMsg =
-                                                    b.TRANG_THAI === 'CONFIRMED'
-                                                        ? 'Huỷ hợp đồng này sẽ giữ lại tiền cọc. Bạn có chắc muốn huỷ không?'
-                                                        : 'Bạn có chắc chắn muốn huỷ hợp đồng này?';
-                                                if (!confirm(confirmMsg)) return;
-
-                                                const reason = prompt('Nhập lý do huỷ hợp đồng (bắt buộc):', '');
-                                                if (!reason || !reason.trim()) {
-                                                    alert('Vui lòng nhập lý do huỷ hợp đồng.');
-                                                    return;
-                                                }
-
-                                                try {
-                                                    const res = await api.post(`/bookings/${b.HDONG_MA}/cancel`, { reason });
-                                                    alert('Đã huỷ hợp đồng thành công.');
-                                                    window.location.reload();
-                                                } catch (err: any) {
-                                                    const msg = err.response?.data?.message || 'Không thể huỷ hợp đồng.';
-                                                    alert(msg);
-                                                }
-
-                                            }}
-                                        >
-                                            Huỷ
-                                        </Button>
-
-
-                                    </div>
-                                </TableCell>
-                            </TableRow>
-                        );
-                    })}
-
-                    {grouped.length === 0 && (
+        <div className="space-y-3">
+            <div className="overflow-auto rounded-xl border">
+                <Table>
+                    <TableHeader>
                         <TableRow>
-                            <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                                Không có dữ liệu.
+                            <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                                STT
+                            </TableCell>
+                            <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                                Mã đặt phòng
+                            </TableCell>
+                            <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                                Khách đặt
+                            </TableCell>
+                            <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                                Lưu trú
+                            </TableCell>
+                            <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                                Trạng thái
+                            </TableCell>
+                            <TableCell isHeader className="px-5 py-3 text-medium text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                                Thao tác
                             </TableCell>
                         </TableRow>
-                    )}
-                </TableBody>
-            </Table>
+                    </TableHeader>
+
+                    <TableBody>
+                        {pageData.map((b, i) => {
+                            const r = stayRange(b);
+                            const stt = (page - 1) * pageSize + i + 1;
+
+                            return (
+                                <TableRow key={b.HDONG_MA}>
+                                    <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">
+                                        {stt}
+                                    </TableCell>
+                                    <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">
+                                        {`DP${String(b.HDONG_MA).padStart(6, '0')}`}
+                                    </TableCell>
+                                    <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">
+                                        {b.KH_TEN || 'Khách lẻ'}
+                                    </TableCell>
+                                    <TableCell className="px-5 py-3 text-theme-sm text-gray-700 dark:text-white/90">
+                                        <div className="flex items-center gap-2">
+                                            <span>
+                                                {fmt(r.from)} → {fmt(r.to)}
+                                            </span>
+                                        </div>
+                                    </TableCell>
+                                    <TableCell className="px-5 py-3 text-theme-sm">
+                                        <StatusPill status={b.TRANG_THAI} />
+                                    </TableCell>
+
+                                    <TableCell className="px-5 py-3 text-theme-sm text-right">
+                                        <div className="inline-flex items-center gap-2">
+                                            <Button size="sm" variant="outline">
+                                                <Link href={`/admin/others-pages/chi-tiet/${b.HDONG_MA}`}>Chi tiết</Link>
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="danger"
+                                                disabled={['CHECKED_OUT', 'CANCELLED', 'CHECKED_IN', 'NO_SHOW'].includes(b.TRANG_THAI)}
+                                                onClick={async () => {
+                                                    if (['CHECKED_OUT', 'CANCELLED'].includes(b.TRANG_THAI)) return;
+
+                                                    const confirmMsg =
+                                                        b.TRANG_THAI === 'CONFIRMED'
+                                                            ? 'Huỷ hợp đồng này sẽ giữ lại tiền cọc. Bạn có chắc muốn huỷ không?'
+                                                            : 'Bạn có chắc chắn muốn huỷ hợp đồng này?';
+                                                    if (!confirm(confirmMsg)) return;
+
+                                                    const reason = prompt('Nhập lý do huỷ hợp đồng (bắt buộc):', '');
+                                                    if (!reason || !reason.trim()) {
+                                                        alert('Vui lòng nhập lý do huỷ hợp đồng.');
+                                                        return;
+                                                    }
+
+                                                    try {
+                                                        await api.post(`/bookings/${b.HDONG_MA}/cancel`, { reason });
+                                                        alert('Đã huỷ hợp đồng thành công.');
+                                                        window.location.reload();
+                                                    } catch (err: any) {
+                                                        const msg = err.response?.data?.message || 'Không thể huỷ hợp đồng.';
+                                                        alert(msg);
+                                                    }
+
+                                                }}
+                                            >
+                                                Huỷ
+                                            </Button>
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            );
+                        })}
+
+                        {grouped.length === 0 && (
+                            <TableRow>
+                                <TableCell colSpan={6} className="py-8 text-center text-gray-500">
+                                    Không có dữ liệu.
+                                </TableCell>
+                            </TableRow>
+                        )}
+                    </TableBody>
+                </Table>
+            </div>
+
+            {/* ============= 3. Pagination control ============= */}
+            {total > 0 && (
+                <div className="flex items-center justify-end gap-3">
+                    <button
+                        className="px-3 py-1 text-sm border rounded disabled:opacity-40"
+                        disabled={page <= 1}
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                    >
+                        Trước
+                    </button>
+
+                    <span className="text-sm text-gray-700">
+                        Trang {page} / {totalPages}
+                    </span>
+
+                    <button
+                        className="px-3 py-1 text-sm border rounded disabled:opacity-40"
+                        disabled={page >= totalPages}
+                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    >
+                        Sau
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

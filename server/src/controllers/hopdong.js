@@ -836,6 +836,7 @@ async function checkout(req, res, next) {
                 HDONG_NGAYTHUCTRA: true,
             },
         });
+        const isHourly = /giờ/i.test(hd?.HINH_THUC_THUE?.HT_TEN ?? "");
         if (!hd) return res.status(404).json({ message: 'Không tìm thấy hợp đồng' });
 
         const st = (hd.HDONG_TRANG_THAI || '').toUpperCase();
@@ -883,10 +884,22 @@ async function checkout(req, res, next) {
             });
 
             // 5.2) Đóng CTSD (nếu bạn có enum khác, đổi 'COMPLETED' cho khớp)
-            await tx.cHI_TIET_SU_DUNG.updateMany({
-                where: { HDONG_MA: id },
-                data: { CTSD_TRANGTHAI: 'INVOICED' },
-            });
+            if (!isHourly) {
+                await tx.cHI_TIET_SU_DUNG.updateMany({
+                    where: { HDONG_MA: id, CTSD_TRANGTHAI: 'ACTIVE' },
+                    data: { CTSD_TRANGTHAI: 'INVOICED' },
+                });
+            }
+            else {
+                await tx.cHI_TIET_SU_DUNG.updateMany({
+                    where: {
+                        HDONG_MA: id,
+                        CTSD_TRANGTHAI: { in: ['ACTIVE', 'DOI_PHONG'] }
+                    },
+                    data: { CTSD_TRANGTHAI: 'INVOICED' },
+                });
+            }
+
 
             // 5.3) Phòng → CHUA_DON (đổi thành 'AVAILABLE' nếu không theo quy trình “bẩn”)
             if (roomIds.length > 0) {

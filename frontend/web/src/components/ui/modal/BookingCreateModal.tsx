@@ -531,7 +531,9 @@ export default function BookingCreateModal({
 
             let realFromISO = fromISO;
             let realToISO = toISO;
-
+            const CHECKIN_FREE_MINUTE = 13 * 60 + 45; // 13:45
+            const PRICE_PER_HOUR = 100_000;
+            let earlyHours = 0;
             // // Nếu người dùng bấm "Nhận phòng" và đang ở chế độ NGÀY → ép from = NOW
             // if (action === 'nhan_phong' && !isHourMode) {
             //     realFromISO = nowISO;
@@ -557,7 +559,41 @@ export default function BookingCreateModal({
             //     return;
             // }
             // ➊ Nếu là NHẬN PHÒNG → ép from = NOW (bất kể ngày/giờ)
+            let needEarlyFee = false;
             if (action === 'nhan_phong') {
+                const plannedFrom = new Date(fromISO); // ngày giờ KH đã chọn
+                const now = new Date();
+
+                const diffMinutes = (plannedFrom.getTime() - now.getTime()) / 60000;
+
+                // CASE C: quá sớm → tính thành 1 đêm
+                if (diffMinutes > 6 * 60) {
+                    setErr(
+                        'Thời điểm nhận phòng quá sớm, sẽ được tính thành 1 đêm lưu trú. Vui lòng chỉnh lại thời gian nhận phòng.'
+                    );
+                    setSaving(false);
+                    return;
+                }
+                if (diffMinutes > 0) {
+                    const hours = Math.ceil(diffMinutes / 60);
+                    const fee = hours * PRICE_PER_HOUR;
+
+                    const ok = confirm(
+                        `Khách nhận phòng sớm ${hours} giờ.\n` +
+                        `Phụ thu: ${fee.toLocaleString('vi-VN')} VND.\n\n` +
+                        `Bạn có muốn tiếp tục nhận phòng không?`
+                    );
+
+                    if (!ok) {
+                        setSaving(false);
+                        return; // ❌ DỪNG TẠI ĐÂY
+                    }
+
+                    // ✅ user đồng ý → đánh dấu để lát nữa gọi API phụ thu
+                    needEarlyFee = true;
+                    earlyHours = hours;
+                }
+
                 realFromISO = nowISO;
 
                 if (isHourMode) {
@@ -605,7 +641,7 @@ export default function BookingCreateModal({
             // 2) Tạo CTSD theo logic Giờ/Ngày
             const htLabel = hireTypes.find(o => o.value === ht)?.label || '';
             const isHourForm = /giờ/i.test(htLabel);
-            const diffMs = (+new Date(toISO)) - (+new Date(fromISO));
+            const diffMs = (+new Date(realToISO)) - (+new Date(realFromISO));
             const hours = Math.ceil(diffMs / 3600000);
             for (const ln of lines) {
                 if (!ln.roomId) continue;
@@ -668,6 +704,11 @@ export default function BookingCreateModal({
             //     }
             // }
 
+            if (action === 'nhan_phong' && needEarlyFee) {
+                await api.post(`/bookings/${bookingId}/apply-early-checkin-fee`, {
+                    at: nowISO,
+                });
+            }
 
             const guestsPayload = (occupants || [])
                 .filter(o => Number.isFinite(o.khId)) // bỏ trẻ em/dòng chưa có KH_MA
@@ -1214,8 +1255,39 @@ export default function BookingCreateModal({
                         <div className="grid grid-cols-[170px_110px] gap-2">
                             <Flatpickr value={fromDate} options={{ dateFormat: 'Y-m-d', minDate: 'today', locale: Vietnamese }} onChange={(d: any, s: string) => setFromDate(s)}
                                 className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                            <Flatpickr value={fromTime} options={timeOptsFrom} onChange={(_, s) => setFromTime(s || '14:00')}
-                                className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                            <Flatpickr
+                                value={fromTime}
+                                options={timeOptsFrom}
+                                onChange={(_, s) => {
+                                    let next = s || fromTime;
+
+                                    // 🔥 CHỈ CHẶN KHI LÀ HÔM NAY
+                                    const today = startOfToday();
+                                    const selectedDate = new Date(`${fromDate}T00:00:00`);
+                                    const isToday = +selectedDate === +today;
+
+                                    if (isToday) {
+                                        const proposed = new Date(`${fromDate}T${next}:00`);
+                                        const now = new Date();
+
+                                        if (proposed < now) {
+                                            // ❌ Không cho nhỏ hơn hiện tại
+                                            next = fmtHm(now); // giờ hiện tại, KHÔNG làm tròn
+                                        }
+                                    }
+
+                                    setFromTime(next);
+
+                                    // 🔒 Đảm bảo trả phòng >= nhận + 60p khi thuê theo giờ
+                                    if (hourHTId && ht === hourHTId) {
+                                        const fixedTo = ensureToAtLeast1h(fromDate, next, toDate, toTime);
+                                        if (fixedTo.toDate !== toDate) setToDate(fixedTo.toDate);
+                                        if (fixedTo.toTime !== toTime) setToTime(fixedTo.toTime);
+                                    }
+                                }}
+                                className="h-[40px] rounded-lg border px-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            />
+
                         </div>
                         <div className="grid grid-cols-[170px_110px] gap-2">
                             <Flatpickr value={toDate} options={{ dateFormat: 'Y-m-d', minDate: fromDate || 'today', locale: Vietnamese }} onChange={(d: any, s: string) => setToDate(s)}

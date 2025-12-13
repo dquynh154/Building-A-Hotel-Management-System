@@ -19,6 +19,7 @@ import AddRoomModal from '@/components/ui/modal/AddRoomModal';
 import AddRoomCheckInModal from '@/components/ui/modal/AddRoomCheckInModal';
 import SuaXoaDichVuHopDongModal from "@/components/ui/modal/SuaXoaDichVuHopDongModal";
 import AdjustReturnDateModal from '@/components/ui/modal/AdjustReturnDateModal';
+import AdjustCheckinModal from "@/components/ui/modal/AdjustCheckinModal";
 
 type StaffMe = { NV_MA: number; NV_HOTEN: string; NV_CHUCVU: string | null };
 type BookingHeader = {
@@ -197,6 +198,23 @@ function SearchCombo({
         </div>
     );
 }
+function diffHM(from: string, to: string | null) {
+    if (!to) return "Đang sử dụng";
+
+    const start = new Date(from);
+    const end = new Date(to);
+
+    let diffMs = end.getTime() - start.getTime();
+    if (diffMs < 0) diffMs = 0;
+
+    const mins = Math.floor(diffMs / 60000);
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+
+    if (h > 0 && m > 0) return `${h} giờ ${m} phút`;
+    if (h > 0) return `${h} giờ`;
+    return `${m} phút`;
+}
 
 export default function BookingDetailPage() {
     const params = useParams();                 // ✅ lấy params trong client
@@ -329,11 +347,15 @@ export default function BookingDetailPage() {
         }
     }
 
+    const isHourly = booking?.htLabel?.toLowerCase()?.includes("giờ");
 
     // Gom theo PHONG_MA: 1 thẻ/phòng; thời gian hiển thị dùng booking.from → booking.to
     const roomGroups = useMemo(() => {
         // Lấy danh sách phòng duy nhất
-        const uniq = new Map<number, { PHONG_MA: number; roomName: string; roomType: string; tong_tien: number; CTSD_TRANGTHAI?: string; }>();
+        const uniq = new Map<number, {
+            PHONG_MA: number; roomName: string; roomType: string; tong_tien: number; CTSD_TRANGTHAI?: string; dates: string[];
+            hourRanges: { from: string; to: string | null }[];
+        }>();
         for (const r of rooms) {
             const cur = uniq.get(r.PHONG_MA);
             if (!cur) {
@@ -341,23 +363,82 @@ export default function BookingDetailPage() {
                     PHONG_MA: r.PHONG_MA,
                     roomName: r.roomName,
                     roomType: r.roomType,
-                    tong_tien: Number(r.tong_tien || 0),
+                    tong_tien: isHourly
+                        ? Number(r.tong_tien || 0)                // thuê theo giờ → tính cả DOI_PHONG
+                        : (['ACTIVE', 'INVOICED'].includes(r.CTSD_TRANGTHAI || '')
+                            ? Number(r.tong_tien || 0)
+                            : 0),
                     CTSD_TRANGTHAI: r.CTSD_TRANGTHAI,
+                    dates: r.ngay ? [r.ngay] : [],
+                    hourRanges:
+                        (isHourly && r.tu_gio) ? [{ from: r.tu_gio, to: r.den_gio }] : [],
                 });
             } else {
-                cur.tong_tien += Number(r.tong_tien || 0); // cộng tiền phòng nếu có nhiều CTSD dòng
-                if (r.CTSD_TRANGTHAI === "DOI_PHONG") {
-                    cur.CTSD_TRANGTHAI = "DOI_PHONG";
+                if (isHourly) {
+                    // thuê theo giờ → luôn tính cả ACTIVE và DOI_PHONG
+                    cur.tong_tien += Number(r.tong_tien || 0);
                 }
+                if (!isHourly) {
+                    if (['ACTIVE', 'INVOICED'].includes(r.CTSD_TRANGTHAI || '')) {
+                        cur.tong_tien += Number(r.tong_tien || 0);
+                    }
+                }
+
+                if (!isHourly && ['ACTIVE', 'INVOICED'].includes(r.CTSD_TRANGTHAI || '') && r.ngay) {
+                    cur.dates.push(r.ngay);
+                }
+
+                // GIỜ
+                if (isHourly && (r.CTSD_TRANGTHAI === "ACTIVE" || r.CTSD_TRANGTHAI === "DOI_PHONG") && r.tu_gio) {
+                    cur.hourRanges.push({ from: r.tu_gio, to: r.den_gio });
+                }
+
+            }
+        }
+        // === Sau khi gom xong uniq → gắn trạng thái đổi phòng ===
+        for (const info of uniq.values()) {
+            const hasChanged = rooms.some(
+                r => r.PHONG_MA === info.PHONG_MA && r.CTSD_TRANGTHAI === "DOI_PHONG"
+            );
+            if (hasChanged) {
+                info.CTSD_TRANGTHAI = "DOI_PHONG";
             }
         }
 
         // Gắn service theo PHONG_MA (bỏ qua ctsdLineId khi hiển thị list)
-        const groups = Array.from(uniq.values()).map(info => ({
-            key: String(info.PHONG_MA),
-            room: info,
-            services: services.filter(s => s.PHONG_MA === info.PHONG_MA),
-        }));
+        const groups = Array.from(uniq.values()).map(info => {
+
+            let dateRange = "—";
+            if (info.dates.length > 0) {
+                const sorted = [...info.dates].sort();      // YYYY-MM-DD dạng string sort rất chuẩn
+                const first = sorted[0];
+                const last = sorted[sorted.length - 1];
+                const nights = info.dates.length;
+
+                // Format ngày
+                dateRange = `${fmtDate(first)} → ${fmtDate(last)}• ${nights} đêm`;
+            }
+            if (isHourly && info.hourRanges.length > 0) {
+                const first = info.hourRanges[0];
+                const last = info.hourRanges[info.hourRanges.length - 1];
+
+                const from = fmt(first.from);
+                const to = last.to ? fmt(last.to) : "Đang sử dụng";
+
+                const used = diffHM(first.from, last.to);
+
+                dateRange = `${from} → ${to} • ${used}`;
+            }
+
+            return {
+                key: String(info.PHONG_MA),
+                room: {
+                    ...info,
+                    dateRange,          // <--- GẮN RANGE ĐỂ FE XÀI
+                },
+                services: services.filter(s => s.PHONG_MA === info.PHONG_MA),
+            };
+        });
         return groups;
     }, [rooms, services]);
 
@@ -746,42 +827,42 @@ export default function BookingDetailPage() {
     // --- Check-in sớm (Early check-in) ---
     const [checkingIn, setCheckingIn] = useState(false);
 
-    async function handleEarlyCheckIn() {
-        if (!booking) return;
-        if (booking.trang_thai !== 'CONFIRMED') {
-            alert('Chỉ nhận phòng khi hợp đồng đang ở trạng thái CONFIRMED.');
-            return;
-        }
+    // async function handleEarlyCheckIn() {
+    //     if (!booking) return;
+    //     if (booking.trang_thai !== 'CONFIRMED') {
+    //         alert('Chỉ nhận phòng khi hợp đồng đang ở trạng thái CONFIRMED.');
+    //         return;
+    //     }
 
-        if (!confirm('Xác nhận nhận phòng ngay bây giờ?')) return;
+    //     if (!confirm('Xác nhận nhận phòng ngay bây giờ?')) return;
 
-        setCheckingIn(true);
-        try {
-            const at = new Date().toISOString();
-            // BE sẽ kiểm tra trống phòng tại thời điểm `at` cho tất cả phòng thuộc HĐ,
-            // nếu hợp lệ sẽ cập nhật HDONG_NGAYTHUCNHAN = at và chuyển trạng thái.
-            await api.post(`/bookings/${bookingId}/checkin1`, { at });
+    //     setCheckingIn(true);
+    //     try {
+    //         const at = new Date().toISOString();
+    //         // BE sẽ kiểm tra trống phòng tại thời điểm `at` cho tất cả phòng thuộc HĐ,
+    //         // nếu hợp lệ sẽ cập nhật HDONG_NGAYTHUCNHAN = at và chuyển trạng thái.
+    //         await api.post(`/bookings/${bookingId}/checkin1`, { at });
 
-            alert(`Đã nhận phòng lúc ${new Date(at).toLocaleString('vi-VN', { hour12: false })}`);
-            await loadFull(); // refresh header/rooms/services/totals, trạng thái sẽ thành CHECKED_IN
-        } catch (e: any) {
-            const status = e?.response?.status;
-            const data = e?.response?.data || {};
-            // BE nên trả 409 khi phòng bận, kèm mảng conflicts: [{ PHONG_MA, roomName, from, to }, ...]
-            if (status === 409) {
-                const details = (data.conflicts || [])
-                    .map((c: any) =>
-                        `${c.roomName || `Phòng ${c.PHONG_MA}`} bận: ${new Date(c.from).toLocaleString('vi-VN', { hour12: false })} → ${new Date(c.to).toLocaleString('vi-VN', { hour12: false })}`
-                    )
-                    .join('\n');
-                alert((data.message || 'Phòng đang bận, không thể nhận phòng.') + (details ? `\n\n${details}` : ''));
-            } else {
-                alert(data.message || 'Nhận phòng thất bại.');
-            }
-        } finally {
-            setCheckingIn(false);
-        }
-    }
+    //         alert(`Đã nhận phòng lúc ${new Date(at).toLocaleString('vi-VN', { hour12: false })}`);
+    //         await loadFull(); // refresh header/rooms/services/totals, trạng thái sẽ thành CHECKED_IN
+    //     } catch (e: any) {
+    //         const status = e?.response?.status;
+    //         const data = e?.response?.data || {};
+    //         // BE nên trả 409 khi phòng bận, kèm mảng conflicts: [{ PHONG_MA, roomName, from, to }, ...]
+    //         if (status === 409) {
+    //             const details = (data.conflicts || [])
+    //                 .map((c: any) =>
+    //                     `${c.roomName || `Phòng ${c.PHONG_MA}`} bận: ${new Date(c.from).toLocaleString('vi-VN', { hour12: false })} → ${new Date(c.to).toLocaleString('vi-VN', { hour12: false })}`
+    //                 )
+    //                 .join('\n');
+    //             alert((data.message || 'Phòng đang bận, không thể nhận phòng.') + (details ? `\n\n${details}` : ''));
+    //         } else {
+    //             alert(data.message || 'Nhận phòng thất bại.');
+    //         }
+    //     } finally {
+    //         setCheckingIn(false);
+    //     }
+    // }
 
     async function handleNoShow() {
         if (!booking) return;
@@ -919,564 +1000,694 @@ export default function BookingDetailPage() {
         const hours = Math.ceil(diffMinutes / 60);
         return `${hours} giờ`;
     };
+    const [openCheckinModal, setOpenCheckinModal] = useState(false);
+    const handleAdjustCheckin = async (newCheckin: any) => {
+        try {
+            const res = await api.post(`/bookings/${bookingId}/adjust-checkin`, {
+                newCheckin,
+            });
+            alert(res.data.message || "Đã điều chỉnh ngày nhận.");
+
+            await loadFull(); // reload hợp đồng
+            setOpenCheckinModal(false);
+        } catch (err: any) {
+            alert(err?.response?.data?.message || "Lỗi điều chỉnh ngày nhận.");
+        }
+    };
+    const [openAdjustOptionModal, setOpenAdjustOptionModal] = useState(false);
+    const canAdjust =
+        booking?.trang_thai === "CONFIRMED" || booking?.trang_thai === "CHECKED_IN";
+
+
+
+    async function handleEarlyCheckIn() {
+        if (!booking) return;
+
+        if (booking.trang_thai !== 'CONFIRMED') {
+            alert('Chỉ nhận phòng khi hợp đồng đang ở trạng thái CONFIRMED.');
+            return;
+        }
+
+        if (!confirm('Xác nhận nhận phòng ngay bây giờ?')) return;
+
+        setCheckingIn(true);
+
+        try {
+            // =============================
+            // 1️⃣ GỌI API KIỂM TRA / TÍNH PHÍ NHẬN PHÒNG SỚM
+            // =============================
+            try {
+                const earlyRes = await api.post(
+                    `/bookings/${bookingId}/apply-early-checkin-fee`
+                );
+
+                // 👉 Nếu vào được đây: có phí nhận phòng sớm
+                const hours = earlyRes.data?.hoursEarly ?? 0;
+
+                const ok = confirm(
+                    `Khách nhận phòng sớm ${hours} giờ.\n` +
+                    `Phí sẽ được cộng vào hóa đơn theo dịch vụ.\n\n` +
+                    `Bạn có muốn tiếp tục nhận phòng không?`
+                );
+
+                if (!ok) {
+                    setCheckingIn(false);
+                    return;
+                }
+
+            } catch (e: any) {
+                const msg = e?.response?.data?.message || '';
+
+                // ❌ Quá sớm → tính thành 1 đêm → KHÔNG cho nhận
+                if (msg.includes('quá sớm')) {
+                    alert(
+                        'Thời điểm nhận phòng quá sớm so với thời gian đặt.\n' +
+                        'Vui lòng chỉnh lại thời gian nhận phòng.'
+                    );
+                    setCheckingIn(false);
+                    return;
+                }
+
+                // ✅ Du di → không tính phí → cho nhận phòng luôn
+                if (msg.includes('du di')) {
+                    // không làm gì, cho chạy tiếp xuống check-in
+                } else if (e?.response?.status && e.response.status !== 400) {
+                    // lỗi khác
+                    throw e;
+                }
+            }
+
+            // =============================
+            // 2️⃣ THỰC HIỆN CHECK-IN
+            // =============================
+            const at = new Date().toISOString();
+
+            await api.post(`/bookings/${bookingId}/checkin1`, { at });
+
+            alert(
+                `Đã nhận phòng lúc ${new Date(at).toLocaleString('vi-VN', { hour12: false })}`
+            );
+
+            await loadFull();
+
+        } catch (e: any) {
+            const status = e?.response?.status;
+            const data = e?.response?.data || {};
+
+            if (status === 409) {
+                const details = (data.conflicts || [])
+                    .map((c: any) =>
+                        `${c.roomName || `Phòng ${c.PHONG_MA}`} bận: ` +
+                        `${new Date(c.from).toLocaleString('vi-VN', { hour12: false })} → ` +
+                        `${new Date(c.to).toLocaleString('vi-VN', { hour12: false })}`
+                    )
+                    .join('\n');
+
+                alert(
+                    (data.message || 'Phòng đang bận, không thể nhận phòng.') +
+                    (details ? `\n\n${details}` : '')
+                );
+            } else {
+                alert(data.message || 'Nhận phòng thất bại.');
+            }
+        } finally {
+            setCheckingIn(false);
+        }
+    }
 
     return (
         <>
             <title>Chi tiết hợp đồng</title>
-        <div className="min-h-screen">
-            <PageBreadcrumb_ct pageTitle={`Hợp đồng HD${String(bookingId).padStart(6, '0')}` + `- Hình thức : ${booking?.htLabel}`} />
-            <div>
+            <div className="min-h-screen">
+                <PageBreadcrumb_ct pageTitle={`Hợp đồng HD${String(bookingId).padStart(6, '0')}` + `- Hình thức : ${booking?.htLabel}`} />
+                <div>
 
-                {/* 2 cột: danh mục DV | chi tiết HĐ gộp */}
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[340px_1fr]">
+                    {/* 2 cột: danh mục DV | chi tiết HĐ gộp */}
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[340px_1fr]">
 
-                    {/* LEFT: Danh mục dịch vụ (giữ nguyên phần bạn đang dùng) */}
-                    <ComponentCard title="Danh mục dịch vụ">
-                        {/* Search */}
-                        <Input
-                            placeholder="Tìm theo tên/mã dịch vụ…"
-                            value={pSearch}
-                            onChange={(e: any) => setPSearch(e.target.value)}
-                            className=""
-                        />
+                        {/* LEFT: Danh mục dịch vụ (giữ nguyên phần bạn đang dùng) */}
+                        <ComponentCard title="Danh mục dịch vụ">
+                            {/* Search */}
+                            <Input
+                                placeholder="Tìm theo tên/mã dịch vụ…"
+                                value={pSearch}
+                                onChange={(e: any) => setPSearch(e.target.value)}
+                                className=""
+                            />
 
-                        {/* List */}
-                        <div className="max-h-[500px] overflow-auto rounded-lg border dark:border-slate-700">
-                            {pLoading ? (
-                                <div className="p-3 text-sm text-gray-500">Đang tải…</div>
-                            ) : products.length === 0 ? (
-                                <div className="p-3 text-sm text-gray-500">Không có dịch vụ.</div>
-                            ) : (
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableCell isHeader className="px-3 py-2 text-sm text-gray-500">Tên</TableCell>
-                                            <TableCell isHeader className="px-3 py-2 text-sm text-gray-500">Giá</TableCell>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {products.map((p) => (
-                                            <TableRow
-                                                key={p.DV_MA}
-                                                className={`cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 ${selectedProd?.DV_MA === p.DV_MA ? "bg-slate-50 dark:bg-white/5" : ""
-                                                    }`}
-                                                onClick={() => {
-                                                    if (!selectedRoomId) {
-                                                        alert('Hãy chọn một phòng ở bên phải trước khi thêm dịch vụ.');
-                                                        return;
-                                                    }
-                                                    addDraft(selectedRoomId, p);
-                                                }}
-                                            >
-                                                <TableCell className="px-3 py-2">
-                                                    <div className="text-sm font-medium">{p.DV_TEN}</div>
-                                                    <div className="text-sm text-gray-500">{p.LDV_TEN || "—"}</div>
-                                                </TableCell>
-                                                <TableCell className="w-24 px-3 py-2 text-center text-sm">{vnd(p.PRICE)}</TableCell>
+                            {/* List */}
+                            <div className="max-h-[500px] overflow-auto rounded-lg border dark:border-slate-700">
+                                {pLoading ? (
+                                    <div className="p-3 text-sm text-gray-500">Đang tải…</div>
+                                ) : products.length === 0 ? (
+                                    <div className="p-3 text-sm text-gray-500">Không có dịch vụ.</div>
+                                ) : (
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableCell isHeader className="px-3 py-2 text-sm text-gray-500">Tên</TableCell>
+                                                <TableCell isHeader className="px-3 py-2 text-sm text-gray-500">Giá</TableCell>
                                             </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            )}
-                        </div>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {products.map((p) => (
+                                                <TableRow
+                                                    key={p.DV_MA}
+                                                    className={`cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 ${selectedProd?.DV_MA === p.DV_MA ? "bg-slate-50 dark:bg-white/5" : ""
+                                                        }`}
+                                                    onClick={() => {
+                                                        if (!selectedRoomId) {
+                                                            alert('Hãy chọn một phòng ở bên phải trước khi thêm dịch vụ.');
+                                                            return;
+                                                        }
+                                                        addDraft(selectedRoomId, p);
+                                                    }}
+                                                >
+                                                    <TableCell className="px-3 py-2">
+                                                        <div className="text-sm font-medium">{p.DV_TEN}</div>
+                                                        <div className="text-sm text-gray-500">{p.LDV_TEN || "—"}</div>
+                                                    </TableCell>
+                                                    <TableCell className="w-24 px-3 py-2 text-center text-sm">{vnd(p.PRICE)}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                )}
+                            </div>
 
 
-                        {/* form thêm DV */}
+                            {/* form thêm DV */}
 
-                    </ComponentCard>
+                        </ComponentCard>
 
-                    {/* RIGHT: Chi tiết HĐ (gộp Phòng + Dịch vụ) */}
-                    <ComponentCard title="Chi tiết hợp đồng" right={<Stepper status={status} />} >
-                        {/* {(!isCheckedIn || isOverdue) && (
+                        {/* RIGHT: Chi tiết HĐ (gộp Phòng + Dịch vụ) */}
+                        <ComponentCard title="Chi tiết hợp đồng" right={<Stepper status={status} />} >
+                            {/* {(!isCheckedIn || isOverdue) && (
                             <div className="mb-2 rounded-md border border-amber-400 bg-amber-50 p-2 text-sm text-amber-700">
                                 {!isCheckedIn
                                     ? 'Chỉ có thể thêm dịch vụ khi khách hàng đã NHẬN PHÒNG.'
                                     : 'Hợp đồng đã quá hạn trả phòng. Vui lòng gia hạn để thêm dịch vụ.'}
                             </div>
                         )} */}
-                        <div className="mb-3 flex flex-wrap items-end gap-3">
-                            <div className="inline-flex w-fit flex-col gap-1 self-end">
-                                <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
-                                    KHÁCH CHÍNH
-                                </span>
-                                <Input
-                                    className="w-80 h-9"           // ép cùng chiều cao
-                                    placeholder="Khách chính"
-                                    value={
-                                        mainGuest ? `${mainGuest.name}${mainGuest.phone ? ` (${mainGuest.phone})` : ''}` : ''
-                                    }
-                                    onChange={() => { }}
-                                    disabled
-                                />
-
-                            </div>
-
-                            <div className="inline-flex w-fit flex-col gap-1 self-end">
-                                <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
-                                    LƯU TRÚ
-                                </span>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setOccOpen(true)}
-                                    className="inline-flex h-11 items-center gap-3 rounded-lg border px-3 text-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
-                                    title="Khách lưu trú"
-                                >
-                                    <span className="inline-flex items-center gap-1">
-                                        <span>👤</span><b>{occAdults}</b>
+                            <div className="mb-3 flex flex-wrap items-end gap-3">
+                                <div className="inline-flex w-fit flex-col gap-1 self-end">
+                                    <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
+                                        KHÁCH CHÍNH
                                     </span>
-                                    <span className="opacity-40">|</span>
-                                    <span className="inline-flex items-center gap-1">
-                                        <span>🧒</span><b>{occChildren}</b>
-                                    </span>
-                                    <span className="opacity-40">|</span>
-                                    <span className="inline-flex items-center gap-1">
-                                        <span>🪪</span><b>{occDocs}</b>
-                                    </span>
-                                </button>
-                            </div>
+                                    <Input
+                                        className="w-80 h-9"           // ép cùng chiều cao
+                                        placeholder="Khách chính"
+                                        value={
+                                            mainGuest ? `${mainGuest.name}${mainGuest.phone ? ` (${mainGuest.phone})` : ''}` : ''
+                                        }
+                                        onChange={() => { }}
+                                        disabled
+                                    />
 
-                            <div className="grid w-fit justify-items-center gap-1 self-end">
-                                <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
-                                    DỰ KIẾN: NGÀY ĐẶT - NGÀY TRẢ
-                                </span>
+                                </div>
 
-                                <button
-                                    type="button"
-                                    onClick={() => setOpenAdjustModal(true)}
-                                    className="inline-flex h-11 items-center gap-2 rounded-lg border bg-white/60 px-3 
+                                <div className="inline-flex w-fit flex-col gap-1 self-end">
+                                    <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
+                                        LƯU TRÚ
+                                    </span>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setOccOpen(true)}
+                                        className="inline-flex h-11 items-center gap-3 rounded-lg border px-3 text-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
+                                        title="Khách lưu trú"
+                                    >
+                                        <span className="inline-flex items-center gap-1">
+                                            <span>👤</span><b>{occAdults}</b>
+                                        </span>
+                                        <span className="opacity-40">|</span>
+                                        <span className="inline-flex items-center gap-1">
+                                            <span>🧒</span><b>{occChildren}</b>
+                                        </span>
+                                        <span className="opacity-40">|</span>
+                                        <span className="inline-flex items-center gap-1">
+                                            <span>🪪</span><b>{occDocs}</b>
+                                        </span>
+                                    </button>
+                                </div>
+
+                                <div className="grid w-fit justify-items-center gap-1 self-end">
+                                    <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
+                                        DỰ KIẾN: NGÀY ĐẶT - NGÀY TRẢ
+                                    </span>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setOpenAdjustOptionModal(true)}
+                                        disabled={!canAdjust}
+                                        className="inline-flex h-11 items-center gap-2 rounded-lg border bg-white/60 px-3 
       text-sm font-medium text-gray-800 shadow-sm ring-1 ring-gray-200 
       hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 
       dark:text-gray-100 dark:ring-white/10"
-                                    title="Chỉnh ngày/giờ trả phòng"
-                                >
-                                    <time className="tabular-nums">{fmt(booking?.from)}</time>
-                                    <span className="mx-1 text-gray-400">→</span>
-                                    <time className="tabular-nums">{fmt(booking?.to)}</time>
-                                </button>
+                                        title="Chỉnh ngày/giờ trả phòng"
+                                    >
+                                        <time className="tabular-nums">{fmt(booking?.from)}</time>
+                                        <span className="mx-1 text-gray-400">→</span>
+                                        <time className="tabular-nums">{fmt(booking?.to)}</time>
+                                    </button>
+                                </div>
+                                {/* {booking?.trang_thai === "CHECKED_IN" && (
+                                    <button
+                                        onClick={() => setOpenAdjustModal(true)}
+                                        className="px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                                    >
+                                        Điều chỉnh ngày / giờ trả
+                                    </button>
+                                )}
+
+                                {booking?.trang_thai === "CONFIRMED" && (
+                                    <button
+                                        onClick={() => setOpenCheckinModal(true)}
+                                        className="px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                                    >
+                                        Điều chỉnh ngày / giờ nhận
+                                    </button>
+                                )} */}
+
+                                {/* CỤM: NGÀY NHẬN PHÒNG */}
+                                {(() => {
+                                    const actualCheckIn = booking?.thuc_nhan || null;
+                                    const hasCheckIn = !!actualCheckIn;
+                                    const base =
+                                        'inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium ring-1';
+                                    const onCls =
+                                        'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-800';
+                                    const offCls =
+                                        'bg-white/60 text-gray-800 ring-gray-200 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:ring-white/10';
+
+                                    return (
+                                        <div className="inline-flex w-fit flex-col gap-1 self-end">
+                                            <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
+                                                NGÀY NHẬN PHÒNG
+                                            </span>
+
+                                            <div className={`${base} ${hasCheckIn ? onCls : offCls}`}>
+                                                {hasCheckIn ? (
+                                                    <time className="tabular-nums">{fmt(actualCheckIn)}</time>
+                                                ) : (
+                                                    <span className="opacity-60">Chưa nhận</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                                {(() => {
+                                    const actualCheckOut = booking?.thuc_tra || null;
+                                    const hasCheckOut = !!actualCheckOut;
+                                    const base =
+                                        'inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium ring-1';
+                                    const onCls =
+                                        'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-800';
+                                    const offCls =
+                                        'bg-white/60 text-gray-800 ring-gray-200 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:ring-white/10';
+
+                                    return (
+                                        <div className="inline-flex w-fit flex-col gap-1 self-end">
+                                            <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
+                                                NGÀY TRẢ PHÒNG
+                                            </span>
+
+                                            <div className={`${base} ${hasCheckOut ? onCls : offCls}`}>
+                                                {hasCheckOut ? (
+                                                    <time className="tabular-nums">{fmt(actualCheckOut)}</time>
+                                                ) : (
+                                                    <span className="opacity-60">Chưa trả</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                            <div className="flex justify-between items-center mb-3">
+                                <h3 className="font-semibold text-base">Danh sách phòng</h3>
+                                {(booking?.trang_thai === 'CONFIRMED') && (
+                                    <button
+                                        onClick={() => setOpenAddRoomModal(true)}
+                                        className="rounded-md bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700"
+                                    >
+                                        + Thêm phòng
+                                    </button>
+                                )}
+                                {(booking?.trang_thai === 'CHECKED_IN') && (
+                                    <button
+                                        onClick={() => setOpenAddRoomCheckInModal(true)}
+                                        className="rounded-md bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700"
+                                    >
+                                        + Thêm phòng
+                                    </button>
+                                )}
                             </div>
 
+                            {/* danh sách theo phòng */}
+                            <div className="space-y-3">
+                                {roomGroups.map((g, idx) => {
+                                    const isSelected = selectedRoomId === g.room.PHONG_MA;
+                                    return (
+                                        <div key={g.key}
+                                            className={`rounded-xl border p-3 dark:border-slate-700 ${isSelected ? 'border-emerald-500 ring-2 ring-emerald-400/60' : ''
+                                                }`}>
+                                            {/* Header phòng */}
+                                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                                <div className="flex items-center gap-3">
+                                                    {booking?.trang_thai === 'CONFIRMED' && (
+                                                        <button
+                                                            onClick={async () => {
+                                                                if (!confirm(`Xóa ${g.room.roomName} khỏi hợp đồng?`)) return;
+                                                                try {
+                                                                    await api.delete(`/bookings/${booking.id}/rooms/${g.room.PHONG_MA}`);
+                                                                    await loadFull();
+                                                                } catch (e: any) {
+                                                                    alert(e?.response?.data?.message || 'Xóa phòng thất bại.');
+                                                                }
+                                                            }}
+                                                            className="ml-2 text-sm px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700"
+                                                        >
+                                                            {<TrashBinIcon />}
+                                                        </button>
+                                                    )}
 
-
-                            {/* CỤM: NGÀY NHẬN PHÒNG */}
-                            {(() => {
-                                const actualCheckIn = booking?.thuc_nhan || null;
-                                const hasCheckIn = !!actualCheckIn;
-                                const base =
-                                    'inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium ring-1';
-                                const onCls =
-                                    'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-800';
-                                const offCls =
-                                    'bg-white/60 text-gray-800 ring-gray-200 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:ring-white/10';
-
-                                return (
-                                    <div className="inline-flex w-fit flex-col gap-1 self-end">
-                                        <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
-                                            NGÀY NHẬN PHÒNG
-                                        </span>
-
-                                        <div className={`${base} ${hasCheckIn ? onCls : offCls}`}>
-                                            {hasCheckIn ? (
-                                                <time className="tabular-nums">{fmt(actualCheckIn)}</time>
-                                            ) : (
-                                                <span className="opacity-60">Chưa nhận</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })()}
-                            {(() => {
-                                const actualCheckOut = booking?.thuc_tra || null;
-                                const hasCheckOut = !!actualCheckOut;
-                                const base =
-                                    'inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium ring-1';
-                                const onCls =
-                                    'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-800';
-                                const offCls =
-                                    'bg-white/60 text-gray-800 ring-gray-200 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:ring-white/10';
-
-                                return (
-                                    <div className="inline-flex w-fit flex-col gap-1 self-end">
-                                        <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300 leading-none text-center">
-                                            NGÀY TRẢ PHÒNG
-                                        </span>
-
-                                        <div className={`${base} ${hasCheckOut ? onCls : offCls}`}>
-                                            {hasCheckOut ? (
-                                                <time className="tabular-nums">{fmt(actualCheckOut)}</time>
-                                            ) : (
-                                                <span className="opacity-60">Chưa trả</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })()}
-                        </div>
-                        <div className="flex justify-between items-center mb-3">
-                            <h3 className="font-semibold text-base">Danh sách phòng</h3>
-                            {(booking?.trang_thai === 'CONFIRMED') && (
-                                <button
-                                    onClick={() => setOpenAddRoomModal(true)}
-                                    className="rounded-md bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700"
-                                >
-                                    + Thêm phòng
-                                </button>
-                            )}
-                            {(booking?.trang_thai === 'CHECKED_IN') && (
-                                <button
-                                    onClick={() => setOpenAddRoomCheckInModal(true)}
-                                    className="rounded-md bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700"
-                                >
-                                    + Thêm phòng
-                                </button>
-                            )}
-                        </div>
-
-                        {/* danh sách theo phòng */}
-                        <div className="space-y-3">
-                            {roomGroups.map((g, idx) => {
-                                const isSelected = selectedRoomId === g.room.PHONG_MA;
-                                return (
-                                    <div key={g.key}
-                                        className={`rounded-xl border p-3 dark:border-slate-700 ${isSelected ? 'border-emerald-500 ring-2 ring-emerald-400/60' : ''
-                                            }`}>
-                                        {/* Header phòng */}
-                                        <div className="flex flex-wrap items-center justify-between gap-3">
-                                            <div className="flex items-center gap-3">
-                                                {booking?.trang_thai === 'CONFIRMED' && (
-                                                    <button
-                                                        onClick={async () => {
-                                                            if (!confirm(`Xóa ${g.room.roomName} khỏi hợp đồng?`)) return;
-                                                            try {
-                                                                await api.delete(`/bookings/${booking.id}/rooms/${g.room.PHONG_MA}`);
-                                                                await loadFull();
-                                                            } catch (e: any) {
-                                                                alert(e?.response?.data?.message || 'Xóa phòng thất bại.');
-                                                            }
-                                                        }}
-                                                        className="ml-2 text-sm px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700"
-                                                    >
-                                                        {<TrashBinIcon />}
-                                                    </button>
-                                                )}
-
-                                                <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border text-sm font-medium dark:border-slate-700">
-                                                    {idx + 1}
-                                                </span>
-                                                <div>
-                                                    <div className="text-m font-semibold">{g.room.roomName}
-                                                        {g.room.CTSD_TRANGTHAI === "DOI_PHONG" && (
-                                                            <span className="rounded bg-orange-100 px-2 py-0.5 text-[11px] font-medium text-orange-700">
-                                                                Đã đổi phòng
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="text-sm text-gray-500">
-                                                        {g.room.roomType || "—"} • {fmt(booking?.from)} → {fmt(booking?.to)}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="text-right">
-                                                <div className="text-sm text-gray-500">Tiền phòng</div>
-                                                <div className="text-sm font-medium">{vnd(g.room.tong_tien)}</div>
-                                            </div>
-                                        </div>
-
-                                        {/* Dịch vụ của phòng */}
-                                        <div className="mt-3 space-y-2">
-                                            {/* 2.1) CÁC DỊCH VỤ ĐÃ LƯU – ĐÃ GỘP (chỉ hiển thị, không sửa) */}
-                                            {(persistedByRoom[g.room.PHONG_MA] || []).map(row => (
-                                                <div
-                                                    key={`P-${row.PHONG_MA}-${row.DV_MA}-${row.price}`}
-                                                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-2 dark:border-slate-700"
-                                                >
-                                                    <div className="min-w-[180px] flex-1">
-                                                        <div className="text-sm font-medium">{row.dvTen}</div>
-                                                        <div className="text-[11px] text-gray-500">đã lưu</div>
-                                                    </div>
-
-                                                    <div className="text-sm text-gray-500">
-                                                        {fmtDate(row.day)}
-                                                    </div>
-
-                                                    <div className="flex items-center gap-1">
-                                                        <span className="text-sm text-gray-500">SL</span>
-                                                        <Input
-
-                                                            type="number"
-                                                            className="w-16 text-right opacity-70"
-                                                            value={row.qty}
-                                                            onChange={() => { }}
-                                                        />
-                                                    </div>
-
-                                                    <div className="flex items-center gap-1">
-                                                        <span className="text-sm text-gray-500">ĐG</span>
-                                                        <Input
-
-                                                            type="number"
-                                                            className="w-24 text-right opacity-70"
-                                                            value={row.price}
-                                                            onChange={() => { }}
-                                                        />
-                                                    </div>
-
-                                                    <div className="text-right min-w-[80px] font-medium">{vnd(row.qty * row.price)}</div>
-
-                                                    {/* không có nút Xoá cho dòng gộp */}
+                                                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border text-sm font-medium dark:border-slate-700">
+                                                        {idx + 1}
+                                                    </span>
                                                     <div>
-                                                        {status === 'CHECKED_IN' && (
-                                                            <>
-                                                                <button
-                                                                    className="text-blue-600 hover:underline text-xs"
-                                                                    onClick={() => {
-                                                                        // Lấy tất cả record thô của dịch vụ này trong phòng này
-                                                                        const rawRecords = services.filter(
-                                                                            (sv) =>
-                                                                                sv.PHONG_MA === g.room.PHONG_MA &&  // phòng hiện tại
-                                                                                sv.DV_MA === row.DV_MA              // cùng dịch vụ
-                                                                        );
-
-                                                                        setServiceModalData({
-                                                                            roomName: g.room.roomName,
-                                                                            serviceName: row.dvTen,
-                                                                            records: rawRecords,
-                                                                        });
-                                                                        setServiceModalOpen(true);
-                                                                    }}
-                                                                >
-                                                                    <PencilIcon />
-                                                                </button>
-                                                            </>
-                                                        )}
-                                                    </div>
-
-                                                    <div />
-                                                </div>
-                                            ))}
-
-                                            {/* Draft (chưa lưu) của phòng */}
-                                            {(drafts[g.room.PHONG_MA] ?? []).map(d => (
-                                                <div key={d.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-2 dark:border-slate-700">
-                                                    <div className="min-w-[200px] flex-1">
-                                                        <div className="text-sm font-medium">
-                                                            {d.dvTen}
-                                                            <span className="ml-2 rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-                                                                chưa lưu
-                                                            </span>
+                                                        <div className="text-m font-semibold">{g.room.roomName}
+                                                            {g.room.CTSD_TRANGTHAI === "DOI_PHONG" && (
+                                                                <span className="rounded bg-orange-100 px-2 py-0.5 text-[13px] font-medium text-orange-700">
+                                                                    Đã đổi phòng
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-sm text-gray-500">
+                                                            {g.room.roomType || "—"} • {g.room.dateRange}
                                                         </div>
                                                     </div>
-
-                                                    <div className="text-sm text-gray-500">{new Date().toLocaleDateString('vi-VN')}</div>
-
-                                                    <div className="flex items-center gap-1">
-                                                        <span className="text-sm text-gray-500">SL</span>
-                                                        <Input
-                                                            type="number"
-                                                            min="1"
-                                                            className="w-16 text-right"
-                                                            value={d.so_luong}
-                                                            onChange={(e: any) => updateDraft(d.PHONG_MA, d.id, { so_luong: Math.max(1, Number(e.target.value || 1)) })}
-                                                        />
-                                                    </div>
-
-                                                    <div className="flex items-center gap-1">
-                                                        <span className="text-sm text-gray-500">ĐG</span>
-                                                        <Input
-                                                            type="number"
-                                                            min="0"
-                                                            className="w-24 text-right"
-                                                            value={d.don_gia}
-                                                            onChange={(e: any) => updateDraft(d.PHONG_MA, d.id, { don_gia: Math.max(0, Number(e.target.value || 0)) })}
-                                                        />
-                                                    </div>
-
-                                                    <div className="text-right min-w-[80px] font-medium">
-                                                        {vnd(d.so_luong * d.don_gia)}
-                                                    </div>
-
-                                                    <div>
-                                                        <Button size="sm" variant="danger" onClick={() => removeDraft(d.PHONG_MA, d.id)}>Xoá</Button>
-                                                    </div>
                                                 </div>
-                                            ))}
 
-
-                                            {g.services.length === 0 && (
-                                                <div className="rounded-md border p-2 text-sm text-gray-500 dark:border-slate-700">
-                                                    Chưa có dịch vụ cho phòng này.
+                                                <div className="text-right">
+                                                    <div className="text-sm text-gray-500">Tiền phòng</div>
+                                                    <div className="text-sm font-medium">{vnd(g.room.tong_tien)}</div>
                                                 </div>
-                                            )}
-                                        </div>
+                                            </div>
 
-                                        {/* chọn phòng để thêm DV nhanh */}
-                                        <div className="mt-3">
-                                            <Button
-                                                size="sm"
-                                                variant={targetRoomKey === g.key ? "primary" : "outline"}
-                                                onClick={() => setSelectedRoomId(g.room.PHONG_MA)}
-                                                disabled={g.room.CTSD_TRANGTHAI === "DOI_PHONG"} // 👈 khóa nút nếu phòng đã đổi
-                                            >
-                                                {g.room.CTSD_TRANGTHAI === "DOI_PHONG"
-                                                    ? "Phòng đã đổi, không thể thêm dịch vụ"
-                                                    : selectedRoomId === g.room.PHONG_MA
-                                                        ? "Đang thêm vào phòng này"
-                                                        : "Chọn để thêm dịch vụ"}
-                                            </Button>
-                                        </div>
+                                            {/* Dịch vụ của phòng */}
+                                            <div className="mt-3 space-y-2">
+                                                {/* 2.1) CÁC DỊCH VỤ ĐÃ LƯU – ĐÃ GỘP (chỉ hiển thị, không sửa) */}
+                                                {(persistedByRoom[g.room.PHONG_MA] || []).map(row => (
+                                                    <div
+                                                        key={`P-${row.PHONG_MA}-${row.DV_MA}-${row.price}`}
+                                                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-2 dark:border-slate-700"
+                                                    >
+                                                        <div className="min-w-[180px] flex-1">
+                                                            <div className="text-sm font-medium">{row.dvTen}</div>
+                                                            <div className="text-[11px] text-gray-500">đã lưu</div>
+                                                        </div>
 
+                                                        <div className="text-sm text-gray-500">
+                                                            {fmtDate(row.day)}
+                                                        </div>
+
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-sm text-gray-500">SL</span>
+                                                            <Input
+
+                                                                type="number"
+                                                                className="w-16 text-right opacity-70"
+                                                                value={row.qty}
+                                                                onChange={() => { }}
+                                                            />
+                                                        </div>
+
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-sm text-gray-500">ĐG</span>
+                                                            <Input
+
+                                                                type="number"
+                                                                className="w-24 text-right opacity-70"
+                                                                value={row.price}
+                                                                onChange={() => { }}
+                                                            />
+                                                        </div>
+
+                                                        <div className="text-right min-w-[80px] font-medium">{vnd(row.qty * row.price)}</div>
+
+                                                        {/* không có nút Xoá cho dòng gộp */}
+                                                        <div>
+                                                            {status === 'CHECKED_IN' && (
+                                                                <>
+                                                                    <button
+                                                                        className="text-blue-600 hover:underline text-xs"
+                                                                        onClick={() => {
+                                                                            // Lấy tất cả record thô của dịch vụ này trong phòng này
+                                                                            const rawRecords = services.filter(
+                                                                                (sv) =>
+                                                                                    sv.PHONG_MA === g.room.PHONG_MA &&  // phòng hiện tại
+                                                                                    sv.DV_MA === row.DV_MA              // cùng dịch vụ
+                                                                            );
+
+                                                                            setServiceModalData({
+                                                                                roomName: g.room.roomName,
+                                                                                serviceName: row.dvTen,
+                                                                                records: rawRecords,
+                                                                            });
+                                                                            setServiceModalOpen(true);
+                                                                        }}
+                                                                    >
+                                                                        <PencilIcon />
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </div>
+
+                                                        <div />
+                                                    </div>
+                                                ))}
+
+                                                {/* Draft (chưa lưu) của phòng */}
+                                                {(drafts[g.room.PHONG_MA] ?? []).map(d => (
+                                                    <div key={d.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-2 dark:border-slate-700">
+                                                        <div className="min-w-[200px] flex-1">
+                                                            <div className="text-sm font-medium">
+                                                                {d.dvTen}
+                                                                <span className="ml-2 rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
+                                                                    chưa lưu
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="text-sm text-gray-500">{new Date().toLocaleDateString('vi-VN')}</div>
+
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-sm text-gray-500">SL</span>
+                                                            <Input
+                                                                type="number"
+                                                                min="1"
+                                                                className="w-16 text-right"
+                                                                value={d.so_luong}
+                                                                onChange={(e: any) => updateDraft(d.PHONG_MA, d.id, { so_luong: Math.max(1, Number(e.target.value || 1)) })}
+                                                            />
+                                                        </div>
+
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-sm text-gray-500">ĐG</span>
+                                                            <Input
+                                                                type="number"
+                                                                min="0"
+                                                                className="w-24 text-right"
+                                                                value={d.don_gia}
+                                                                onChange={(e: any) => updateDraft(d.PHONG_MA, d.id, { don_gia: Math.max(0, Number(e.target.value || 0)) })}
+                                                            />
+                                                        </div>
+
+                                                        <div className="text-right min-w-[80px] font-medium">
+                                                            {vnd(d.so_luong * d.don_gia)}
+                                                        </div>
+
+                                                        <div>
+                                                            <Button size="sm" variant="danger" onClick={() => removeDraft(d.PHONG_MA, d.id)}>Xoá</Button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+
+
+                                                {g.services.length === 0 && (
+                                                    <div className="rounded-md border p-2 text-sm text-gray-500 dark:border-slate-700">
+                                                        Chưa có dịch vụ cho phòng này.
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* chọn phòng để thêm DV nhanh */}
+                                            <div className="mt-3">
+                                                <Button
+                                                    size="sm"
+                                                    variant={targetRoomKey === g.key ? "primary" : "outline"}
+                                                    onClick={() => setSelectedRoomId(g.room.PHONG_MA)}
+                                                    disabled={g.room.CTSD_TRANGTHAI === "DOI_PHONG"} // 👈 khóa nút nếu phòng đã đổi
+                                                >
+                                                    {g.room.CTSD_TRANGTHAI === "DOI_PHONG"
+                                                        ? "Phòng đã đổi, không thể thêm dịch vụ"
+                                                        : selectedRoomId === g.room.PHONG_MA
+                                                            ? "Đang thêm vào phòng này"
+                                                            : "Chọn để thêm dịch vụ"}
+                                                </Button>
+                                            </div>
+
+                                        </div>
+                                    );
+                                })}
+
+
+                                {roomGroups.length === 0 && (
+                                    <div className="rounded-xl border p-6 text-center text-gray-500 dark:border-slate-700">
+                                        Chưa có phòng trong HĐ.
                                     </div>
-                                );
-                            })}
+                                )}
+                            </div>
+                            {!!booking?.ghi_chu && (
+                                <ComponentCard title="Ghi chú đặt phòng" className=''>
+                                    <div className="text-sm">{booking.ghi_chu}</div>
+                                </ComponentCard>
+                            )}
 
 
-                            {roomGroups.length === 0 && (
-                                <div className="rounded-xl border p-6 text-center text-gray-500 dark:border-slate-700">
-                                    Chưa có phòng trong HĐ.
+                            {loading || !booking ? (
+                                <div className="text-gray-500">Đang tải chi tiết…</div>
+                            ) : (
+                                <div>
+                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3 mb-4">
+                                        <div className="md:col-start-3 md:justify-self-end">
+                                            <div className="text-xl md:text-xl font-extrabold">
+                                                <span className="text-red-600 dark:text-red-400">Tổng cộng:</span>{' '}
+                                                <span className="text-black dark:text-white">{vnd(totals.grand)}</span>
+
+                                                {invStatus?.hasInvoice && (
+                                                    invStatus.due <= 0 ? (
+                                                        <span className="ml-3 inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-sm font-medium text-emerald-700">
+                                                            ĐÃ XUẤT HÓA ĐƠN & ĐÃ THANH TOÁN
+                                                        </span>
+                                                    ) : (
+                                                        <span className="ml-3 inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-sm font-medium text-amber-700">
+                                                            Đã thanh toán {vnd(Number(invStatus.paid || 0))}
+                                                        </span>
+                                                    )
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
-                        </div>
-                        {!!booking?.ghi_chu && (
-                            <ComponentCard title="Ghi chú đặt phòng" className=''>
-                                <div className="text-sm">{booking.ghi_chu}</div>
-                            </ComponentCard>
-                        )}
 
-
-                        {loading || !booking ? (
-                            <div className="text-gray-500">Đang tải chi tiết…</div>
-                        ) : (
-                            <div>
-                                <div className="grid grid-cols-1 gap-3 md:grid-cols-3 mb-4">
-                                    <div className="md:col-start-3 md:justify-self-end">
-                                        <div className="text-xl md:text-xl font-extrabold">
-                                            <span className="text-red-600 dark:text-red-400">Tổng cộng:</span>{' '}
-                                            <span className="text-black dark:text-white">{vnd(totals.grand)}</span>
-
-                                            {invStatus?.hasInvoice && (
-                                                invStatus.due <= 0 ? (
-                                                    <span className="ml-3 inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-sm font-medium text-emerald-700">
-                                                        ĐÃ XUẤT HÓA ĐƠN & ĐÃ THANH TOÁN
-                                                    </span>
-                                                ) : (
-                                                    <span className="ml-3 inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-sm font-medium text-amber-700">
-                                                        Đã thanh toán {vnd(Number(invStatus.paid || 0))}
-                                                    </span>
-                                                )
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="mt-6 flex justify-end gap-2">
-                            {booking?.trang_thai === 'CHECKED_OUT' && (
-                                <>
+                            <div className="mt-6 flex justify-end gap-2">
+                                {booking?.trang_thai === 'CHECKED_OUT' && (
+                                    <>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                                const invoiceId = invStatus?.invoiceId;
+                                                if (!invoiceId) { alert('Chưa có hóa đơn để in'); return; }
+                                                window.open(`/admin/others-pages/hoa-don/${invoiceId}/print`, '_blank', 'noopener');
+                                            }}
+                                        >
+                                            Xuất hóa đơn <DownloadIcon />
+                                        </Button>
+                                    </>
+                                )}
+                                {status === 'CONFIRMED' && (
                                     <Button
                                         size="sm"
                                         variant="outline"
                                         onClick={() => {
-                                            const invoiceId = invStatus?.invoiceId;
-                                            if (!invoiceId) { alert('Chưa có hóa đơn để in'); return; }
-                                            window.open(`/admin/others-pages/hoa-don/${invoiceId}/print`, '_blank', 'noopener');
+                                            window.location.href = `/admin/others-pages/dat-phong/${bookingId}/print`;
                                         }}
+                                        className=""
                                     >
-                                        Xuất hóa đơn <DownloadIcon />
+                                        In phiếu đặt phòng
                                     </Button>
-                                </>
-                            )}
-                            {status === 'CONFIRMED' && (
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                        window.location.href = `/admin/others-pages/dat-phong/${bookingId}/print`;
-                                    }}
-                                    className=""
-                                >
-                                    In phiếu đặt phòng
-                                </Button>
-                            )}
+                                )}
 
-                            {status === 'CHECKED_IN' && (
-                                <>
-                                    <Button
-                                        size="sm"
-                                        variant="primary"
-                                        disabled={isCheckedOut}
-                                        onClick={async () => {
-                                            // gom tất cả draft thành một mảng lệnh
-                                            const all: DraftLine[] = Object.values(drafts).flat();
-                                            if (all.length === 0) { alert('Không có thay đổi để lưu.'); return; }
+                                {status === 'CHECKED_IN' && (
+                                    <>
+                                        <Button
+                                            size="sm"
+                                            variant="primary"
+                                            disabled={isCheckedOut}
+                                            onClick={async () => {
+                                                // gom tất cả draft thành một mảng lệnh
+                                                const all: DraftLine[] = Object.values(drafts).flat();
+                                                if (all.length === 0) { alert('Không có thay đổi để lưu.'); return; }
 
-                                            try {
-                                                // gọi tuần tự (hoặc Promise.all theo batch nhỏ)
-                                                for (const d of all) {
-                                                    await api.post(`/bookings/${bookingId}/services`, {
-                                                        DV_MA: d.DV_MA,
-                                                        PHONG_MA: d.PHONG_MA,
-                                                        CTDV_SOLUONG: d.so_luong,
-                                                        CTDV_DONGIA: d.don_gia,
-                                                        CTDV_GHICHU: d.ghi_chu ?? null,
-                                                        // CTDV_NGAY: new Date().toISOString()
-                                                    });
-                                                }
-                                                // clear draft & reload
-                                                setDrafts({});
-                                                await loadFull();
-                                                await loadInvoiceStatus();
-                                                alert('Đã lưu dịch vụ.');
-                                            } catch (e: any) {
-                                                alert(e?.response?.data?.message || 'Lưu thất bại');
-                                            }
-                                        }}
-                                    >
-                                        Lưu
-                                    </Button>
-                                </>
-                            )}
-
-
-
-                            {status === 'CHECKED_IN' && (
-                                <>
-
-                                    <Button
-                                        size="sm"
-                                        variant="primary"
-                                        disabled={isCheckedOut}
-                                        onClick={async () => {
-                                            try {
-                                                const lateInfo = getLateInfo();
-
-                                                if (lateInfo) {
-                                                    const ok = confirm(
-                                                        `Khách đang checkout trễ ${lateInfo}.\nBạn có muốn tính phí trả phòng trễ không?`
-                                                    );
-                                                    if (ok) {
-                                                        await api.post(`/bookings/${bookingId}/apply-late-fee`);
-                                                        await loadFull();
+                                                try {
+                                                    // gọi tuần tự (hoặc Promise.all theo batch nhỏ)
+                                                    for (const d of all) {
+                                                        await api.post(`/bookings/${bookingId}/services`, {
+                                                            DV_MA: d.DV_MA,
+                                                            PHONG_MA: d.PHONG_MA,
+                                                            CTDV_SOLUONG: d.so_luong,
+                                                            CTDV_DONGIA: d.don_gia,
+                                                            CTDV_GHICHU: d.ghi_chu ?? null,
+                                                            // CTDV_NGAY: new Date().toISOString()
+                                                        });
                                                     }
+                                                    // clear draft & reload
+                                                    setDrafts({});
+                                                    await loadFull();
+                                                    await loadInvoiceStatus();
+                                                    alert('Đã lưu dịch vụ.');
+                                                } catch (e: any) {
+                                                    alert(e?.response?.data?.message || 'Lưu thất bại');
                                                 }
-                                                setPayForCheckout(true);
-                                                setPayOpen(true);
-                                            } catch (e) {
-                                                console.error(e);
-                                                alert("Lỗi khi xử lý checkout trễ.");
-                                            }
-                                        }}
-                                    >
-                                        Thanh toán & trả phòng
-                                    </Button>
+                                            }}
+                                        >
+                                            Lưu
+                                        </Button>
+                                    </>
+                                )}
 
 
-                                </>
-                            )}
 
-                            {canCheckIn && (
-                                 
+                                {status === 'CHECKED_IN' && (
+                                    <>
+
+                                        <Button
+                                            size="sm"
+                                            variant="primary"
+                                            disabled={isCheckedOut}
+                                            onClick={async () => {
+                                                try {
+                                                    const lateInfo = getLateInfo();
+
+                                                    if (lateInfo) {
+                                                        const ok = confirm(
+                                                            `Khách đang checkout trễ ${lateInfo}.\nBạn có muốn tính phí trả phòng trễ không?`
+                                                        );
+                                                        if (ok) {
+                                                            await api.post(`/bookings/${bookingId}/apply-late-fee`);
+                                                            await loadFull();
+                                                        }
+                                                    }
+                                                    setPayForCheckout(true);
+                                                    setPayOpen(true);
+                                                } catch (e) {
+                                                    console.error(e);
+                                                    alert("Lỗi khi xử lý checkout trễ.");
+                                                }
+                                            }}
+                                        >
+                                            Thanh toán & trả phòng
+                                        </Button>
+
+
+                                    </>
+                                )}
+
+                                {canCheckIn && (
+
                                     <Button
                                         size="sm"
                                         variant="primary"
@@ -1485,179 +1696,232 @@ export default function BookingDetailPage() {
                                     >
                                         {checkingIn ? 'Đang nhận…' : 'Nhận phòng'}
                                     </Button>
-                                
-                            )}
-                            {canNoShow && (
-                                <button
-                                    onClick={handleNoShow}
-                                    className="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700"
-                                >
-                                    Vắng mặt
-                                </button>
-                            )}
 
-                        </div>
+                                )}
+                                {canNoShow && (
+                                    <button
+                                        onClick={handleNoShow}
+                                        className="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700"
+                                    >
+                                        Vắng mặt
+                                    </button>
+                                )}
 
-                    </ComponentCard>
-                </div>
-                <OccupantsModal
-                    key={occOpen ? `open-${bookingId}` : 'closed'}
-                    open={occOpen}
-                    onClose={() => setOccOpen(false)}
-                    value={occupants}
-                    onChange={(list) => setOccupants(list)}
-                    onAddAdultViaCreate={(append) => {
-                        // nhận callback append từ modal con và mở modal tạo KH
-                        occAppendRef.current = append;
-                        setOccCreateOpen(true);
-                    }}
-                    bookingId={bookingId}
-                    editable
-                />
-                <KhachHangCreateModal
-                    open={occCreateOpen}
-                    onClose={() => setOccCreateOpen(false)}
-                    onCreated={async (id, label, rec) => {
-                        setOccCreateOpen(false);
+                            </div>
 
-                        // 1) Ghi vào bảng LUU_TRU_KHACH của hợp đồng hiện tại
-                        try {
-                            await api.post(`/bookings/${bookingId}/guests`, {
-                                KH_MA: id,
-                                LA_KHACH_CHINH: false, // đổi true nếu bạn muốn set người vừa tạo là khách chính
-                                LA_KHACH_DAT: false,   // hoặc true nếu là người đặt
-                                GHI_CHU: null,
-                            });
-                        } catch (e: any) {
-                            console.error('Add guest to LUU_TRU_KHACH failed', e?.response?.data || e);
-                            alert(e?.response?.data?.message || 'Thêm khách vào hợp đồng thất bại');
-                            // vẫn tiếp tục add vào UI để user không mất dữ liệu nhập
-                        }
-
-                        // 2) Cập nhật UI occupants (giữ nguyên logic cũ)
-                        const newAdult = toOccupant(rec);
-                        if (occAppendRef.current) {
-                            occAppendRef.current(newAdult);
-                            occAppendRef.current = null;
-                        } else {
-                            setOccupants(prev => [...prev, newAdult]);
-                        }
-
-                        // 3) (tuỳ chọn) refresh danh sách từ BE cho chắc
-                        // const rows = await fetchGuestsOfBooking(bookingId);
-                        // setOccupants(rows.map(toOccupant));
-                    }}
-                />
-
-                <PaymentModal
-                    open={payOpen}
-                    onClose={() => setPayOpen(false)}
-                    total={totals.grand}
-                    deposit={Number(booking?.tien_coc ?? 0)}
-                    //paid={Number(invStatus?.paid ?? 0)}       // ✅ đã trả
-                    paid={Math.max(0, Number(invStatus?.paid ?? 0) - Number(booking?.tien_coc ?? 0))}
-                    due={Number(invStatus?.due ?? 0)}
-                    currentStaff={me ? { id: me.NV_MA, name: me.NV_HOTEN } : { id: '', name: '—' }}
-                    details={paymentDetails}          // 👈 slot chi tiết bên trái
-                    onSubmit={async (p) => {
-                        try {
-                            // ✅ 1️⃣ Ghi hóa đơn & thanh toán ngay
-                            const pay = await api.post(`/hoadon/from-booking/${bookingId}`, p);
-                            if (!pay || pay.status !== 201) {
-                                alert('Không tạo được hóa đơn / ghi thanh toán.');
-                                return;
-                            }
-
-                            const paidAll = Number(pay.data?._payment?.due ?? 0) <= 1e-6;
-                            const amountPaid = Number(pay.data?._payment?.paid ?? 0);
-                            const due = Number(pay.data?._payment?.due ?? 0);
-                            const over = Number(pay.data?.TT_TIEN_THUA ?? 0); // nếu có tiền thừa
-
-                            // ✅ 2️⃣ Hiển thị thông báo rõ ràng
-                            let msg = `Đã ghi nhận thanh toán ${amountPaid.toLocaleString('vi-VN')} VND.\n`;
-                            if (over > 0) msg += `Tiền thừa: ${over.toLocaleString('vi-VN')} VND.\n`;
-                            msg += paidAll
-                                ? '💰 Hóa đơn đã đủ tiền.'
-                                : `Còn thiếu: ${due.toLocaleString('vi-VN')} VND.`;
-
-                            alert(msg);
-
-                            // ✅ 3️⃣ Nếu còn thiếu tiền, dừng lại
-                            if (!paidAll) return;
-
-                            // ✅ 4️⃣ Nếu trả phòng kèm thanh toán → checkout
-                            if (payForCheckout) {
-                                setPayOpen(false);
-                                await doCheckout();
-                            } else {
-                                setPayOpen(false);
-                            }
-                        } catch (e: any) {
-                            alert(e?.response?.data?.message || 'Lỗi khi xử lý thanh toán.');
-                        }
-
-
-                    }}
-                />
-
-                <AddRoomModal
-                    open={openAddRoomModal}
-                    onClose={() => setOpenAddRoomModal(false)}
-                    booking={booking}
-                    bookingId={booking?.id}
-                    onAdded={loadFull}
-                />
-                <AddRoomCheckInModal
-                    open={openAddRoomCheckInModal}
-                    onClose={() => setOpenAddRoomCheckInModal(false)}
-                    booking={booking}
-                    bookingId={booking?.id}
-                    onAdded={loadFull}
-                />
-
-                {serviceModalData && (
-                    <SuaXoaDichVuHopDongModal
-                        open={serviceModalOpen}
+                        </ComponentCard>
+                    </div>
+                    <OccupantsModal
+                        key={occOpen ? `open-${bookingId}` : 'closed'}
+                        open={occOpen}
+                        onClose={() => setOccOpen(false)}
+                        value={occupants}
+                        onChange={(list) => setOccupants(list)}
+                        onAddAdultViaCreate={(append) => {
+                            // nhận callback append từ modal con và mở modal tạo KH
+                            occAppendRef.current = append;
+                            setOccCreateOpen(true);
+                        }}
                         bookingId={bookingId}
-                        roomName={serviceModalData.roomName}
-                        serviceName={serviceModalData.serviceName}
-                        records={serviceModalData.records}
-                        onClose={() => setServiceModalOpen(false)}
-                        onChanged={async () => {
-                            await loadFull();          // reload lại phòng + dịch vụ
-                            await loadInvoiceStatus(); // reload trạng thái hóa đơn (nếu có)
+                        editable
+                    />
+                    <KhachHangCreateModal
+                        open={occCreateOpen}
+                        onClose={() => setOccCreateOpen(false)}
+                        onCreated={async (id, label, rec) => {
+                            setOccCreateOpen(false);
+
+                            // 1) Ghi vào bảng LUU_TRU_KHACH của hợp đồng hiện tại
+                            try {
+                                await api.post(`/bookings/${bookingId}/guests`, {
+                                    KH_MA: id,
+                                    LA_KHACH_CHINH: false, // đổi true nếu bạn muốn set người vừa tạo là khách chính
+                                    LA_KHACH_DAT: false,   // hoặc true nếu là người đặt
+                                    GHI_CHU: null,
+                                });
+                            } catch (e: any) {
+                                console.error('Add guest to LUU_TRU_KHACH failed', e?.response?.data || e);
+                                alert(e?.response?.data?.message || 'Thêm khách vào hợp đồng thất bại');
+                                // vẫn tiếp tục add vào UI để user không mất dữ liệu nhập
+                            }
+
+                            // 2) Cập nhật UI occupants (giữ nguyên logic cũ)
+                            const newAdult = toOccupant(rec);
+                            if (occAppendRef.current) {
+                                occAppendRef.current(newAdult);
+                                occAppendRef.current = null;
+                            } else {
+                                setOccupants(prev => [...prev, newAdult]);
+                            }
+
+                            // 3) (tuỳ chọn) refresh danh sách từ BE cho chắc
+                            // const rows = await fetchGuestsOfBooking(bookingId);
+                            // setOccupants(rows.map(toOccupant));
                         }}
                     />
-                )}
 
-                {/* <AdjustReturnDateModal
+                    <PaymentModal
+                        open={payOpen}
+                        onClose={() => setPayOpen(false)}
+                        total={totals.grand}
+                        deposit={Number(booking?.tien_coc ?? 0)}
+                        //paid={Number(invStatus?.paid ?? 0)}       // ✅ đã trả
+                        paid={Math.max(0, Number(invStatus?.paid ?? 0) - Number(booking?.tien_coc ?? 0))}
+                        due={Number(invStatus?.due ?? 0)}
+                        currentStaff={me ? { id: me.NV_MA, name: me.NV_HOTEN } : { id: '', name: '—' }}
+                        details={paymentDetails}          // 👈 slot chi tiết bên trái
+                        onSubmit={async (p) => {
+                            try {
+                                // ✅ 1️⃣ Ghi hóa đơn & thanh toán ngay
+                                const pay = await api.post(`/hoadon/from-booking/${bookingId}`, p);
+                                if (!pay || pay.status !== 201) {
+                                    alert('Không tạo được hóa đơn / ghi thanh toán.');
+                                    return;
+                                }
+
+                                const paidAll = Number(pay.data?._payment?.due ?? 0) <= 1e-6;
+                                const amountPaid = Number(pay.data?._payment?.paid ?? 0);
+                                const due = Number(pay.data?._payment?.due ?? 0);
+                                const over = Number(pay.data?.TT_TIEN_THUA ?? 0); // nếu có tiền thừa
+
+                                // ✅ 2️⃣ Hiển thị thông báo rõ ràng
+                                let msg = `Đã ghi nhận thanh toán ${amountPaid.toLocaleString('vi-VN')} VND.\n`;
+                                if (over > 0) msg += `Tiền thừa: ${over.toLocaleString('vi-VN')} VND.\n`;
+                                msg += paidAll
+                                    ? '💰 Hóa đơn đã đủ tiền.'
+                                    : `Còn thiếu: ${due.toLocaleString('vi-VN')} VND.`;
+
+                                alert(msg);
+
+                                // ✅ 3️⃣ Nếu còn thiếu tiền, dừng lại
+                                if (!paidAll) return;
+
+                                // ✅ 4️⃣ Nếu trả phòng kèm thanh toán → checkout
+                                if (payForCheckout) {
+                                    setPayOpen(false);
+                                    await doCheckout();
+                                } else {
+                                    setPayOpen(false);
+                                }
+                            } catch (e: any) {
+                                alert(e?.response?.data?.message || 'Lỗi khi xử lý thanh toán.');
+                            }
+
+
+                        }}
+                    />
+
+                    <AddRoomModal
+                        open={openAddRoomModal}
+                        onClose={() => setOpenAddRoomModal(false)}
+                        booking={booking}
+                        bookingId={booking?.id}
+                        onAdded={loadFull}
+                    />
+                    <AddRoomCheckInModal
+                        open={openAddRoomCheckInModal}
+                        onClose={() => setOpenAddRoomCheckInModal(false)}
+                        booking={booking}
+                        bookingId={booking?.id}
+                        onAdded={loadFull}
+                    />
+
+                    {serviceModalData && (
+                        <SuaXoaDichVuHopDongModal
+                            open={serviceModalOpen}
+                            bookingId={bookingId}
+                            roomName={serviceModalData.roomName}
+                            serviceName={serviceModalData.serviceName}
+                            records={serviceModalData.records}
+                            onClose={() => setServiceModalOpen(false)}
+                            onChanged={async () => {
+                                await loadFull();          // reload lại phòng + dịch vụ
+                                await loadInvoiceStatus(); // reload trạng thái hóa đơn (nếu có)
+                            }}
+                        />
+                    )}
+
+                    {/* <AdjustReturnDateModal
                     open={openAdjustModal}
                     onClose={() => setOpenAdjustModal(false)}
                     booking={booking}
                     bookingId={booking?.id}
                     onUpdated={loadFull}
                 /> */}
-                <AdjustReturnDateModal
-                    open={openAdjustModal}
-                    onClose={() => setOpenAdjustModal(false)}
-                    bookingId={booking?.id}
-                    mode={
-                        /giờ/i.test(booking?.htLabel ?? "")
-                            ? "HOUR"
-                            : "DAY"
-                    }
-                    currentFrom={booking?.from}
-                    currentTo={booking?.to}
-                    onChanged={() => {
-                        // gọi lại load chi tiết HĐ
-                        loadFull(); // dùng đúng tên hàm bạn đang xài để fetch lại
-                    }}
-                />
+                    <AdjustReturnDateModal
+                        open={openAdjustModal}
+                        onClose={() => setOpenAdjustModal(false)}
+                        bookingId={booking?.id}
+                        mode={
+                            /giờ/i.test(booking?.htLabel ?? "")
+                                ? "HOUR"
+                                : "DAY"
+                        }
+                        currentFrom={booking?.from}
+                        currentTo={booking?.to}
+                        onChanged={() => {
+                            // gọi lại load chi tiết HĐ
+                            loadFull(); // dùng đúng tên hàm bạn đang xài để fetch lại
+                        }}
+                    />
+
+                    <AdjustCheckinModal
+                        open={openCheckinModal}
+                        bookingId={bookingId}
+                        mode={booking?.htLabel?.includes("giờ") ? "HOUR" : "DAY"}
+                        currentFrom={booking?.from}
+                        currentTo={booking?.to}
+                        onClose={() => setOpenCheckinModal(false)}
+                        onChanged={(newCheckin) => {
+                            console.log("Check-in updated:", newCheckin);
+                            loadFull();
+                        }}
+                    />
 
 
+                    {openAdjustOptionModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                            <div className="w-full max-w-sm rounded-xl bg-white shadow-lg p-4 space-y-4">
 
+                                <h2 className="text-sm font-semibold text-slate-800 text-center">
+                                    Bạn muốn điều chỉnh thời gian nào?
+                                </h2>
+                                {booking?.trang_thai === "CONFIRMED" && (
+                                    <button
+                                        onClick={() => {
+                                            setOpenCheckinModal(true);
+                                            setOpenAdjustOptionModal(false);
+                                        }}
+                                        className="w-full rounded-md bg-emerald-600 text-white py-2 text-sm font-medium hover:bg-emerald-700"
+                                    >
+                                        Điều chỉnh ngày / giờ nhận phòng
+                                    </button>
+                                )}
+
+                                {(booking?.trang_thai === "CHECKED_IN" || booking?.trang_thai === "CONFIRMED") && (
+                                    <button
+                                        onClick={() => {
+                                            setOpenAdjustModal(true);
+                                            setOpenAdjustOptionModal(false);
+                                        }}
+                                        className="w-full rounded-md bg-blue-600 text-white py-2 text-sm font-medium hover:bg-blue-700"
+                                    >
+                                        Điều chỉnh ngày / giờ trả phòng
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => setOpenAdjustOptionModal(false)}
+                                    className="w-full rounded-md border py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                                >
+                                    Huỷ
+                                </button>
+
+                            </div>
+                        </div>
+                    )}
+
+                </div>
             </div>
-        </div>
         </>
     );
 }

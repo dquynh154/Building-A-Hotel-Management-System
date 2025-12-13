@@ -36,8 +36,37 @@ export default function InvoicePrintPage() {
         const map = new Map();
 
         for (const r of rows) {
-            const key = `${r.PHONG_MA}-${r.DV_MA}-${r.don_gia}`;
 
+            // --- Nếu là tiền phòng ---
+            if (r.loai === 'PHONG') {
+                const key = `ROOM-${r.PHONG_MA}`;
+
+                if (!map.has(key)) {
+                    map.set(key, {
+                        dien_giai: r.dien_giai,
+                        so_luong: 0,
+                        don_gia: Number(r.don_gia),
+                        thanh_tien: 0,
+                        dates: [] as string[],         // gom các ngày CTSD_NGAY_DA_O
+                        roomName: r.PHONG_TEN || `Phòng ${r.PHONG_MA}`,
+                    });
+                }
+
+                const item = map.get(key);
+                item.so_luong += Number(r.so_luong || 1);
+                item.thanh_tien += Number(r.thanh_tien || 0);
+
+                // gom ngày (nếu có)
+                if (r.dien_giai.includes('ngày')) {
+                    // Extract yyyy-mm-dd từ diễn giải
+                    const match = r.dien_giai.match(/\d{4}-\d{2}-\d{2}/);
+                    if (match) item.dates.push(match[0]);
+                }
+                continue;
+            }
+
+            // --- Nếu là dịch vụ (gộp như cũ) ---
+            const key = `${r.PHONG_MA}-${r.DV_MA}-${r.don_gia}`;
             if (!map.has(key)) {
                 map.set(key, {
                     dien_giai: r.dien_giai,
@@ -52,8 +81,26 @@ export default function InvoicePrintPage() {
             item.thanh_tien += Number(r.thanh_tien || 0);
         }
 
+        // Sau khi gom → chỉnh lại diễn giải phòng
+        for (const [key, item] of map.entries()) {
+            if (!key.startsWith('ROOM')) continue;
+
+            if (item.dates.length > 0) {
+                const sorted = item.dates.sort();
+                const nights = item.dates.length;
+                const dateStr = sorted.map((d :string) => {
+                    const [y, m, day] = d.split('-');
+                    return `${day}/${m}`;
+                }).join(', ');
+
+                item.dien_giai =
+                    `${item.roomName} (${dateStr})`;
+            }
+        }
+
         return Array.from(map.values());
     }, [rows]);
+
     useEffect(() => {
         (async () => {
             try {
