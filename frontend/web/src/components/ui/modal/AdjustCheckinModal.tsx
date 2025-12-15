@@ -168,6 +168,7 @@ export default function AdjustCheckinModal({
                                 id="checkin-date-picker"
                                 mode="single"
                                 defaultDate={pickerDate}
+
                                 onChange={(dates: any[], _dateStr: string, _instance: any) => {
                                     if (!dates || !dates[0]) return;
                                     const d = dates[0] as Date;
@@ -182,7 +183,7 @@ export default function AdjustCheckinModal({
                                     setNewDate(`${y}-${m}-${day}`);
                                 }}
                                 placeholder="Chọn ngày"
-                                allowPastDates={true}
+                                allowPastDates={false}
                             />
 
                             <p className="text-sm text-slate-500">

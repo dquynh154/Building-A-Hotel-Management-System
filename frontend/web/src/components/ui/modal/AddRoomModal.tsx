@@ -42,6 +42,11 @@ export default function AddRoomModal({ open, onClose, booking, bookingId, onAdde
     //         .finally(() => setFetching(false));
     // }, [open, bookingId]);
     const [showAll, setShowAll] = useState(false); // 👈 thêm state mới
+    useEffect(() => {
+        if (showAll) {
+            setSelectedLP(null);
+        }
+    }, [showAll]);
 
     useEffect(() => {
         if (!open || !bookingId) return;
@@ -67,7 +72,7 @@ export default function AddRoomModal({ open, onClose, booking, bookingId, onAdde
             })
             .finally(() => setFetching(false));
     }, [open, bookingId, selectedLP, showAll]); // 👈 thêm showAll
-
+  
 
     // Thêm phòng vào hợp đồng
     const handleAdd = async () => {
@@ -125,55 +130,48 @@ export default function AddRoomModal({ open, onClose, booking, bookingId, onAdde
             )} */}
 
             {fetching ? (
-                <div className="py-4 text-sm text-gray-500">Đang tải danh sách phòng trống…</div>
-            ) : rooms.length === 0 ? (
                 <div className="py-4 text-sm text-gray-500">
-                    Không còn phòng trống trong khoảng thời gian này.
+                    Đang tải danh sách phòng trống…
                 </div>
             ) : (
                 <>
-                    <select
-                        className="w-full border rounded-md p-2 mb-4 text-sm"
-                        value={selected || ''}
-                        onChange={(e) => setSelected(Number(e.target.value))}
-                    >
-                        <option value="">-- Chọn phòng trống --</option>
-                        {rooms.map((r) => (
-                            <option key={r.id} value={r.id}>
-                                {r.name}
-                            </option>
-                        ))}
-                    </select>
-
-                    {/* 👇 Đặt cụm này ngay sau <select> */}
-                    {/* {pendingRooms.length > 0 && (
-                        <div className="mt-3 border-t pt-2 text-sm text-gray-700">
-                            <div className="font-medium mb-1">Phòng đặt trực tuyến:</div>
-                            {pendingRooms.map(r => (
-                                <div key={r.LP_MA}>
-                                    • {r.LP_TEN} — {r.SO_LUONG} phòng
-                                </div>
-                            ))}
+                    {rooms.length === 0 && !showAll && pendingRooms.length > 0 && (
+                        <div className="py-4 text-sm text-gray-500">
+                            Đã gán đủ phòng theo đặt trước.<br />
+                            Vui lòng chọn <b>“Hiển thị tất cả phòng trống”</b> để thêm phòng khác.
                         </div>
-                    )} */}
+                    )}
+
+                    {rooms.length === 0 && showAll && (
+                        <div className="py-4 text-sm text-gray-500">
+                            Không còn phòng trống trong khoảng thời gian này.
+                        </div>
+                    )}
+
+                    {rooms.length > 0 && (
+                        <select
+                            className="w-full border rounded-md p-2 mb-4 text-sm"
+                            value={selected || ''}
+                            onChange={(e) => setSelected(Number(e.target.value))}
+                        >
+                            <option value="">-- Chọn phòng trống --</option>
+                            {rooms.map((r) => (
+                                <option key={r.id} value={r.id}>
+                                    {r.name} - {r.type}
+                                </option>
+                            ))}
+                        </select>
+                    )}
 
                     {pendingRooms.length > 0 && (
                         <div className="mt-3 border-t pt-2 text-sm text-gray-700">
                             <div className="font-medium mb-1">Hợp đồng đã đặt trực tuyến:</div>
                             {pendingRooms.map(r => (
-                                <button
-                                    key={r.LP_MA}
-                                    onClick={() => setSelectedLP(r.LP_MA)}
-                                    className={`block w-full text-left px-3 py-1 rounded-md ${selectedLP === r.LP_MA
-                                        ? 'bg-rose-100 font-semibold'
-                                        : 'hover:bg-gray-50'
-                                        }`}
-                                >
+                                <div key={r.LP_MA} className="px-3 py-1 text-gray-600">
                                     • {r.LP_TEN} — {r.SO_LUONG} phòng
-                                </button>
+                                </div>
                             ))}
 
-                            {/* 👇 thêm checkbox */}
                             <label className="flex items-center gap-2 mt-3 text-sm">
                                 <input
                                     type="checkbox"
@@ -184,10 +182,9 @@ export default function AddRoomModal({ open, onClose, booking, bookingId, onAdde
                             </label>
                         </div>
                     )}
-
-
                 </>
             )}
+
 
 
             <div className="flex justify-end gap-2 mt-4">

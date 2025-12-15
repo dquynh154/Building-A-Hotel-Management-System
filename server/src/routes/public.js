@@ -736,8 +736,8 @@ pub.get('/loai-phong-trong', async (req, res, next) => {
         const skip = Math.max(0, Number(req.query.skip) || 0);
         if (!from || !to) return res.status(400).json({ message: 'from/to required (YYYY-MM-DD)' });
 
-        const fromDt = `${from} 14:00:00`;
-        const toDt = `${to} 12:00:00`;
+        const fromDt = `${from} T14:00:00+07:00`;
+        const toDt = `${to} T12:00:00+07:00`;
         const whereClause = includeEmpty
             ? ''
             : 'WHERE (t.TOTAL_ROOMS - COALESCE(b.BOOKED_CNT, 0) - COALESCE(h.HELD, 0)) > 0';
@@ -760,8 +760,20 @@ pub.get('/loai-phong-trong', async (req, res, next) => {
         JOIN PHONG P ON P.PHONG_MA = CTSD.PHONG_MA
         WHERE H.HDONG_TRANG_THAI NOT IN ('CANCELLED','NO_SHOW')
         AND CTSD.CTSD_TRANGTHAI = 'ACTIVE' 
-          AND COALESCE(H.HDONG_NGAYTHUCNHAN, H.HDONG_NGAYDAT) < '${toDt}'
-          AND COALESCE(H.HDONG_NGAYTHUCTRA,  H.HDONG_NGAYTRA)  > '${fromDt}'
+          AND (
+      (
+        CTSD.CTSD_NGAY_DA_O IS NOT NULL
+        AND CTSD.CTSD_NGAY_DA_O >= '${from} 00:00:00'
+        AND CTSD.CTSD_NGAY_DA_O <  '${to} 00:00:00'
+      )
+
+      -- ===== THUÊ THEO GIỜ =====
+      OR (
+        CTSD.CTSD_O_TU_GIO IS NOT NULL
+        AND CTSD.CTSD_O_TU_GIO < '${toDt}'
+        AND CTSD.CTSD_O_DEN_GIO > '${fromDt}'
+      )
+    )
       ),
       held_qty AS (
         SELECT CT.LP_MA, COALESCE(SUM(CT.SO_LUONG),0) AS HELD

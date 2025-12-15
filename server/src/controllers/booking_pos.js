@@ -929,13 +929,25 @@ async function addItemToExisting(req, res, next) {
                 HDONG_MA: bookingId,
                 PHONG_MA: Number(PHONG_MA),
                 CTSD_STT: nextStt++,
-                CTSD_NGAY_DA_O: new Date(ymd), // ngày chuẩn, không 05:00 UTC nữa
+                CTSD_NGAY_DA_O: new Date(`${ymd}T12:00:00+07:00`), // ngày chuẩn, không 05:00 UTC nữa
                 CTSD_SO_LUONG: 1,
                 CTSD_DON_GIA: price,
                 CTSD_TONG_TIEN: price,
                 CTSD_TRANGTHAI: 'ACTIVE',
             });
         }
+        // ================================
+        // 9) Cập nhật trạng thái CT_DAT_TRUOC (KHÔNG trừ số lượng)
+        // ================================
+        await prisma.cT_DAT_TRUOC.updateMany({
+            where: {
+                HDONG_MA: bookingId,
+                TRANG_THAI: 'CONFIRMED',
+            },
+            data: {
+                TRANG_THAI: 'ASSIGNED',
+            },
+        });
 
         // Lưu vào DB
         await prisma.cHI_TIET_SU_DUNG.createMany({ data: CTSD_data });
@@ -958,7 +970,7 @@ async function pendingRooms(req, res, next) {
         if (!id) return res.status(400).json({ message: 'Thiếu ID hợp đồng' });
 
         const rows = await prisma.cT_DAT_TRUOC.findMany({
-            where: { HDONG_MA: id, TRANG_THAI: 'CONFIRMED' },
+            where: { HDONG_MA: id, TRANG_THAI: { in: ['CONFIRMED', 'ASSIGNED'] }, },
             include: { LOAI_PHONG: { select: { LP_TEN: true } } },
         });
 
@@ -2700,6 +2712,89 @@ async function applyEarlyCheckinFee(req, res, next) {
     }
 }
 
+async function changePrimaryGuest(req, res) {
+    const bookingId = Number(req.params.bookingId);
+    const { from_kh, to_kh } = req.body || {};
+
+    if (!bookingId || !from_kh || !to_kh) {
+        return res.status(400).json({
+            message: 'Thiếu bookingId, from_kh hoặc to_kh',
+        });
+    }
+
+    if (from_kh === to_kh) {
+        return res.status(400).json({
+            message: 'Khách chính mới phải khác khách chính hiện tại',
+        });
+    }
+
+    try {
+        await prisma.$transaction(async (tx) => {
+            // 1️⃣ kiểm tra from_kh hiện tại có phải khách chính không
+            const currentPrimary = await tx.lUU_TRU_KHACH.findUnique({
+                where: {
+                    HDONG_MA_KH_MA: {
+                        HDONG_MA: bookingId,
+                        KH_MA: Number(from_kh),
+                    },
+                },
+            });
+
+            if (!currentPrimary || !currentPrimary.LA_KHACH_CHINH) {
+                throw Object.assign(
+                    new Error('Khách hiện tại không phải là khách chính'),
+                    { status: 400 }
+                );
+            }
+
+            // 2️⃣ kiểm tra to_kh có thuộc hợp đồng không
+            const targetGuest = await tx.lUU_TRU_KHACH.findUnique({
+                where: {
+                    HDONG_MA_KH_MA: {
+                        HDONG_MA: bookingId,
+                        KH_MA: Number(to_kh),
+                    },
+                },
+            });
+
+            if (!targetGuest) {
+                throw Object.assign(
+                    new Error('Khách được chọn không thuộc hợp đồng này'),
+                    { status: 400 }
+                );
+            }
+
+            // 3️⃣ bỏ cờ khách chính cũ
+            await tx.lUU_TRU_KHACH.update({
+                where: {
+                    HDONG_MA_KH_MA: {
+                        HDONG_MA: bookingId,
+                        KH_MA: Number(from_kh),
+                    },
+                },
+                data: { LA_KHACH_CHINH: false },
+            });
+
+            // 4️⃣ set khách chính mới
+            await tx.lUU_TRU_KHACH.update({
+                where: {
+                    HDONG_MA_KH_MA: {
+                        HDONG_MA: bookingId,
+                        KH_MA: Number(to_kh),
+                    },
+                },
+                data: { LA_KHACH_CHINH: true },
+            });
+        });
+
+        return res.json({ success: true });
+    } catch (e) {
+        console.error(e);
+        return res.status(e.status || 500).json({
+            message: e.message || 'Không thể chuyển khách chính',
+        });
+    }
+};
 
 module.exports = {
     getBookingFull,
@@ -2716,5 +2811,6 @@ module.exports = {
     adjustCheckout,
     applyLateFee,
     adjustCheckin,
-    applyEarlyCheckinFee
+    applyEarlyCheckinFee,
+    changePrimaryGuest
 };

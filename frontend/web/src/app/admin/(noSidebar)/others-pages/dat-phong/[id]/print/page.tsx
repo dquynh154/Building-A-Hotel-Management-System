@@ -108,7 +108,7 @@ export default function BookingPrintPage() {
                 <div className="mt-1 text-sm opacity-70">
                     Mã hợp đồng: {bk.HDONG_MA} &nbsp;•&nbsp; Ngày tạo:{' '}
                     {fmt(bk.HDONG_TAO_LUC || bk.createdAt)}&nbsp;•&nbsp; Nhân viên:{' '}
-                    {staff.NV_HOTEN || '—'}
+                    {staff?.NV_HOTEN || '—'}
                 </div>
                 <div className="opacity-70">
                     ĐC: Khu II, Đ. 3 Tháng 2, Xuân Khánh, Ninh Kiều, Cần Thơ | SDT: 0123456789

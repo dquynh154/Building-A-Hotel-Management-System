@@ -15,13 +15,24 @@ admin.get('/dat-truoc', async (req, res, next) => {
 
         // 1) Chọn điều kiện cơ bản theo status
         let whereHop = {};
-        if (rawStatus === 'pending') {
-            whereHop = { HDONG_TRANG_THAI: 'PENDING' };
-        } else if (rawStatus === 'confirmed' || rawStatus === 'needs_action') {
+        // if (rawStatus === 'pending') {
+        //     whereHop = { HDONG_TRANG_THAI: 'PENDING' };
+        // } else if (rawStatus === 'confirmed' || rawStatus === 'needs_action') {
+        //     whereHop = { HDONG_TRANG_THAI: 'CONFIRMED' };
+        // } else {
+        //     // fallback: pending
+        //     whereHop = { HDONG_TRANG_THAI: 'PENDING' };
+        // }
+        if (rawStatus === 'online') {
+            whereHop = {
+                CT_DAT_TRUOC: {
+                    some: {}, // 👈 có ít nhất 1 dòng đặt trước = online
+                },
+            };
+        } else if (rawStatus === 'needs_action') {
             whereHop = { HDONG_TRANG_THAI: 'CONFIRMED' };
         } else {
-            // fallback: pending
-            whereHop = { HDONG_TRANG_THAI: 'PENDING' };
+            whereHop = {};
         }
 
         // 2) Lấy danh sách hợp đồng theo điều kiện cơ bản

@@ -4,6 +4,7 @@ import { Modal } from '@/components/ui/modal';
 import Button from '@/components/ui/button/Button';
 import api from '@/lib/api';
 import { PlusIcon, Search } from '@/icons';
+import KhachHangUpdateModal from './KhachHangUpdateModal';
 
 export type Occupant = {
     khId?: number | null;
@@ -12,6 +13,7 @@ export type Occupant = {
     idNumber?: string;   // CCCD/CMND
     address?: string;
     isChild: boolean;    // true = trẻ em
+    isPrimary?: boolean;
 };
 
 type OccupantsModalProps = {
@@ -43,6 +45,7 @@ function SearchCombo({
     const [loading, setLoading] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const deb = useRef<any>(null);
+
 
     // Đóng khi click/touch ra ngoài (dùng mousedown để chạy sớm)
     useEffect(() => {
@@ -140,7 +143,7 @@ export default function OccupantsModal({
         if (!open) return;
         if (!value || value.length === 0 || value.every(v => v.isChild)) {
             onChange([
-                { khId: null, fullName: '', phone: '', idNumber: '', address: '', isChild: false },
+                { khId: null, fullName: '', phone: '', idNumber: '', address: '', isChild: false, isPrimary: true },
             ]);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,7 +197,7 @@ export default function OccupantsModal({
         });
     };
     const [kh, setKh] = useState<Option | null>(null);
-    const [occupants, setOccupants] = useState<Occupant[]>([]);
+    // const [occupants, setOccupants] = useState<Occupant[]>([]);
     const toOccupant = (rec: any): Occupant => ({
         khId: rec?.KH_MA ?? null,
         fullName: rec?.KH_HOTEN ?? '',
@@ -207,6 +210,9 @@ export default function OccupantsModal({
         const r = await api.get('/khach-hang', { params: { take: 20, withTotal: 0, search } });
         return (r.data?.items ?? r.data ?? []).map((x: any) => ({ value: x.KH_MA, label: `${x.KH_HOTEN}${x.KH_SDT ? ` (${x.KH_SDT})` : ''}` }));
     };
+    const [editingKhId, setEditingKhId] = useState<number | null>(null);
+    const primary = value.find(v => v.isPrimary);
+    const otherGuests = value.filter(v => !v.isPrimary);
 
     return (
         <Modal isOpen={open} onClose={onClose} className="max-w-5xl p-5 sm:p-6">
@@ -229,31 +235,31 @@ export default function OccupantsModal({
                                 try {
                                     const r = await api.get(`/khach-hang/${o.value}`);
                                     const khRow = r.data || {};
-                                    setOccupants(prev => {
-                                        const cp = [...(prev || [])];
-                                        const occ = toOccupant(khRow); // <-- gồm: khId, fullName, phone, idNumber, address
-                                        if (cp.length === 0) {
-                                            cp.push(occ);
-                                        } else {
-                                            const idx = cp.findIndex(x => !x.isChild);
-                                            const i = idx >= 0 ? idx : 0;
-                                            cp[i] = occ;
-                                        }
-                                        return cp;
-                                    });
+                                    // setOccupants(prev => {
+                                    //     const cp = [...(prev || [])];
+                                    //     const occ = toOccupant(khRow); // <-- gồm: khId, fullName, phone, idNumber, address
+                                    //     if (cp.length === 0) {
+                                    //         cp.push(occ);
+                                    //     } else {
+                                    //         const idx = cp.findIndex(x => !x.isChild);
+                                    //         const i = idx >= 0 ? idx : 0;
+                                    //         cp[i] = occ;
+                                    //     }
+                                    //     return cp;
+                                    // });
                                 } catch {
                                     // fallback: không có rec đầy đủ thì ít nhất vẫn set tên
-                                    setOccupants(prev => {
-                                        const cp = [...(prev || [])];
-                                        if (cp.length === 0) {
-                                            cp.push({ khId: o.value, fullName: o.label, phone: '', idNumber: '', address: '', isChild: false });
-                                        } else {
-                                            const idx = cp.findIndex(x => !x.isChild);
-                                            const i = idx >= 0 ? idx : 0;
-                                            cp[i] = { ...(cp[i] || {}), khId: o.value, fullName: o.label, isChild: false };
-                                        }
-                                        return cp;
-                                    });
+                                    // setOccupants(prev => {
+                                    //     const cp = [...(prev || [])];
+                                    //     if (cp.length === 0) {
+                                    //         cp.push({ khId: o.value, fullName: o.label, phone: '', idNumber: '', address: '', isChild: false });
+                                    //     } else {
+                                    //         const idx = cp.findIndex(x => !x.isChild);
+                                    //         const i = idx >= 0 ? idx : 0;
+                                    //         cp[i] = { ...(cp[i] || {}), khId: o.value, fullName: o.label, isChild: false };
+                                    //     }
+                                    //     return cp;
+                                    // });
                                 }
                             }
                         }}
@@ -281,6 +287,7 @@ export default function OccupantsModal({
                                             idNumber: rec.KH_CCCD,
                                             address: rec.KH_DIACHI,
                                             isChild: false,
+                                            isPrimary: false
                                         };
                                         onChange([...value, newGuest]);
                                         setKh(null); // reset search box
@@ -310,6 +317,12 @@ export default function OccupantsModal({
 
 
             </div>
+            {editable && primary && value.length === 1 && (
+                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                    Hợp đồng hiện chỉ có <b>khách chính</b>.
+                    Vui lòng <b>thêm khách lưu trú</b> trước khi chuyển khách chính.
+                </div>
+            )}
 
             {/* Bảng occupants */}
             <div className="overflow-auto rounded-xl border dark:border-slate-700">
@@ -321,7 +334,11 @@ export default function OccupantsModal({
                             <th>CCCD</th>
                             <th>Địa chỉ</th>
                             {/* <th className="w-24">Trẻ em</th> */}
+                            {editable && <th className="w-20 text-center">Sửa</th>}
                             {editable && <th className="w-20 text-center">Xóa</th>}
+                            {editable && <th className="w-32 text-center">Khách chính</th>}
+
+
                         </tr>
                     </thead>
                     <tbody>
@@ -360,28 +377,88 @@ export default function OccupantsModal({
                                     />
                                 </td>
 
-                                {editable && (
+                                {editable && row.khId && (
                                     <td className="text-center">
                                         <button
-                                            className="rounded border border-red-400 px-2 py-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30"
-                                            title="Xóa khách này"
-                                            onClick={async () => {
-                                                if (!bookingId || !row.khId) return;
-                                                if (!confirm(`Xóa ${row.fullName}?`)) return;
-                                                try {
-                                                    await api.delete(`/bookings/${bookingId}/guests/${row.khId}`);
-                                                    const next = value.filter((_, i) => i !== idx);
-                                                    onChange(next);
-                                                } catch (e: any) {
-                                                    alert(e?.response?.data?.message || 'Không thể xóa khách lưu trú.');
-                                                }
-                                            }}
+                                            className="ml-2 rounded border px-2 py-1 text-blue-600 hover:bg-blue-50"
+                                            title="Sửa khách hàng"
+                                            onClick={() => setEditingKhId(row.khId!)}
                                         >
-                                            ✕
+                                            ✏️
                                         </button>
                                     </td>
                                 )}
+
+                                {editable && (
+                                    <td className="text-center">
+                                        {!row.isPrimary ? (
+                                            // ✅ khách thường → cho xóa
+                                            <button
+                                                className="rounded border border-red-400 px-2 py-1 text-red-500 hover:bg-red-50"
+                                                title="Xóa khách này"
+                                                onClick={async () => {
+                                                    if (!bookingId || !row.khId) return;
+                                                    if (!confirm(`Xóa ${row.fullName}?`)) return;
+                                                    try {
+                                                        await api.delete(`/bookings/${bookingId}/guests/${row.khId}`);
+                                                        onChange(value.filter((_, i) => i !== idx));
+                                                    } catch (e: any) {
+                                                        alert(e?.response?.data?.message || 'Không thể xóa khách lưu trú.');
+                                                    }
+                                                }}
+                                            >
+                                                ✕
+                                            </button>
+                                        ) : (
+                                            // ❌ khách chính → KHÔNG cho xóa
+                                            <span
+                                                className="text-xs text-slate-400"
+                                                title="Không thể xóa khách chính"
+                                            >
+                                                —
+                                            </span>
+                                        )}
+                                    </td>
+                                )}
+
+                               
+                                {editable && (
+                                    <td className="text-center">
+                                        {row.isPrimary ? (
+                                            <span className="text-amber-600 font-semibold">⭐ Chính</span>
+                                        ) : primary ? (
+                                            <button
+                                                className="rounded border px-2 py-1 text-amber-700 hover:bg-amber-50"
+                                                onClick={async () => {
+                                                    if (!bookingId || !row.khId || !primary?.khId) return;
+
+                                                    if (!confirm(`Chuyển khách chính sang ${row.fullName}?`)) return;
+
+                                                    try {
+                                                        await api.post(`/bookings/${bookingId}/change-primary`, {
+                                                            from_kh: primary.khId,
+                                                            to_kh: row.khId,
+                                                        });
+
+                                                        onChange(
+                                                            value.map(o => ({
+                                                                ...o,
+                                                                isPrimary: o.khId === row.khId,
+                                                            }))
+                                                        );
+                                                    } catch (e: any) {
+                                                        alert(e?.response?.data?.message || 'Không thể chuyển khách chính.');
+                                                    }
+                                                }}
+                                            >
+                                                Chuyển
+                                            </button>
+                                        ) : null}
+                                    </td>
+                                )}
+
                             </tr>
+
                         ))}
                     </tbody>
                 </table>
@@ -391,6 +468,31 @@ export default function OccupantsModal({
             <div className="mt-4 flex justify-end gap-2">
                 <Button variant="outline" size="sm" onClick={onClose}>Đóng</Button>
             </div>
+            <KhachHangUpdateModal
+                open={editingKhId !== null}
+                khId={editingKhId}
+                onClose={() => setEditingKhId(null)}
+                onUpdated={(rec) => {
+                    // sync lại bảng occupants
+                    onChange(
+                        value.map(o =>
+                            o.khId === rec.KH_MA
+                                ? {
+                                    ...o,
+                                    fullName: rec.KH_HOTEN,
+                                    phone: rec.KH_SDT,
+                                    idNumber: rec.KH_CCCD,
+                                    address: rec.KH_DIACHI,
+                                }
+                                : o
+                        )
+                    );
+                    setEditingKhId(null);
+                }}
+            />
+
         </Modal>
+
     );
+
 }

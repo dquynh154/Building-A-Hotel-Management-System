@@ -24,6 +24,14 @@ type InvoiceDetail = {
         }[];
     };
 };
+function calcNights(from?: string, to?: string) {
+    if (!from || !to) return 0;
+    const d1 = new Date(from);
+    const d2 = new Date(to);
+    if (isNaN(+d1) || isNaN(+d2)) return 0;
+    const diff = d2.getTime() - d1.getTime();
+    return Math.max(1, Math.round(diff / 86400000));
+}
 
 
 const fmtVND = (n?: number) => (n || 0).toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
@@ -76,6 +84,10 @@ export default function KetQuaThanhToanPage() {
             : status === 'FAILED' ? 'Thanh toán thất bại'
                 : status === 'NOT_FOUND' ? 'Không tìm thấy giao dịch'
                     : 'Đang xác thực thanh toán…';
+    const nights = calcNights(
+        invoice?.HOP_DONG_DAT_PHONG?.HDONG_NGAYDAT,
+        invoice?.HOP_DONG_DAT_PHONG?.HDONG_NGAYTRA
+    );
 
     return (
         <>
@@ -135,9 +147,9 @@ export default function KetQuaThanhToanPage() {
                                     {invoice.HOP_DONG_DAT_PHONG?.CT_DAT_TRUOC?.map((ct, i) => (
                                         <tr key={i}>
                                             <td className="border p-2">{ct.LOAI_PHONG.LP_TEN}</td>
-                                            <td className="border p-2 text-center">{ct.SO_LUONG}</td>
+                                            <td className="border p-2 text-center"> {nights}</td>
                                             <td className="border p-2 text-right">{fmtVND(ct.DON_GIA)}</td>
-                                            <td className="border p-2 text-right">{fmtVND(ct.DON_GIA * ct.SO_LUONG)}</td>
+                                            <td className="border p-2 text-right">{fmtVND(ct.DON_GIA * nights)}</td>
                                         </tr>
                                     ))}
                                 </tbody>

@@ -163,52 +163,93 @@ async function listPhongWithBase(req, res, next) {
     } catch (e) { next(e); }
 }
 // GET /rooms/availability?from=ISO&to=ISO&lp=123
+// GET /rooms/availability?from=ISO&to=ISO&lp=123
 async function availability(req, res, next) {
     try {
         const from = new Date(req.query.from);
         const to = new Date(req.query.to);
         const lp = req.query.lp ? Number(req.query.lp) : null;
 
-        if (!(from instanceof Date && !isNaN(+from) && to instanceof Date && !isNaN(+to) && +to > +from)) {
+        if (!(from instanceof Date && !isNaN(+from) && to instanceof Date && !isNaN(+to) && to > from)) {
             return res.status(400).json({ message: 'from/to không hợp lệ' });
         }
 
-        // Các trạng thái HĐ đang giữ phòng
-        const HOLD_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN'];
+        /* ============================
+         * 1) Chuẩn hoá mốc ngày
+         * ============================ */
+        const fromDay = new Date(from);
+        fromDay.setHours(0, 0, 0, 0);
 
-        // 1) Lấy các PHÒNG đang bận bởi bất kỳ HĐ nào overlap với [from, to)
-        const busyByBooking = await prisma.cHI_TIET_SU_DUNG.findMany({
+        const toDay = new Date(to);
+        toDay.setHours(0, 0, 0, 0);
+
+        /* ============================
+         * 2) CTSD bận theo NGÀY
+         * ============================ */
+        const busyByDay = await prisma.cHI_TIET_SU_DUNG.findMany({
             where: {
-                // join qua HĐ để check khoảng thời gian
-                HOP_DONG_DAT_PHONG: {
-                    HDONG_TRANG_THAI: { in: HOLD_STATUSES },
-                    // overlap: (ngayDat < to) && (ngayTra > from)
-                    HDONG_NGAYDAT: { lt: to },
-                    HDONG_NGAYTRA: { gt: from },
+                CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+                CTSD_NGAY_DA_O: {
+                    gte: fromDay,
+                    lt: toDay,
                 },
-                // filter theo loại phòng nếu có
-                ...(lp ? { PHONG: { OR: [{ LP_MA: lp }, { LOAI_PHONG: { LP_MA: lp } }] } } : {}),
+                ...(lp ? { PHONG: { LP_MA: lp } } : {}),
             },
             select: { PHONG_MA: true },
-            distinct: ['PHONG_MA'], // lấy unique phòng
         });
 
-        const busyIds = new Set(busyByBooking.map(x => x.PHONG_MA));
+        /* ============================
+         * 3) CTSD bận theo GIỜ
+         * ============================ */
+        const busyByHour = await prisma.cHI_TIET_SU_DUNG.findMany({
+            where: {
+                CTSD_TRANGTHAI: { in: ['ACTIVE', 'INVOICED'] },
+                CTSD_O_TU_GIO: { lt: to },
+                CTSD_O_DEN_GIO: { gt: from },
+                ...(lp ? { PHONG: { LP_MA: lp } } : {}),
+            },
+            select: { PHONG_MA: true },
+        });
 
-        // 2) Lấy tất cả phòng (theo LP nếu có), rồi trừ đi bận → available
+        /* ============================
+         * 4) Gộp phòng bận
+         * ============================ */
+        const busyRoomIds = new Set([
+            ...busyByDay.map(x => x.PHONG_MA),
+            ...busyByHour.map(x => x.PHONG_MA),
+        ]);
+
+        /* ============================
+         * 5) Tất cả phòng (lọc theo LP)
+         * ============================ */
         const allRooms = await prisma.pHONG.findMany({
-            where: lp ? { OR: [{ LP_MA: lp }, { LOAI_PHONG: { LP_MA: lp } }] } : {},
-            select: { PHONG_MA: true, PHONG_TEN: true },
+            where: lp ? { LP_MA: lp } : {},
+            select: {
+                PHONG_MA: true,
+                PHONG_TEN: true,
+            },
             orderBy: { PHONG_TEN: 'asc' },
         });
 
+        /* ============================
+         * 6) Trả phòng trống
+         * ============================ */
         const available = allRooms
-            .filter(r => !busyIds.has(r.PHONG_MA))
-            .map(r => ({ id: r.PHONG_MA, name: r.PHONG_TEN }));
+            .filter(r => !busyRoomIds.has(r.PHONG_MA))
+            .map(r => ({
+                id: r.PHONG_MA,
+                name: r.PHONG_TEN,
+            }));
 
-        res.json({ available, total: available.length });
-    } catch (e) { next(e); }
+        res.json({
+            available,
+            total: available.length,
+        });
+    } catch (e) {
+        next(e);
+    }
 }
+
 
 // GET /rooms/available-by-booking/:id
 // Trả về danh sách phòng trống theo khoảng ngày của hợp đồng cụ thể

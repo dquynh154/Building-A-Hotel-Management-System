@@ -21,7 +21,7 @@ function mapVietnameseToPlaceType(vietnameseKeyword) {
         'siêu thị': 'supermarket',
         'bệnh viện': 'hospital',
         'atm': 'atm',
-        'tiệm quà tặng':'gift'
+        'tiệm quà tặng': 'gift'
     };
     const lowerCaseKeyword = vietnameseKeyword.toLowerCase();
 
@@ -43,12 +43,19 @@ function buildOverpassQuery(placeType, radiusMeters) {
     if (placeType === 'supermarket') {
         tagKey = 'shop';
         tagValue = 'supermarket';
-        shop = 'supermarket'
     } else if (placeType === 'hospital') {
         tagKey = 'amenity';
         tagValue = 'hospital';
+    } else if (placeType === 'restaurant') {
+        tagKey = 'amenity';
+        tagValue = 'restaurant';
+    } else if (placeType === 'atm') {
+        tagKey = 'amenity';
+        tagValue = 'atm';
+    } else if (placeType === 'cafe') {
+        tagKey = 'amenity';
+        tagValue = 'cafe';
     }
-    // ... thêm các tag khác nếu cần
 
     const query = `
 [out:json][timeout:25];
@@ -56,8 +63,9 @@ function buildOverpassQuery(placeType, radiusMeters) {
 (
   node[${tagKey}="${tagValue}"](around:${radiusMeters}, ${HOTEL_LAT}, ${HOTEL_LNG});
   way[${tagKey}="${tagValue}"](around:${radiusMeters}, ${HOTEL_LAT}, ${HOTEL_LNG});
+  relation["${tagKey}"="${tagValue}"](around:${radiusMeters}, ${HOTEL_LAT}, ${HOTEL_LNG});
 );
-out center;
+out center geom;
 `;
     return query;
 }
@@ -121,23 +129,31 @@ async function searchNearbyPlaces(placeType, maxDistanceKm = 1) {
 
         // --- Chuẩn hóa kết quả ---
         const normalizedPlaces = data.elements.map(element => {
-            // Lấy tọa độ trung tâm cho Way hoặc Node
             const lat = element.lat || (element.center ? element.center.lat : null);
             const lon = element.lon || (element.center ? element.center.lon : null);
+
             let distanceKm = null;
             if (lat && lon) {
                 distanceKm = calculateDistance(HOTEL_LAT, HOTEL_LNG, lat, lon);
             }
-            // Tên địa điểm thường nằm trong tags.name
+
+            const tags = element.tags || {};
+
+            // ✅ 1. CẢI TIẾN TRÍCH XUẤT TÊN: Ưu tiên Name -> Brand -> Operator
             const mappedType = mapVietnameseToPlaceType(placeType);
-            const name = element.tags.name || element.tags.amenity || `Địa điểm ${mappedType}`;
-            const address = element.tags['addr:full'] || element.tags['addr:street'] || element.tags['addr:district'] || element.tags['addr:city'] || "Địa chỉ không xác định";
-            // const fallbackAddress = (lat && lon) ? `Tọa độ: ${lat.toFixed(6)}, ${lon.toFixed(6)}` : "Địa chỉ không xác định";
+            const rawName = tags.name || tags.brand || tags.operator;
+            const name = rawName ? rawName : `ATM ${tags.brand || ''}`.trim();
+
+            // ✅ 2. CẢI TIẾN TRÍCH XUẤT ĐỊA CHỈ: Thêm nhiều fallback hơn
+            const address = tags['addr:full'] ||
+                (tags['addr:housenumber'] ? `${tags['addr:housenumber']} ${tags['addr:street'] || ''}` : null) ||
+                tags['addr:street'] ||
+                tags['addr:city'] ||
+                "Địa chỉ lân cận khách sạn"; // Fallback cuối cùng
 
             return {
-                name,
+                name: name,
                 address: address,
-                // Có thể tính toán khoảng cách nếu cần (dùng tọa độ lat, lon)
                 distanceKm: distanceKm
             };
         });

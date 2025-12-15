@@ -43,7 +43,7 @@ export default function PayMockPage() {
         const t = setTimeout(() => setCounter(counter - 1), 1000);
         return () => clearTimeout(t);
     }, [counter, loading]);
-
+    const email = q.get('email') || '';
     // 3) Xác nhận hoặc Hủy
     const handleConfirm = async (success: boolean) => {
         try {
@@ -51,7 +51,7 @@ export default function PayMockPage() {
             await fetch(`${API_BASE}/public/pay/mock/confirm`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ hdon_ma, success }),
+                body: JSON.stringify({ hdon_ma, success,email }),
             });
 
             // Redirect sang trang kết quả

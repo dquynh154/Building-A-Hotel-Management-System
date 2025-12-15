@@ -2,7 +2,7 @@ const express = require("express");
 const { GoogleGenAI } = require("@google/genai");
 const { prisma } = require('../db/prisma');
 const { getAvailableRoomCount, getRoomPrice } = require('../services/roomService');
-const { checkBookingStatus, listPendingBookings } = require('../services/bookingService');
+const { getCheckInReceipt, listPendingBookings, createBookingFromChatbot } = require('../services/bookingService');
 const { suggestRooms } = require('../services/roomSelectionService');
 const { searchNearbyPlaces } = require('../services/placeService');
 const { addServiceToBooking } = require('../services/hotelInteractionService');
@@ -14,7 +14,7 @@ const API_KEYS = [
     process.env.GEMINI_API_KEY_1,
     process.env.GEMINI_API_KEY_2,
     process.env.GEMINI_API_KEY_3,
-    // process.env.GEMINI_API_KEY_4,
+    process.env.GEMINI_API_KEY_4,
     process.env.GEMINI_API_KEY_5,
 ].filter(key => key); // Lọc bỏ Key rỗng (nếu có)
 
@@ -199,16 +199,16 @@ router.post("/message", async (req, res) => {
     - Khi khách hỏi có bao nhiêu loại phòng thì là 3 loại: "Phòng tiêu chuẩn", "Phòng 2 giường đơn", "Phòng sang trọng giường đôi".
     - Khi khách hỏi về **giá** hoặc **chi phí** của một **LOẠI PHÒNG CỤ THỂ** (ví dụ: 'giá phòng tiêu chuẩn'), hãy gọi hàm "**check_room_price**" (**room_type**).
     - Khi khách hàng yêu cầu TƯ VẤN hoặc GỢI Ý chọn phòng** (dựa trên số người, ngân sách, hoặc tiện nghi), **hãy gọi hàm "suggest_room_type"**. Ưu tiên tool này hơn check_room_price khi có từ khóa về ngân sách.
-    - Khi khách hỏi về đặt phòng của họ, trạng thái đặt chỗ, hoặc thông tin chi tiết đặt phòng, hãy gọi hàm "check_booking_status".
-    -**QUAN TRỌNG VỀ ĐẶT PHÒNG:** Tool này chỉ cần **MỘT trong hai** tham số:
-        1. Nếu khách cung cấp **Mã đặt phòng** (ví dụ: "kiểm tra đặt phòng mã 123"), **CHỈ trích xuất booking_code**.
-        2. Nếu khách CHỈ cung cấp **Tên** (ví dụ: "đặt phòng của Nguyễn Văn A"), **CHỈ trích xuất guest_name**.
-        3. **KHÔNG BAO GIỜ** yêu cầu hoặc trích xuất cả hai tham số cùng một lúc.
+    - Khi khách hàng yêu cầu **BIÊN LAI**, **PHIẾU NHẬN PHÒNG**, **PHIẾU XÁC NHẬN**, hoặc hỏi **"Tôi cần thông tin gì để check-in?"**, hãy gọi hàm "**get_checkin_receipt**".
+    - Nếu khách đã đăng nhập, không nhất thiết phải yêu cầu họ cung cấp mã đặt phòng trừ khi họ muốn lấy biên lai cho một đơn cụ thể.
     - Khi khách hàng hỏi về các địa điểm lân cận (ví dụ: "quán ăn gần đây", "ATM gần khách sạn"), hãy gọi hàm "search_nearby_places" và trích xuất loại địa điểm (place_type).
     - Khi khách yêu cầu **DỊCH VỤ PHÒNG** hoặc **TIỆN ÍCH**, **luôn** tìm và trích xuất **room_number** nếu được cung cấp,  hãy gọi hàm "**request_hotel_service**" và trích xuất **item_keyword** cùng **quantity** (số lượng). Nếu không được cung cấp, hãy để trống và để logic backend xử lý.
     - **QUAN TRỌNG:** Nếu khách hàng báo cáo một thiết bị bị hư hỏng, không hoạt động, hoặc cần sửa chữa (ví dụ: máy lạnh hỏng, TV không bật), hãy trích xuất **item_keyword** là **"Sửa chữa"**. Sau đó, ghi lại chi tiết sự cố trong tin nhắn.
     - Khi khách hỏi về **THANH TOÁN CỌC**, **HOÀN TẤT ĐẶT PHÒNG**, hoặc **THANH TOÁN TIỀN ĐẶT CỌC**, hãy gọi hàm "**process_deposit_payment**" và **BẮT BUỘC** trích xuất **booking_code**.
     - Nếu khách hàng hỏi về **DANH SÁCH HỢP ĐỒNG CẦN THANH TOÁN** hoặc **HỢP ĐỒNG CHƯA CỌC**, hãy gọi hàm "**list_pending_bookings**".
+    - Khi khách hàng thể hiện ý định muốn ĐẶT PHÒNG hoặc BOOK PHÒNG rõ ràng (Ví dụ: "Tôi muốn đặt phòng tiêu chuẩn", "Book giúp tôi phòng VIP ngày mai"), hãy gọi hàm "quick_booking".
+    - Bắt buộc trích xuất: date_from, date_to, room_type và quantity (số lượng phòng, mặc định là 1 nếu khách không nói).
+    - Nhắc khách hàng chú ý nút "Thanh toán Cọc ngay" sẽ hiển thị sau khi đặt thành công.
     - Khi khách hỏi về mô tả, tiện ích, hoặc dịch vụ, hãy ưu tiên trả lời dựa trên phần [THÔNG TIN KHÁCH SẠN CỨNG] trên.
     - Cái gì không có trong phạm vi chức năng của bạn, đừng cố trả lời, đừng bịa ra thông tin.
     
@@ -249,22 +249,19 @@ router.post("/message", async (req, res) => {
                     required: ["room_type"], // Chỉ cần room_type
                 },
             },
+
             {
-                name: "check_booking_status",
-                description: "Kiểm tra trạng thái đặt phòng của khách hàng. **Chỉ cần cung cấp MỘT trong hai tham số: Mã đặt phòng (booking_code) HOẶC Tên khách hàng (guest_name).** Ưu tiên sử dụng Mã đặt phòng nếu khách cung cấp.",
+                name: "get_checkin_receipt",
+                description: "Xuất thông tin biên lai hoặc phiếu xác nhận nhận phòng cho khách hàng. Chỉ áp dụng cho các hợp đồng đã ở trạng thái CONFIRMED (đã thanh toán cọc).",
                 parameters: {
                     type: "object",
                     properties: {
-                        guest_name: {
-                            type: "string",
-                            description: "Tên đầy đủ hoặc một phần tên của khách hàng đã đặt phòng. Chỉ cần tìm kiếm nếu booking_code không có."
-                        },
                         booking_code: {
                             type: "string",
-                            description: "Mã đặt phòng (HDONG_MA) của khách hàng."
+                            description: "Mã hợp đồng đặt phòng (HDONG_MA) khách hàng muốn lấy biên lai. Nếu không có, hệ thống sẽ tự động tìm đơn mới nhất của khách đã đăng nhập."
                         }
                     },
-                    required: [] // Không yêu cầu bắt buộc, vì khách có thể cung cấp 1 trong 2
+                    required: [] // Không bắt buộc vì có thể tự lấy guestId từ session
                 }
             },
             {
@@ -341,6 +338,20 @@ router.post("/message", async (req, res) => {
                         // Không cần tham số, vì nó sử dụng GUEST_ID từ session
                     },
                     required: []
+                }
+            },
+            {
+                name: "quick_booking",
+                description: "Thực hiện đặt phòng trực tiếp cho khách hàng khi họ cung cấp đầy đủ: loại phòng, ngày nhận, ngày trả và số lượng.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        date_from: { type: "string", description: "Ngày nhận phòng (định dạng YYYY-MM-DD)" },
+                        date_to: { type: "string", description: "Ngày trả phòng (định dạng YYYY-MM-DD)" },
+                        room_type: { type: "string", description: "Tên hoặc loại phòng khách muốn đặt (ví dụ: Phòng đơn, Phòng VIP)" },
+                        quantity: { type: "number", description: "Số lượng phòng muốn đặt (mặc định là 1)" }
+                    },
+                    required: ["date_from", "date_to", "room_type"]
                 }
             },
             ],
@@ -454,8 +465,8 @@ router.post("/message", async (req, res) => {
                     }
 
                     // Gán lại cho biến call nếu nó là một tool hợp lệ
-                    if (["check_room_availability", "check_room_price", "check_booking_status", "suggest_room_type", "search_nearby_places",
-                        "request_hotel_service", "process_deposit_payment","list_pending_bookings"
+                    if (["check_room_availability", "check_room_price", "get_checkin_receipt", "suggest_room_type", "search_nearby_places",
+                        "request_hotel_service", "process_deposit_payment", "list_pending_bookings","quick_booking"
                     ].includes(name)) {
                         call = { name, args };
                         console.log(`🔍 Đã phân tích tool từ chuỗi thô: ${name}`);
@@ -605,59 +616,50 @@ router.post("/message", async (req, res) => {
             });
 
             return res.json({ reply: finalReply, newSessionId: session.id });
-            // D:\QUAN LY KHACH SAN\server\src\routes\chatbot.js (Trong router.post, sau khối check_room_price)
 
-        } else if (call && call.name === "check_booking_status") { // ✅ KHỐI MỚI
-            const { guest_name, booking_code } = call.args;
-
-            // 1. Lấy dữ liệu từ Service
-            const bookingData = await checkBookingStatus(guest_name, booking_code);
+        } else if (call && call.name === "get_checkin_receipt") {
+            const { booking_code } = call.args;
+            const GUEST_ID = session.guestId; // Lấy ID khách hàng từ session hiện tại
 
             let replyText;
 
-            if (bookingData && bookingData.error) {
-                // Xử lý lỗi từ Service (ví dụ: mã đặt phòng không hợp lệ)
-                replyText = bookingData.error;
-
-            } else if (bookingData) {
-                // Xử lý khi tìm thấy đặt phòng
-                const roomType = bookingData.CHI_TIET_SU_DUNG[0]?.PHONG.LOAI_PHONG.LP_TEN || "chưa xác định";
-                const checkInDate = new Date(bookingData.HDONG_NGAYDAT).toLocaleDateString('vi-VN');
-                const bookingStatus = bookingData.HDONG_TRANG_THAI;
-
-                replyText = `Thông tin đặt phòng của quý khách đã được tìm thấy (Mã: ${bookingData.HDONG_MA}):
-- Khách hàng: ${bookingData.KHACH_HANG.KH_HOTEN}
-- Loại phòng: ${roomType}
-- Ngày nhận phòng: ${checkInDate}
-- Trạng thái: ${bookingStatus}.`;
-
+            if (!GUEST_ID && !booking_code) {
+                replyText = "Để xuất biên lai, quý khách vui lòng đăng nhập hoặc cung cấp Mã đặt phòng cụ thể.";
             } else {
-                // Không tìm thấy đặt phòng nào
-                replyText = "Rất tiếc, tôi không tìm thấy bất kỳ đặt phòng nào phù hợp với thông tin quý khách cung cấp. Vui lòng kiểm tra lại tên hoặc Mã đặt phòng (ID_HOPDONG).";
+                // Gọi hàm service mới (Bạn sẽ viết trong bookingService.js)
+                const receipt = await getCheckInReceipt(GUEST_ID, booking_code);
+
+                if (receipt) {
+                    const formattedDeposit = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(receipt.depositPaid);
+                    const checkInStr = new Date(receipt.checkIn).toLocaleDateString('vi-VN');
+                    const checkOutStr = new Date(receipt.checkOut).toLocaleDateString('vi-VN');
+
+                    replyText = `🧾 **BIÊN LAI NHẬN PHÒNG (Mã HĐ: ${receipt.bookingId})**\n` +
+                        `- **Khách hàng:** ${receipt.customerName}\n` +
+                        `- **Thời gian:** ${checkInStr} - ${checkOutStr}\n` +
+                        `- **Loại phòng:** ${receipt.rooms.join(', ')}\n` +
+                        `- **Tiền cọc đã nộp:** ${formattedDeposit}\n` +
+                        `*Quý khách vui lòng xuất trình thông tin này tại quầy lễ tân để hoàn tất thủ tục nhận phòng.*`;
+                } else {
+                    replyText = "Tôi không tìm thấy hợp đồng nào đã xác nhận (CONFIRMED) của quý khách để xuất biên lai.";
+                }
             }
 
-            // 2. Gửi lại kết quả (replyText) cho Gemini để tạo câu trả lời tự nhiên
-            // **Áp dụng logic Function Calling 2 bước (Model + Function Response)**
-            const updatedContents = [...contents];
-
-            updatedContents.push({
-                role: "model",
-                parts: [{ functionCall: { name: call.name, args: call.args } }],
-            });
-
-            updatedContents.push({
-                role: "function",
-                parts: [{ functionResponse: { name: call.name, response: { message: replyText, data: bookingData } } }],
-            });
-
+            // Tiếp tục thực hiện Call 2 để Gemini trả lời tự nhiên
             const followUp = await callGeminiWithRetry({
                 model: MODEL_ID,
-                contents: updatedContents,
+                contents: [
+                    ...contents,
+                    { role: "model", parts: [{ functionCall: { name: call.name, args: call.args } }] },
+                    { role: "function", parts: [{ functionResponse: { name: call.name, response: { message: replyText } } }] }
+                ],
+                config: { systemInstruction: systemPrompt }
             });
 
-            const finalReply = followUp.text || "Xin lỗi, đã xảy ra lỗi khi tạo câu trả lời chi tiết.";
 
-            // 3. Lưu lịch sử
+            const finalReply = followUp.text || "Xin lỗi, tôi gặp lỗi khi kiểm tra thông tin.";
+
+            // 3. Lưu lịch sử và phản hồi
             await prisma.chatMessage.createMany({
                 data: [
                     { sessionId: session.id, role: "user", content: message },
@@ -908,7 +910,77 @@ router.post("/message", async (req, res) => {
                 });
             }
         }
+        else if (call && call.name === "quick_booking") {
+            const { date_from, date_to, room_type, quantity } = call.args;
+            const GUEST_ID = session.guestId; // Lấy ID khách từ session hiện tại
+            let link = null;
+            let replyText;
+            let bookingData = null;
 
+            if (!GUEST_ID) {
+                replyText = "Tôi rất tiếc, quý khách cần đăng nhập để tôi có thể hỗ trợ đặt phòng trực tiếp và bảo mật thông tin đơn hàng.";
+            } else {
+                try {
+                    // 1. Gọi service để tạo Hợp đồng và Hóa đơn cọc
+                    const result = await createBookingFromChatbot(GUEST_ID, {
+                        date_from,
+                        date_to,
+                        room_type,
+                        quantity: quantity || 1
+                    });
+
+                    bookingData = result;
+
+                    // 2. Tạo link thanh toán giả định dẫn đến trang thanh toán của bạn
+                    // (Bạn có thể điều chỉnh URL này cho khớp với route thanh toán thực tế)
+                    link = `${process.env.APP_URL || 'http://localhost:3000'}/khachhang/pay-mock?hdon_ma=${result.invoiceId}&amount=${result.deposit}&txnRef=${result.txnRef}&email=${session.KHACH_HANG?.KH_EMAIL || ''}`;
+
+                    replyText = `Xác nhận đặt phòng thành công cho quý khách:
+- Mã đặt phòng: ${result.bookingId}
+- Loại phòng: ${result.roomName}
+- Thời gian: ${date_from} đến ${date_to}
+- Tổng tiền: ${new Intl.NumberFormat('vi-VN').format(result.total)} đ
+- Tiền cọc (20%): ${new Intl.NumberFormat('vi-VN').format(result.deposit)} đ.
+Quý khách vui lòng nhấn nút bên dưới để thanh toán cọc và hoàn tất giữ phòng.`;
+
+                } catch (error) {
+                    console.error("❌ Lỗi đặt phòng chatbot:", error);
+                    replyText = `Tôi gặp lỗi khi khởi tạo đơn đặt phòng: ${error.message}. Quý khách vui lòng thử lại hoặc liên hệ lễ tân.`;
+                }
+            }
+
+            // ✅ BƯỚC QUAN TRỌNG: Gửi kết quả về Gemini để tạo câu trả lời tự nhiên (Call 2)
+            const followUp = await callGeminiWithRetry({
+                model: MODEL_ID,
+                contents: [
+                    ...contents,
+                    { role: "model", parts: [{ functionCall: { name: call.name, args: call.args } }] },
+                    { role: "function", parts: [{ functionResponse: { name: call.name, response: { message: replyText, data: bookingData } } }] }
+                ],
+                config: { systemInstruction: systemPrompt } // Đảm bảo Gemini vẫn tuân thủ chỉ dẫn hệ thống
+            });
+
+            const finalReply = followUp.text || replyText;
+
+            // ✅ LƯU LỊCH SỬ VÀO DATABASE
+            await prisma.chatMessage.createMany({
+                data: [
+                    { sessionId: session.id, role: "user", content: message },
+                    { sessionId: session.id, role: "assistant", content: finalReply },
+                ],
+            });
+
+            // Trả về JSON cho Frontend
+            return res.json({
+                reply: finalReply,
+                newSessionId: session.id,
+                action: link ? {
+                    type: "LINK",
+                    url: link,
+                    label: "Thanh toán Cọc ngay"
+                } : null
+            });
+        }
 
 
         // 8. Nếu Gemini không gọi function (Chỉ trả lời text)

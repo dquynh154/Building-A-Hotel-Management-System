@@ -21,7 +21,7 @@ export default function AdminDatTruocPage() {
             try {
                 setLoading(true);
                 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-                const res = await fetch(`${BASE}/admin/dat-truoc?status=needs_action&take=50`, { credentials: 'include' });
+                const res = await fetch(`${BASE}/admin/dat-truoc?status=online&take=50`, { credentials: 'include' });
                 const json = await res.json();
                 setRows(Array.isArray(json?.items) ? json.items : []);
             } catch { /* noop */ }

@@ -174,7 +174,7 @@ export default function AdjustReturnDateModal({
                                     setNewDate(`${y}-${m}-${day}`);
                                 }}
                                 placeholder="Chọn ngày"
-                                allowPastDates={true}  // cho phép chọn ngày cũ nếu cần
+                                allowPastDates={false}  // cho phép chọn ngày cũ nếu cần
                             />
 
                             <p className="text-sm text-slate-500">

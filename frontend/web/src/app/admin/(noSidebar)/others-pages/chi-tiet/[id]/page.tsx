@@ -471,6 +471,7 @@ export default function BookingDetailPage() {
         idNumber: rec?.KH_CCCD ?? '',
         address: rec?.KH_DIACHI ?? '',
         isChild: false,
+        isPrimary: rec?.LA_KHACH_CHINH || false,
     });
     const fetchCustomers = async (search: string): Promise<Option[]> => {
         const r = await api.get('/khach-hang', { params: { take: 20, withTotal: 0, search } });
@@ -1868,7 +1869,11 @@ export default function BookingDetailPage() {
                     <AdjustCheckinModal
                         open={openCheckinModal}
                         bookingId={bookingId}
-                        mode={booking?.htLabel?.includes("giờ") ? "HOUR" : "DAY"}
+                        mode={
+                            /giờ/i.test(booking?.htLabel ?? "")
+                                ? "HOUR"
+                                : "DAY"
+                        }
                         currentFrom={booking?.from}
                         currentTo={booking?.to}
                         onClose={() => setOpenCheckinModal(false)}
