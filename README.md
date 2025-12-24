@@ -52,4 +52,36 @@ npm run dev
 
 Frontend chạy tại: http://localhost:3000  
 
+## Minh họa giao diện hệ thống
+
+### Trang chủ
+<p align="center">
+  <img src="docs/images/trang chu.png" width="800">
+</p>
+
+### Danh sách phòng
+<p align="center">
+  <img src="docs/images/danh sach phong.png" width="800">
+</p>
+
+### Phiếu đặt phòng
+<p align="center">
+  <img src="docs/images/phieu dat phong.png" width="800">
+</p>
+
+### Quản lý
+<p align="center">
+  <img src="docs/images/quan ly.png" width="800">
+</p>
+
+### Chi tiết hợp đồng
+<p align="center">
+  <img src="docs/images/chi tiet.png" width="800">
+</p>
+
+### Đánh giá
+<p align="center">
+  <img src="docs/images/danh gia.png" width="800">
+</p>
+
 
